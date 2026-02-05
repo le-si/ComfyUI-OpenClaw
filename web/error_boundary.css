@@ -1,0 +1,25 @@
+/* R6: Error Boundary Styles */
+
+.moltbot-error-boundary {
+    padding: 1rem;
+    border: 1px solid #ff4444;
+    background: #2a0000;
+    color: #ffcccc;
+    border-radius: 4px;
+    margin: 8px;
+    font-family: sans-serif;
+}
+
+.moltbot-error-boundary h3 {
+    margin-top: 0;
+    color: #ff8888;
+}
+
+.moltbot-error-boundary code {
+    display: block;
+    background: #000;
+    padding: 8px;
+    margin-top: 8px;
+    overflow-x: auto;
+    font-family: monospace;
+}

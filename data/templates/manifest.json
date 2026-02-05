@@ -1,0 +1,26 @@
+{
+    "version": 1,
+    "templates": {
+        "portrait_v1": {
+            "path": "portrait_v1.json",
+            "allowed_inputs": [
+                "positive_prompt",
+                "seed"
+            ],
+            "defaults": {
+                "seed": 0
+            }
+        },
+        "sdxl_basic": {
+            "path": "sdxl_basic.json",
+            "allowed_inputs": [
+                "positive_prompt",
+                "negative_prompt",
+                "seed"
+            ],
+            "defaults": {
+                "seed": 1234
+            }
+        }
+    }
+}

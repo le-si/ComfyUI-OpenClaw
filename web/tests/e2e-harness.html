@@ -1,0 +1,125 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>OpenClaw E2E Harness</title>
+  <style>
+    body { background:#111; color:#eee; font-family:system-ui, sans-serif; padding:16px; }
+    pre { background:#0b0b0b; padding:12px; border:1px solid #333; border-radius:8px; }
+  </style>
+</head>
+<body>
+  <h1>OpenClaw E2E Harness</h1>
+  <div id="mount" style="height: 600px; border: 1px solid #333; border-radius: 8px; overflow: hidden;"></div>
+  <pre id="log">Running...</pre>
+
+  <script type="module">
+    import { TabManager } from '../openclaw_tabs.js';
+
+    const logEl = document.getElementById('log');
+    const mount = document.getElementById('mount');
+
+    const results = { passed: 0, failed: 0, failures: [] };
+
+    function assert(condition, message) {
+      if (!condition) throw new Error(message || 'assertion_failed');
+    }
+
+    async function run(name, fn) {
+      try {
+        await fn();
+        results.passed++;
+      } catch (e) {
+        results.failed++;
+        results.failures.push({ name, message: e?.message || String(e) });
+      }
+    }
+
+    function setDone() {
+      window.__MOLTBOT_E2E_DONE__ = true;
+      window.__MOLTBOT_E2E_RESULTS__ = results;
+      logEl.textContent = JSON.stringify(results, null, 2);
+    }
+
+    // Minimal DOM surface for TabManager tests
+    function createHost() {
+      mount.innerHTML = '';
+      const container = document.createElement('div');
+      container.style.height = '100%';
+      container.style.display = 'flex';
+      container.style.flexDirection = 'column';
+
+      const tabBar = document.createElement('div');
+      tabBar.style.display = 'flex';
+      tabBar.style.gap = '6px';
+      tabBar.style.padding = '6px';
+      tabBar.style.borderBottom = '1px solid #333';
+
+      const content = document.createElement('div');
+      content.style.flex = '1';
+      content.style.padding = '8px';
+
+      container.appendChild(tabBar);
+      container.appendChild(content);
+      mount.appendChild(container);
+
+      return { tabBar, content };
+    }
+
+    function makeTab(id, title) {
+      return {
+        id,
+        title,
+        render: (pane) => {
+          const marker = document.createElement('div');
+          marker.dataset.testid = `tab-${id}`;
+          marker.textContent = `Rendered: ${id}`;
+          pane.appendChild(marker);
+        },
+      };
+    }
+
+    (async () => {
+      await run('Tab switching keeps content', async () => {
+        const { tabBar, content } = createHost();
+        const tm = new TabManager();
+        tm.registerTab(makeTab('a', 'A'));
+        tm.registerTab(makeTab('b', 'B'));
+        tm.init(tabBar, content);
+
+        tm.activateTab('a');
+        assert(document.querySelector('[data-testid="tab-a"]'), 'tab-a not rendered');
+
+        tm.activateTab('b');
+        assert(document.querySelector('[data-testid="tab-b"]'), 'tab-b not rendered');
+
+        tm.activateTab('a');
+        // Should still be there after switching back
+        assert(document.querySelector('[data-testid="tab-a"]'), 'tab-a disappeared after switching back');
+      });
+
+      await run('Remount re-renders loaded tabs', async () => {
+        // First mount
+        let host = createHost();
+        const tm = new TabManager();
+        tm.registerTab(makeTab('a', 'A'));
+        tm.registerTab(makeTab('b', 'B'));
+        tm.init(host.tabBar, host.content);
+
+        tm.activateTab('a');
+        assert(document.querySelector('[data-testid="tab-a"]'), 'tab-a not rendered on first mount');
+
+        // Simulate ComfyUI remount (new tabBar/content nodes)
+        host = createHost();
+        tm.init(host.tabBar, host.content);
+
+        tm.activateTab('a');
+        assert(document.querySelector('[data-testid="tab-a"]'), 'tab-a not rendered after remount');
+      });
+
+      setDone();
+    })();
+  </script>
+</body>
+</html>

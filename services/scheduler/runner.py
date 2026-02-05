@@ -1,0 +1,321 @@
+"""
+Scheduler Runner (R4).
+Background tick loop for executing due schedules.
+"""
+
+import asyncio
+import hashlib
+import logging
+import threading
+import time
+from datetime import datetime, timezone
+from typing import Awaitable, Callable, Optional
+
+from .history import RunRecord, get_run_history
+from .models import Schedule, TriggerType
+from .storage import get_schedule_store
+
+logger = logging.getLogger("ComfyUI-OpenClaw.services.scheduler")
+
+
+def compute_idempotency_key(schedule_id: str, tick_ts: float) -> str:
+    """
+    Generate a deterministic idempotency key for a schedule tick.
+
+    This ensures that the same tick (schedule + time window) always produces
+    the same key, preventing duplicate runs.
+
+    Args:
+        schedule_id: The schedule ID.
+        tick_ts: The tick timestamp (floored to minute for cron, or interval boundary).
+
+    Returns:
+        A deterministic hash-based idempotency key.
+    """
+    # Floor to minute for cron schedules, or to interval boundary for interval schedules
+    tick_minute = int(tick_ts // 60) * 60
+    raw = f"{schedule_id}:{tick_minute}"
+    return f"sched_{hashlib.sha256(raw.encode()).hexdigest()[:16]}"
+
+
+def is_cron_due(cron_expr: str, last_tick_ts: Optional[float], now: datetime) -> bool:
+    """
+    Check if a cron schedule is due.
+
+    Simple implementation covering basic 5-field cron (min hour day month weekday).
+    Uses croniter if available, otherwise falls back to basic matching.
+    """
+    try:
+        from croniter import croniter
+
+        if last_tick_ts:
+            base = datetime.fromtimestamp(last_tick_ts, tz=timezone.utc)
+        else:
+            # First run: check if current minute matches
+            base = now.replace(second=0, microsecond=0)
+            base = base.replace(
+                minute=base.minute - 1
+            )  # Go back 1 minute to include current
+
+        cron = croniter(cron_expr, base)
+        next_time = cron.get_next(datetime)
+
+        # Due if next scheduled time is <= now
+        return next_time <= now
+
+    except ImportError:
+        # Fallback: basic matching (less accurate)
+        logger.warning("croniter not installed, using basic cron matching")
+        return _basic_cron_match(cron_expr, now)
+
+
+def _basic_cron_match(cron_expr: str, now: datetime) -> bool:
+    """Basic cron matching without croniter (limited functionality)."""
+    parts = cron_expr.strip().split()
+    if len(parts) != 5:
+        return False
+
+    minute, hour, day, month, weekday = parts
+
+    def matches(field: str, value: int, max_val: int) -> bool:
+        if field == "*":
+            return True
+        if field.isdigit():
+            return int(field) == value
+        if "," in field:
+            return value in [int(x) for x in field.split(",") if x.isdigit()]
+        if "/" in field:
+            step = int(field.split("/")[1])
+            return value % step == 0
+        return True
+
+    return (
+        matches(minute, now.minute, 59)
+        and matches(hour, now.hour, 23)
+        and matches(day, now.day, 31)
+        and matches(month, now.month, 12)
+        and matches(
+            weekday, now.weekday(), 6
+        )  # 0=Mon in Python vs 0=Sun in cron (approximate)
+    )
+
+
+def is_interval_due(
+    interval_sec: int, last_tick_ts: Optional[float], now_ts: float
+) -> bool:
+    """Check if an interval schedule is due."""
+    if last_tick_ts is None:
+        return True  # Never run, due immediately
+
+    elapsed = now_ts - last_tick_ts
+    return elapsed >= interval_sec
+
+
+class SchedulerRunner:
+    """
+    Background scheduler runner.
+
+    Runs in a daemon thread, periodically checking for due schedules
+    and submitting them to the queue.
+    """
+
+    def __init__(
+        self,
+        submit_fn: Optional[Callable[..., Awaitable]] = None,
+        tick_interval: float = 30.0,
+    ):
+        """
+        Args:
+            submit_fn: Async function to submit a schedule's workflow.
+                       Signature: (template_id, inputs, trace_id, idempotency_key) -> result
+            tick_interval: How often to check for due schedules (seconds).
+        """
+        self._submit_fn = submit_fn
+        self._tick_interval = max(10.0, min(tick_interval, 300.0))  # Clamp 10s-5min
+
+        self._running = False
+        self._thread: Optional[threading.Thread] = None
+        self._stop_event = threading.Event()
+
+        self._store = get_schedule_store()
+
+    def start(self) -> None:
+        """Start the scheduler background loop."""
+        if self._running:
+            logger.warning("Scheduler already running")
+            return
+
+        self._running = True
+        self._stop_event.clear()
+
+        self._thread = threading.Thread(
+            target=self._run_loop, name="moltbot-scheduler", daemon=True
+        )
+        self._thread.start()
+        logger.info(f"Scheduler started (tick interval: {self._tick_interval}s)")
+
+    def stop(self) -> None:
+        """Stop the scheduler background loop."""
+        if not self._running:
+            return
+
+        self._stop_event.set()
+        self._running = False
+
+        if self._thread:
+            self._thread.join(timeout=5.0)
+            self._thread = None
+
+        logger.info("Scheduler stopped")
+
+    def _run_loop(self) -> None:
+        """Main scheduler loop (runs in thread)."""
+        logger.debug("Scheduler loop started")
+
+        while not self._stop_event.is_set():
+            try:
+                self._tick()
+            except Exception as e:
+                logger.error(f"Scheduler tick error: {e}", exc_info=True)
+
+            # Wait for next tick
+            self._stop_event.wait(timeout=self._tick_interval)
+
+        logger.debug("Scheduler loop exited")
+
+    def _tick(self) -> None:
+        """Process one scheduler tick."""
+        now = datetime.now(timezone.utc)
+        now_ts = now.timestamp()
+
+        schedules = self._store.list_all()
+        due_schedules = []
+
+        for schedule in schedules:
+            if not schedule.enabled:
+                continue
+
+            is_due = False
+
+            if schedule.trigger_type == TriggerType.CRON:
+                is_due = is_cron_due(schedule.cron_expr, schedule.last_tick_ts, now)
+            elif schedule.trigger_type == TriggerType.INTERVAL:
+                is_due = is_interval_due(
+                    schedule.interval_sec, schedule.last_tick_ts, now_ts
+                )
+
+            if is_due:
+                due_schedules.append(schedule)
+
+        if due_schedules:
+            logger.debug(f"Found {len(due_schedules)} due schedules")
+
+        for schedule in due_schedules:
+            self._execute_schedule(schedule, now_ts)
+
+    def _execute_schedule(self, schedule: Schedule, tick_ts: float) -> None:
+        """Execute a single due schedule."""
+        idempotency_key = compute_idempotency_key(schedule.schedule_id, tick_ts)
+
+        # R9: Check if already processed via history
+        history = get_run_history()
+        if history.is_processed(idempotency_key):
+            logger.debug(f"Skipping already-processed tick: {idempotency_key}")
+            return
+
+        # Generate trace_id for this run
+        from ..trace import generate_trace_id
+
+        trace_id = generate_trace_id()
+        run_id = f"run_{trace_id[:12]}"
+
+        # R9: Create run record
+        run_record = RunRecord(
+            run_id=run_id,
+            schedule_id=schedule.schedule_id,
+            trace_id=trace_id,
+            idempotency_key=idempotency_key,
+        )
+
+        logger.info(
+            f"Executing schedule {schedule.schedule_id} "
+            f"(template={schedule.template_id}, trace={trace_id})"
+        )
+
+        try:
+            if self._submit_fn:
+                # Use async bridge to call async submit function
+                from ..plugins.async_bridge import run_async_in_sync_context
+
+                result = run_async_in_sync_context(
+                    self._submit_fn(
+                        template_id=schedule.template_id,
+                        inputs=schedule.inputs,
+                        trace_id=trace_id,
+                        idempotency_key=idempotency_key,
+                        delivery=schedule.delivery,
+                        source="scheduler",
+                    )
+                )
+
+                prompt_id = (
+                    result.get("prompt_id") if isinstance(result, dict) else None
+                )
+                deduped = (
+                    result.get("deduped", False) if isinstance(result, dict) else False
+                )
+
+                if deduped:
+                    run_record.skip("Already queued")
+                    logger.info(f"Schedule {schedule.schedule_id} skipped (deduped)")
+                else:
+                    run_record.complete(prompt_id)
+                    logger.info(
+                        f"Schedule {schedule.schedule_id} queued: prompt_id={prompt_id}"
+                    )
+            else:
+                logger.warning(
+                    "No submit function configured, skipping actual submission"
+                )
+                run_record.skip("No submit function")
+
+            # Update cursor
+            schedule.update_cursor(tick_ts, run_id)
+            self._store.update(schedule)
+
+            # R9: Record run
+            history.add_run(run_record)
+
+        except Exception as e:
+            logger.error(f"Schedule {schedule.schedule_id} execution failed: {e}")
+
+            # R9: Record failure
+            run_record.fail(str(e))
+            history.add_run(run_record)
+
+            # Still update cursor to avoid retry storm
+            schedule.update_cursor(tick_ts, run_id)
+            self._store.update(schedule)
+
+
+# Singleton runner instance
+_scheduler_runner: Optional[SchedulerRunner] = None
+
+
+def get_scheduler_runner() -> SchedulerRunner:
+    """Get the singleton scheduler runner."""
+    global _scheduler_runner
+    if _scheduler_runner is None:
+        _scheduler_runner = SchedulerRunner()
+    return _scheduler_runner
+
+
+def start_scheduler() -> None:
+    """Start the background scheduler."""
+    get_scheduler_runner().start()
+
+
+def stop_scheduler() -> None:
+    """Stop the background scheduler."""
+    if _scheduler_runner:
+        _scheduler_runner.stop()

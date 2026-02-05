@@ -1,0 +1,87 @@
+{
+    "key_idx": {
+        "1": {
+            "inputs": {
+                "text": "{{positive_prompt}}",
+                "clip": [
+                    "2",
+                    1
+                ]
+            },
+            "class_type": "CLIPTextEncode"
+        },
+        "2": {
+            "inputs": {
+                "ckpt_name": "sd_xl_base_1.0.safetensors"
+            },
+            "class_type": "CheckpointLoaderSimple"
+        },
+        "3": {
+            "inputs": {
+                "seed": "{{seed}}",
+                "steps": 25,
+                "cfg": 7.0,
+                "sampler_name": "dpmpp_2m",
+                "scheduler": "karras",
+                "model": [
+                    "2",
+                    0
+                ],
+                "positive": [
+                    "1",
+                    0
+                ],
+                "negative": [
+                    "4",
+                    0
+                ],
+                "latent_image": [
+                    "5",
+                    0
+                ]
+            },
+            "class_type": "KSampler"
+        },
+        "4": {
+            "inputs": {
+                "text": "bad quality, blurry",
+                "clip": [
+                    "2",
+                    1
+                ]
+            },
+            "class_type": "CLIPTextEncode"
+        },
+        "5": {
+            "inputs": {
+                "width": 832,
+                "height": 1216,
+                "batch_size": 1
+            },
+            "class_type": "EmptyLatentImage"
+        },
+        "6": {
+            "inputs": {
+                "samples": [
+                    "3",
+                    0
+                ],
+                "vae": [
+                    "2",
+                    2
+                ]
+            },
+            "class_type": "VAEDecode"
+        },
+        "7": {
+            "inputs": {
+                "filename_prefix": "portrait",
+                "images": [
+                    "6",
+                    0
+                ]
+            },
+            "class_type": "SaveImage"
+        }
+    }
+}

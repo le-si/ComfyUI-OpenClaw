@@ -1,0 +1,7 @@
+# Normalize line endings for cross-platform consistency (pre-commit safe on Windows).
+* text=auto eol=lf
+
+# Windows scripts should remain CRLF.
+*.bat text eol=crlf
+*.cmd text eol=crlf
+*.ps1 text eol=crlf

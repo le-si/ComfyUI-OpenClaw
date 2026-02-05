@@ -1,0 +1,51 @@
+# Pre-commit hooks configuration
+# https://pre-commit.com/
+#
+# Install: pip install pre-commit && pre-commit install
+# Update baseline: detect-secrets scan --baseline .secrets.baseline
+
+repos:
+  # Secret detection
+  - repo: https://github.com/Yelp/detect-secrets
+    rev: v1.4.0
+    hooks:
+      - id: detect-secrets
+        args:
+          - --baseline
+          - .secrets.baseline
+        exclude: |
+          (?x)^(
+            REFERENCE/.*|
+            tests/.*|
+            web/tests/.*|
+            .*\.lock$|
+            .*\.min\.js$
+          )$
+
+  # Python code quality
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v4.5.0
+    hooks:
+      - id: trailing-whitespace
+      - id: end-of-file-fixer
+      - id: check-yaml
+      - id: check-json
+      - id: check-added-large-files
+        args: ['--maxkb=500']
+
+  # Python formatting (optional but recommended)
+  - repo: https://github.com/psf/black
+    rev: 24.1.1
+    hooks:
+      - id: black
+        language_version: python3
+        args: ['--check', '--diff']
+        # Remove --check --diff to auto-format
+
+  # Python import sorting
+  - repo: https://github.com/pycqa/isort
+    rev: 5.13.2
+    hooks:
+      - id: isort
+        args: ['--check-only', '--diff']
+        # Remove --check-only --diff to auto-sort

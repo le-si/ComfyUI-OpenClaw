@@ -1,0 +1,246 @@
+"""
+Approval API Endpoints (S7/F12).
+REST endpoints for managing approval requests.
+"""
+
+import logging
+from typing import Callable, Optional
+
+from aiohttp import web
+
+try:
+    from ..services.approvals.models import ApprovalStatus
+    from ..services.approvals.service import get_approval_service
+    from ..services.webhook_auth import AuthError
+except ImportError:
+    # Fallback for ComfyUI's non-package loader or ad-hoc imports.
+    from services.approvals.models import ApprovalStatus
+    from services.approvals.service import get_approval_service
+    from services.webhook_auth import AuthError
+
+logger = logging.getLogger("ComfyUI-OpenClaw.api.approvals")
+
+
+class ApprovalHandlers:
+    """
+    CRUD handlers for /moltbot/approvals endpoints.
+    All endpoints require admin token authentication.
+    """
+
+    def __init__(self, require_admin_token_fn=None, submit_fn=None):
+        """
+        Args:
+            require_admin_token_fn: Function to validate admin token.
+            submit_fn: Async function to submit a workflow (for execution on approval).
+        """
+        self._require_admin_token = require_admin_token_fn
+        self._submit_fn = submit_fn
+        self._service = get_approval_service()
+
+    async def _check_auth(self, request: web.Request) -> None:
+        """Require admin token for all approval operations."""
+        if self._require_admin_token:
+            import inspect
+
+            result = self._require_admin_token(request)
+            if inspect.isawaitable(result):
+                result = await result
+
+            if isinstance(result, tuple):
+                allowed, error = result
+                if not allowed:
+                    raise AuthError(error or "Unauthorized")
+
+    async def list_approvals(self, request: web.Request) -> web.Response:
+        """GET /moltbot/approvals - List approval requests."""
+        try:
+            await self._check_auth(request)
+        except AuthError as e:
+            return web.json_response({"error": str(e)}, status=403)
+        except Exception:
+            return web.json_response({"error": "Unauthorized"}, status=403)
+
+        # Parse query params
+        status_filter = request.query.get("status")
+        limit = int(request.query.get("limit", "100"))
+        offset = int(request.query.get("offset", "0"))
+
+        # Validate and convert status
+        status = None
+        if status_filter:
+            try:
+                status = ApprovalStatus(status_filter)
+            except ValueError:
+                return web.json_response(
+                    {"error": f"Invalid status: {status_filter}"}, status=400
+                )
+
+        # Get approvals
+        approvals = self._service.list_all(
+            status=status,
+            limit=min(limit, 500),
+            offset=offset,
+        )
+
+        return web.json_response(
+            {
+                "approvals": [a.to_dict() for a in approvals],
+                "count": len(approvals),
+                "pending_count": self._service.count_pending(),
+            }
+        )
+
+    async def get_approval(self, request: web.Request) -> web.Response:
+        """GET /moltbot/approvals/{approval_id} - Get a single approval."""
+        try:
+            await self._check_auth(request)
+        except AuthError as e:
+            return web.json_response({"error": str(e)}, status=403)
+        except Exception:
+            return web.json_response({"error": "Unauthorized"}, status=403)
+
+        approval_id = request.match_info.get("approval_id", "")
+        approval = self._service.get(approval_id)
+
+        if not approval:
+            return web.json_response({"error": "Approval not found"}, status=404)
+
+        return web.json_response({"approval": approval.to_dict()})
+
+    async def approve_request(self, request: web.Request) -> web.Response:
+        """POST /moltbot/approvals/{approval_id}/approve - Approve and execute request."""
+        try:
+            await self._check_auth(request)
+        except AuthError as e:
+            return web.json_response({"error": str(e)}, status=403)
+        except Exception:
+            return web.json_response({"error": "Unauthorized"}, status=403)
+
+        approval_id = request.match_info.get("approval_id", "")
+
+        # Parse optional body
+        actor = None
+        auto_execute = True  # Default: execute immediately after approval
+        try:
+            data = await request.json()
+            actor = data.get("actor")
+            auto_execute = data.get("auto_execute", True)
+        except Exception:
+            pass  # No body is fine
+
+        try:
+            # First approve the request
+            approval = self._service.approve(approval_id, actor=actor)
+            logger.info(f"Approved request: {approval_id}")
+
+            result = {
+                "approved": True,
+                "approval": approval.to_dict(),
+            }
+
+            # Execute if requested and submit_fn is available
+            if auto_execute and self._submit_fn:
+                try:
+                    from .triggers import execute_approved_trigger
+
+                    exec_result = await execute_approved_trigger(
+                        approval_id=approval_id,
+                        submit_fn=self._submit_fn,
+                    )
+
+                    result["executed"] = True
+                    result["prompt_id"] = exec_result.get("prompt_id")
+                    result["trace_id"] = exec_result.get("trace_id")
+
+                    logger.info(
+                        f"Executed approved trigger: {approval_id} -> {result.get('prompt_id')}"
+                    )
+
+                except Exception as exec_error:
+                    logger.error(f"Failed to execute approved trigger: {exec_error}")
+                    result["executed"] = False
+                    result["execution_error"] = str(exec_error)
+            else:
+                result["executed"] = False
+
+            return web.json_response(result)
+
+        except ValueError as e:
+            return web.json_response({"error": str(e)}, status=400)
+
+    async def reject_request(self, request: web.Request) -> web.Response:
+        """POST /moltbot/approvals/{approval_id}/reject - Reject a request."""
+        try:
+            await self._check_auth(request)
+        except AuthError as e:
+            return web.json_response({"error": str(e)}, status=403)
+        except Exception:
+            return web.json_response({"error": "Unauthorized"}, status=403)
+
+        approval_id = request.match_info.get("approval_id", "")
+
+        # Parse optional body
+        actor = None
+        try:
+            data = await request.json()
+            actor = data.get("actor")
+        except Exception:
+            pass
+
+        try:
+            approval = self._service.reject(approval_id, actor=actor)
+
+            logger.info(f"Rejected request: {approval_id}")
+            return web.json_response(
+                {
+                    "rejected": True,
+                    "approval": approval.to_dict(),
+                }
+            )
+
+        except ValueError as e:
+            return web.json_response({"error": str(e)}, status=400)
+
+
+def register_approval_routes(
+    app: web.Application,
+    require_admin_token_fn=None,
+    submit_fn=None,
+) -> None:
+    """Register approval API routes on the aiohttp app."""
+    handlers = ApprovalHandlers(
+        require_admin_token_fn=require_admin_token_fn,
+        submit_fn=submit_fn,
+    )
+
+    prefixes = ["/openclaw", "/moltbot"]  # new, legacy
+    for prefix in prefixes:
+        routes = [
+            ("GET", f"{prefix}/approvals", handlers.list_approvals),
+            ("GET", f"{prefix}/approvals/{{approval_id}}", handlers.get_approval),
+            (
+                "POST",
+                f"{prefix}/approvals/{{approval_id}}/approve",
+                handlers.approve_request,
+            ),
+            (
+                "POST",
+                f"{prefix}/approvals/{{approval_id}}/reject",
+                handlers.reject_request,
+            ),
+        ]
+
+        for method, path, handler in routes:
+            # 1. Legacy
+            try:
+                app.router.add_route(method, path, handler)
+            except RuntimeError:
+                pass
+
+            # 2. /api Shim aligned
+            try:
+                app.router.add_route(method, "/api" + path, handler)
+            except RuntimeError:
+                pass
+
+    logger.info("Registered approval API routes (dual)")

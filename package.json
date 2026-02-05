@@ -1,0 +1,14 @@
+{
+  "name": "comfyui-openclaw",
+  "private": true,
+  "devDependencies": {
+    "@playwright/test": "^1.50.0"
+  },
+  "scripts": {
+    "test": "node scripts/run-playwright.mjs",
+    "test:ui": "npx playwright test --ui",
+    "test:headed": "npx playwright test --headed",
+    "test:debug": "npx playwright test --debug",
+    "test:report": "npx playwright show-report"
+  }
+}
