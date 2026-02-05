@@ -39,11 +39,24 @@ function ensurePythonShimIfNeeded(env) {
   return env;
 }
 
+function runNpmExec(args, { label }) {
+  if (process.env.npm_execpath) {
+    const res = spawnSync(process.execPath, [process.env.npm_execpath, 'exec', '--', ...args], {
+      stdio: 'inherit',
+      env,
+    });
+    return res;
+  }
+  return spawnSync('npm', ['exec', '--', ...args], { stdio: 'inherit', env });
+}
+
 function runPlaywrightCommand(args, { label }) {
   if (process.platform === 'win32') {
-    const res = spawnSync('npm', ['exec', '--', ...args], { stdio: 'inherit', env });
+    const res = runNpmExec(args, { label });
     if (res.error && res.error.code === 'ENOENT') {
-      console.error(`[OpenClaw] Failed to run ${label}: npm not found in PATH`);
+      console.error(
+        `[OpenClaw] Failed to run ${label}: npm not found in PATH (and npm_execpath not set)`,
+      );
       process.exit(1);
     }
     return res;
@@ -51,7 +64,7 @@ function runPlaywrightCommand(args, { label }) {
 
   const res = spawnSync(getNpxCommand(), args, { stdio: 'inherit', env });
   if (res.error && res.error.code === 'ENOENT') {
-    const fallback = spawnSync('npm', ['exec', '--', ...args], { stdio: 'inherit', env });
+    const fallback = runNpmExec(args, { label });
     if (fallback.error) {
       console.error(`[OpenClaw] Failed to run ${label}:`, fallback.error);
       process.exit(1);
