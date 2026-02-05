@@ -11,6 +11,8 @@ repos:
     hooks:
       - id: detect-secrets
         args:
+          - --config
+          - .detect-secrets.cfg
           - --baseline
           - .secrets.baseline
         exclude: |

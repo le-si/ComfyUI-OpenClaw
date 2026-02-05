@@ -15,63 +15,26 @@ function ensureDir(p) {
   fs.mkdirSync(p, { recursive: true });
 }
 
-function ensurePythonShimIfNeeded(env) {
-  // If `python` is missing but python3 exists, add a local shim folder.
-  // CI images usually provide python; this helps WSL environments.
-  const which = (cmd) => spawnSync('bash', ['-lc', `command -v ${cmd}`], { encoding: 'utf-8' });
-  const py = which('python');
-  if (py.status === 0) return env;
-
-  const py3 = which('python3');
-  if (py3.status !== 0) return env;
-
-  const binDir = path.join(process.cwd(), '.tmp', 'bin');
-  ensureDir(binDir);
-
-  const shimPath = path.join(binDir, 'python');
-  try {
-    fs.symlinkSync(py3.stdout.trim(), shimPath);
-  } catch {
-    // ignore if already exists
+function resolvePlaywrightCli() {
+  const candidates = [
+    path.join(process.cwd(), 'node_modules', 'playwright', 'cli.js'),
+    path.join(process.cwd(), 'node_modules', '@playwright', 'test', 'cli.js'),
+  ];
+  for (const p of candidates) {
+    if (fs.existsSync(p)) return p;
   }
-
-  env.PATH = `${binDir}:${env.PATH || ''}`;
-  return env;
+  return null;
 }
 
-function runNpmExec(args, { label }) {
-  if (process.env.npm_execpath) {
-    const res = spawnSync(process.execPath, [process.env.npm_execpath, 'exec', '--', ...args], {
-      stdio: 'inherit',
-      env,
-    });
-    return res;
+function runPlaywright(args, { label }) {
+  const cli = resolvePlaywrightCli();
+  if (!cli) {
+    console.error(
+      `[OpenClaw] Failed to run ${label}: Playwright CLI not found. Did you run 'npm install'?`,
+    );
+    process.exit(1);
   }
-  return spawnSync('npm', ['exec', '--', ...args], { stdio: 'inherit', env });
-}
-
-function runPlaywrightCommand(args, { label }) {
-  if (process.platform === 'win32') {
-    const res = runNpmExec(args, { label });
-    if (res.error && res.error.code === 'ENOENT') {
-      console.error(
-        `[OpenClaw] Failed to run ${label}: npm not found in PATH (and npm_execpath not set)`,
-      );
-      process.exit(1);
-    }
-    return res;
-  }
-
-  const res = spawnSync(getNpxCommand(), args, { stdio: 'inherit', env });
-  if (res.error && res.error.code === 'ENOENT') {
-    const fallback = runNpmExec(args, { label });
-    if (fallback.error) {
-      console.error(`[OpenClaw] Failed to run ${label}:`, fallback.error);
-      process.exit(1);
-    }
-    return fallback;
-  }
-  return res;
+  return spawnSync(process.execPath, [cli, ...args], { stdio: 'inherit', env });
 }
 
 function ensurePlaywrightBrowsersIfNeeded() {
@@ -79,11 +42,17 @@ function ensurePlaywrightBrowsersIfNeeded() {
   if (!process.env.CI && process.env.OPENCLAW_PLAYWRIGHT_INSTALL !== '1') {
     return;
   }
-  const args = ['playwright', 'install'];
-  if (process.platform === 'linux') {
+  // Default to Chromium only (fast + matches CI workflow); allow override.
+  const browsers = (process.env.OPENCLAW_PLAYWRIGHT_BROWSERS || 'chromium')
+    .split(',')
+    .map((s) => s.trim())
+    .filter(Boolean);
+
+  const args = ['install', ...browsers];
+  if (process.platform === 'linux' && process.env.OPENCLAW_PLAYWRIGHT_WITH_DEPS === '1') {
     args.push('--with-deps');
   }
-  const res = runPlaywrightCommand(args, { label: 'Playwright install' });
+  const res = runPlaywright(args, { label: 'Playwright install' });
   if (res.error) {
     console.error('[OpenClaw] Failed to run Playwright install:', res.error);
     process.exit(1);
@@ -96,10 +65,6 @@ function ensurePlaywrightBrowsersIfNeeded() {
 
 const env = { ...process.env };
 
-function getNpxCommand() {
-  return process.platform === 'win32' ? 'npx.cmd' : 'npx';
-}
-
 if (isWSL() && isDrvFsCwd()) {
   const tmpDir = path.join(process.cwd(), '.tmp', 'playwright');
   ensureDir(tmpDir);
@@ -108,10 +73,9 @@ if (isWSL() && isDrvFsCwd()) {
   env.TEMP = tmpDir;
 }
 
-ensurePythonShimIfNeeded(env);
 ensurePlaywrightBrowsersIfNeeded();
 
-let res = runPlaywrightCommand(['playwright', 'test'], { label: 'Playwright' });
+let res = runPlaywright(['test'], { label: 'Playwright' });
 if (res.error) {
   console.error('[OpenClaw] Failed to run Playwright:', res.error);
   process.exit(1);

@@ -16,6 +16,7 @@ import { VariantsTab } from "./tabs/variants_tab.js";
 import { RefinerTab } from "./tabs/refiner_tab.js";
 import { LibraryTab } from "./tabs/library_tab.js";
 import { ApprovalsTab } from "./tabs/approvals_tab.js";
+import { ExplorerTab } from "./tabs/explorer_tab.js";
 
 function isExtensionEnabled() {
     try {
@@ -116,6 +117,9 @@ async function registerSupportedTabs() {
     if (fallbackShowAll || features.scheduler) tabManager.registerTab(VariantsTab);
     if (fallbackShowAll || features.presets) tabManager.registerTab(LibraryTab);
     if (fallbackShowAll || features.approvals) tabManager.registerTab(ApprovalsTab);
+    if (fallbackShowAll || features.explorer || features.preflight || features.checkpoints) {
+        tabManager.registerTab(ExplorerTab); // Explorer: inventory + preflight + snapshots
+    }
 
     console.log("[OpenClaw] Tabs registered based on capabilities:", Object.keys(tabManager.tabs).length);
 }

@@ -528,6 +528,60 @@ export class MoltbotAPI {
             },
         });
     }
+
+    // --- R42/F28: Preflight & Explorer ---
+
+    async runPreflight(workflow) {
+        return this.fetch(this._path("/preflight"), {
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json",
+                ...this._adminTokenHeaders(),
+            },
+            body: JSON.stringify(workflow),
+        });
+    }
+
+    async getInventory() {
+        return this.fetch(this._path("/preflight/inventory"), {
+            method: "GET",
+            headers: {
+                ...this._adminTokenHeaders(),
+            },
+        });
+    }
+
+    // --- R47: Checkpoints ---
+
+    async listCheckpoints() {
+        return this.fetch(this._path("/checkpoints"), {
+            headers: { ...this._adminTokenHeaders() }
+        });
+    }
+
+    async createCheckpoint(name, workflow, description = "") {
+        return this.fetch(this._path("/checkpoints"), {
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json",
+                ...this._adminTokenHeaders()
+            },
+            body: JSON.stringify({ name, workflow, description })
+        });
+    }
+
+    async getCheckpoint(id) {
+        return this.fetch(`${this._path("/checkpoints")}/${encodeURIComponent(id)}`, {
+            headers: { ...this._adminTokenHeaders() }
+        });
+    }
+
+    async deleteCheckpoint(id) {
+        return this.fetch(`${this._path("/checkpoints")}/${encodeURIComponent(id)}`, {
+            method: "DELETE",
+            headers: { ...this._adminTokenHeaders() }
+        });
+    }
 }
 
 // Export singleton for backwards compatibility

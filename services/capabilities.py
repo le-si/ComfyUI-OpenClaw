@@ -26,7 +26,6 @@ def get_capabilities() -> dict:
         "features": {
             "webhook_submit": True,
             "logs_tail": True,
-            "doctor": True,
             "job_monitor": True,
             "callback_delivery": True,
             "presets": True,
@@ -36,5 +35,9 @@ def get_capabilities() -> dict:
             "scheduler": True,
             "triggers": True,
             "packs": True,
+            # R42/F28/R47: Explorer + Preflight + Checkpoints
+            "explorer": True,
+            "preflight": True,
+            "checkpoints": True,
         },
     }

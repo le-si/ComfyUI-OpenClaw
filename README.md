@@ -61,12 +61,12 @@ Remote admin actions are denied by default. If you understand the risk and need 
 ### Windows env var tips (PowerShell / CMD / portable .bat / Desktop)
 
 - PowerShell (current session only):
-  - `$env:OPENCLAW_LLM_API_KEY="sk-..."`
-  - `$env:OPENCLAW_ADMIN_TOKEN="your-secret-token"`
+  - `$env:OPENCLAW_LLM_API_KEY="<YOUR_API_KEY>"`
+  - `$env:OPENCLAW_ADMIN_TOKEN="<YOUR_ADMIN_TOKEN>"`
 - PowerShell (persistent; takes effect in new shells):
-  - `setx OPENCLAW_LLM_API_KEY "sk-..."`
-  - `setx OPENCLAW_ADMIN_TOKEN "your-secret-token"`
-- CMD (current session only): `set OPENCLAW_LLM_API_KEY=sk-...`
+  - `setx OPENCLAW_LLM_API_KEY "<YOUR_API_KEY>"`
+  - `setx OPENCLAW_ADMIN_TOKEN "<YOUR_ADMIN_TOKEN>"`
+- CMD (current session only): `set OPENCLAW_LLM_API_KEY=<YOUR_API_KEY>`
 - Portable `.bat` launchers: add `set OPENCLAW_LLM_API_KEY=...` / `set OPENCLAW_ADMIN_TOKEN=...` before launching ComfyUI.
 - ComfyUI Desktop: if env vars are not passed through reliably, prefer the Settings UI key store for localhost-only convenience, or set system-wide env vars.
 
@@ -109,14 +109,14 @@ Use `/api/...` from browsers and extension JS.
 - `GET /openclaw/capabilities` — feature/capability probe for frontend compatibility
 - `GET /openclaw/jobs` — currently a stub (returns an empty list)
 
-Access control (S14):
+Access control:
 
 - loopback is allowed
 - remote access requires `OPENCLAW_OBSERVABILITY_TOKEN` via `X-OpenClaw-Obs-Token`
 
 ### LLM config (non-secret)
 
-- `GET /openclaw/config` — effective config + sources + provider catalog (S14 protected)
+- `GET /openclaw/config` — effective config + sources + provider catalog (observability-protected)
 - `PUT /openclaw/config` — update non-secret config (admin boundary)
 - `POST /openclaw/llm/test` — test connectivity (admin boundary)
 
@@ -128,7 +128,7 @@ Notes:
   - or opt in to any public host via `OPENCLAW_ALLOW_ANY_PUBLIC_LLM_HOST=1`
   - `OPENCLAW_ALLOW_INSECURE_BASE_URL=1` disables SSRF blocking (not recommended)
 
-### Webhooks (S2 + S17)
+### Webhooks
 
 - `POST /openclaw/webhook` — authenticate + validate schema and return normalized payload (no queue submission)
 - `POST /openclaw/webhook/validate` — dry-run render (no queue submission; includes render budgets + warnings)
@@ -154,7 +154,7 @@ Auth headers:
 - HMAC: `X-OpenClaw-Signature: sha256=<hex>` (legacy header: `X-Moltbot-Signature`)
   - optional replay protection: `X-OpenClaw-Timestamp` and `X-OpenClaw-Nonce` (legacy `X-Moltbot-*`)
 
-Callback allowlist (F16):
+Callback allowlist:
 
 - `OPENCLAW_CALLBACK_ALLOW_HOSTS=example.com,api.example.com`
 - `OPENCLAW_CALLBACK_TIMEOUT_SEC=10`
@@ -198,7 +198,7 @@ Admin boundary:
 
 ### Bridge (sidecar; optional)
 
-Sidecar bridge routes (F10/F13) are registered under `/openclaw/bridge/*` and `/moltbot/bridge/*`.
+Sidecar bridge routes are registered under `/openclaw/bridge/*` and `/moltbot/bridge/*`.
 
 Enablement and auth (device token model):
 
@@ -220,7 +220,7 @@ Templates live in `data/templates/` and are loaded from `data/templates/manifest
   - Only exact string values matching `{{key}}` are replaced
   - Partial substitutions (e.g. `"foo {{bar}}"`) are intentionally not supported
 
-## Execution Budgets (R33)
+## Execution Budgets
 
 Queue submissions are protected by concurrency caps and render size budgets (`services/execution_budgets.py`).
 
@@ -235,7 +235,7 @@ Environment variables:
 
 If budgets are exceeded, callers should expect `429` (concurrency) or `413` (oversized render).
 
-## LLM Failover (R14)
+## LLM Failover
 
 Failover is integrated into `services/llm_client.py` and controlled via runtime config:
 

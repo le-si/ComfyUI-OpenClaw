@@ -3,11 +3,16 @@ Config API handlers (R21/S13/F20).
 Provides GET/PUT /moltbot/config and optional /moltbot/llm/test.
 """
 
+from __future__ import annotations
+
 import json
 import logging
 import time
 
-from aiohttp import web
+try:
+    from aiohttp import web
+except ImportError:  # pragma: no cover (optional for unit tests)
+    web = None  # type: ignore
 
 # Import discipline:
 # - In real ComfyUI runtimes, this pack is loaded as a package and must use package-relative imports.
@@ -94,6 +99,8 @@ async def config_get_handler(request: web.Request) -> web.Response:
     Returns effective config, sources, and provider catalog.
     Enforced by S14 Access Control.
     """
+    if web is None:
+        raise RuntimeError("aiohttp not available")
     # S14: Access Control
     allowed, error = require_observability_access(request)
     if not allowed:
@@ -190,6 +197,8 @@ async def llm_models_handler(request: web.Request) -> web.Response:
     - loopback-only unless OPENCLAW_ALLOW_REMOTE_ADMIN=1
     - SSRF policy enforced via OPENCLAW_LLM_ALLOWED_HOSTS / OPENCLAW_ALLOW_ANY_PUBLIC_LLM_HOST
     """
+    if web is None:
+        raise RuntimeError("aiohttp not available")
     # S17: Rate Limit
     if not check_rate_limit(request, "admin"):
         return web.json_response(
@@ -229,18 +238,11 @@ async def llm_models_handler(request: web.Request) -> web.Response:
     provider_override = (request.query.get("provider") or "").strip().lower()
     effective, _sources = get_effective_config()
     provider = provider_override or (effective.get("provider") or "openai")
+    
+    # Resolve Base URL (Runtime config > Catalog Default)
+    # Allows users to override base_url for standard providers (e.g. self-hosted OpenAI compat)
+    runtime_base_url = (effective.get("base_url") or "").strip()
 
-    # Cache
-    now = time.time()
-    cached = _MODEL_LIST_CACHE.get(provider)
-    if cached:
-        ts, models = cached
-        if (now - ts) < _MODEL_LIST_TTL_SEC and isinstance(models, list):
-            return web.json_response(
-                {"ok": True, "provider": provider, "models": models, "cached": True}
-            )
-
-    # Resolve base_url + api_key
     try:
         from ..services.providers.catalog import ProviderType, get_provider_info
         from ..services.providers.keys import get_api_key_for_provider
@@ -263,7 +265,28 @@ async def llm_models_handler(request: web.Request) -> web.Response:
             status=400,
         )
 
-    base_url = info.base_url
+    # Priority: Runtime URL -> Info Default
+    base_url = runtime_base_url if runtime_base_url else info.base_url
+    if not base_url:
+         return web.json_response(
+            {"ok": False, "error": f"No base URL configured for provider '{provider}'."},
+            status=400,
+        )
+
+    # Cache Key: (provider, base_url)
+    # This ensures switching base_url (e.g. from OpenAI to local proxy) doesn't use stale cache.
+    cache_key = (provider, base_url)
+    
+    # Check Cache
+    now = time.time()
+    cached_entry = _MODEL_LIST_CACHE.get(cache_key)
+    if cached_entry:
+        ts, models = cached_entry
+        if (now - ts) < _MODEL_LIST_TTL_SEC and isinstance(models, list):
+            return web.json_response(
+                {"ok": True, "provider": provider, "models": models, "cached": True}
+            )
+
     api_key = get_api_key_for_provider(provider)
     if not api_key:
         return web.json_response(
@@ -271,7 +294,7 @@ async def llm_models_handler(request: web.Request) -> web.Response:
             status=400,
         )
 
-    # SSRF policy: allow provider default host, or allowlisted/custom-any (if enabled).
+    # SSRF policy
     try:
         try:
             from ..services.safe_io import validate_outbound_url
@@ -313,16 +336,33 @@ async def llm_models_handler(request: web.Request) -> web.Response:
             body = resp.read(1_000_000)
         payload = json.loads(body.decode("utf-8", errors="replace"))
         models = _extract_models_from_payload(payload)
-        _MODEL_LIST_CACHE[provider] = (now, models)
+        
+        # Update Cache
+        _MODEL_LIST_CACHE[cache_key] = (now, models)
+        
         return web.json_response(
             {"ok": True, "provider": provider, "models": models, "cached": False}
         )
     except urllib.error.HTTPError as e:
+        # Fallback Check
+        if cached_entry:
+             ts, models = cached_entry
+             warning = f"Using cached list (refresh failed: HTTP {e.code} {e.reason})"
+             return web.json_response(
+                {"ok": True, "provider": provider, "models": models, "cached": True, "warning": warning}
+            )
         return web.json_response(
             {"ok": False, "error": f"HTTP error {e.code}: {e.reason}"}, status=502
         )
     except Exception as e:
         logger.exception("Failed to fetch model list")
+        # Fallback Check
+        if cached_entry:
+             ts, models = cached_entry
+             warning = f"Using cached list (refresh failed: {str(e)})"
+             return web.json_response(
+                {"ok": True, "provider": provider, "models": models, "cached": True, "warning": warning}
+            )
         return web.json_response({"ok": False, "error": str(e)}, status=500)
 
 
@@ -331,6 +371,8 @@ async def config_put_handler(request: web.Request) -> web.Response:
     PUT /moltbot/config
     Updates non-secret LLM config. Protected by admin boundary (S13) + CSRF (S26+).
     """
+    if web is None:
+        raise RuntimeError("aiohttp not available")
     # S26+: CSRF protection for convenience mode
     admin_token_configured = bool(get_admin_token())
     resp = require_same_origin_if_no_token(request, admin_token_configured)
@@ -427,6 +469,8 @@ async def llm_test_handler(request: web.Request) -> web.Response:
     POST /moltbot/llm/test
     Tests LLM connection. Protected by admin boundary (S13) + CSRF (S26+).
     """
+    if web is None:
+        raise RuntimeError("aiohttp not available")
     try:
         from ..services.async_utils import run_in_thread
     except ImportError:

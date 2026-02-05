@@ -108,7 +108,7 @@ export const settingsTab = {
             const refreshModelsBtn = document.createElement("button");
             refreshModelsBtn.className = "moltbot-btn moltbot-btn-secondary";
             refreshModelsBtn.textContent = "Load Models";
-            refreshModelsBtn.disabled = sources.provider === "env";
+            refreshModelsBtn.disabled = false;
             refreshModelsBtn.title = "Fetch remote model list (admin boundary).";
 
             const modelsStatus = document.createElement("div");
@@ -142,7 +142,7 @@ export const settingsTab = {
                     modelsStatus.textContent = `✗ ${detail}`;
                     modelsStatus.className = "moltbot-status error";
                 }
-                refreshModelsBtn.disabled = sources.provider === "env";
+                refreshModelsBtn.disabled = false;
             };
 
             modelWrap.appendChild(modelInput);
