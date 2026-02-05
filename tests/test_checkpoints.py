@@ -1,18 +1,24 @@
-
 import json
 import os
 import shutil
-import unittest
 import time
-from unittest.mock import patch, MagicMock
+import unittest
+from unittest.mock import MagicMock, patch
+
 from services import checkpoints
-from services.checkpoints import list_checkpoints, get_checkpoint, create_checkpoint, delete_checkpoint
+from services.checkpoints import (
+    create_checkpoint,
+    delete_checkpoint,
+    get_checkpoint,
+    list_checkpoints,
+)
 
 # Use a temp dir for testing
 TEST_DATA_DIR = os.path.join(os.path.dirname(__file__), "test_data_checkpoints")
 
+
 class TestCheckpointsService(unittest.TestCase):
-    
+
     def setUp(self):
         # Override DATA_DIR for tests
         self.original_dir = checkpoints.CHECKPOINTS_DIR
@@ -32,17 +38,17 @@ class TestCheckpointsService(unittest.TestCase):
         meta = create_checkpoint("Test 1", workflow, "Desc 1")
         self.assertIsNotNone(meta["id"])
         self.assertEqual(meta["name"], "Test 1")
-        
+
         # List
         lst = list_checkpoints()
         self.assertEqual(len(lst), 1)
         self.assertEqual(lst[0]["id"], meta["id"])
-        
+
         # Get
         full = get_checkpoint(meta["id"])
         self.assertEqual(full["id"], meta["id"])
         self.assertEqual(full["workflow"], workflow)
-        
+
         # Delete
         delete_checkpoint(meta["id"])
         self.assertEqual(len(list_checkpoints()), 0)
@@ -52,23 +58,23 @@ class TestCheckpointsService(unittest.TestCase):
         # Reduce limit for test
         original_max = checkpoints.MAX_CHECKPOINTS
         checkpoints.MAX_CHECKPOINTS = 2
-        
+
         try:
             # Create 3
             meta1 = create_checkpoint("1", {})
-            time.sleep(0.01) # ensure timestamp diff
+            time.sleep(0.01)  # ensure timestamp diff
             meta2 = create_checkpoint("2", {})
             time.sleep(0.01)
             meta3 = create_checkpoint("3", {})
-            
+
             lst = list_checkpoints()
             self.assertEqual(len(lst), 2)
-            
+
             ids = [x["id"] for x in lst]
             self.assertIn(meta3["id"], ids)
             self.assertIn(meta2["id"], ids)
-            self.assertNotIn(meta1["id"], ids) # Oldest evicted
-            
+            self.assertNotIn(meta1["id"], ids)  # Oldest evicted
+
         finally:
             checkpoints.MAX_CHECKPOINTS = original_max
 
@@ -83,11 +89,12 @@ class TestCheckpointsService(unittest.TestCase):
         long_name = "x" * 101
         with self.assertRaises(ValueError):
             create_checkpoint(long_name, {})
-            
+
         # Description too long
         long_desc = "x" * 501
         with self.assertRaises(ValueError):
             create_checkpoint("Valid Name", {}, long_desc)
+
 
 if __name__ == "__main__":
     unittest.main()

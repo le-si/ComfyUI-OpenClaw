@@ -1,6 +1,6 @@
 
 import { moltbotApi } from "../openclaw_api.js";
-import { makeEl, showToast } from "../openclaw_ui.js";
+import { makeEl, showToast } from "../openclaw_utils.js";
 
 /**
  * F28: Explorer Tab

@@ -2,6 +2,7 @@
 Checkpoints API Handlers (R47).
 Exposes endpoints for listing, creating, retrieving, and deleting workflow checkpoints.
 """
+
 from __future__ import annotations
 
 import json
@@ -17,13 +18,23 @@ except ImportError:
 if __package__ and "." in __package__:
     from ..models.schemas import MAX_BODY_SIZE
     from ..services.access_control import is_loopback, require_admin_token
-    from ..services.checkpoints import create_checkpoint, delete_checkpoint, get_checkpoint, list_checkpoints
+    from ..services.checkpoints import (
+        create_checkpoint,
+        delete_checkpoint,
+        get_checkpoint,
+        list_checkpoints,
+    )
     from ..services.rate_limit import check_rate_limit
     from ..services.request_ip import get_client_ip
 else:  # pragma: no cover (test-only import mode)
     from models.schemas import MAX_BODY_SIZE  # type: ignore
     from services.access_control import is_loopback, require_admin_token  # type: ignore
-    from services.checkpoints import create_checkpoint, delete_checkpoint, get_checkpoint, list_checkpoints  # type: ignore
+    from services.checkpoints import (  # type: ignore
+        create_checkpoint,
+        delete_checkpoint,
+        get_checkpoint,
+        list_checkpoints,
+    )
     from services.rate_limit import check_rate_limit  # type: ignore
     from services.request_ip import get_client_ip  # type: ignore
 
@@ -34,12 +45,17 @@ logger = logging.getLogger("ComfyUI-OpenClaw.api.checkpoints")
 def _json_resp(data: Dict[str, Any], status: int = 200) -> web.Response:
     return web.json_response(data, status=status)
 
+
 def _remote_admin_allowed() -> bool:
     val = (
-        os.environ.get("OPENCLAW_ALLOW_REMOTE_ADMIN")
-        or os.environ.get("MOLTBOT_ALLOW_REMOTE_ADMIN")
-        or ""
-    ).strip().lower()
+        (
+            os.environ.get("OPENCLAW_ALLOW_REMOTE_ADMIN")
+            or os.environ.get("MOLTBOT_ALLOW_REMOTE_ADMIN")
+            or ""
+        )
+        .strip()
+        .lower()
+    )
     return val in ("1", "true", "yes", "on")
 
 
@@ -60,8 +76,9 @@ def _deny_remote_admin_if_needed(request: web.Request) -> web.Response | None:
 
 async def list_checkpoints_handler(request: web.Request) -> web.Response:
     """GET /openclaw/checkpoints"""
-    if web is None: raise RuntimeError("aiohttp not available")
-    
+    if web is None:
+        raise RuntimeError("aiohttp not available")
+
     if not check_rate_limit(request, "admin"):
         return _json_resp({"ok": False, "error": "rate_limit_exceeded"}, 429)
 
@@ -82,20 +99,22 @@ async def list_checkpoints_handler(request: web.Request) -> web.Response:
 
 async def create_checkpoint_handler(request: web.Request) -> web.Response:
     """POST /openclaw/checkpoints"""
-    if web is None: raise RuntimeError("aiohttp not available")
+    if web is None:
+        raise RuntimeError("aiohttp not available")
 
     if not check_rate_limit(request, "admin"):
         return _json_resp({"ok": False, "error": "rate_limit_exceeded"}, 429)
 
     # Body Size Check
     if request.content_length and request.content_length > MAX_BODY_SIZE:
-         return _json_resp({"ok": False, "error": "payload_too_large"}, 413)
+        return _json_resp({"ok": False, "error": "payload_too_large"}, 413)
 
     try:
         data = await request.json()
     except Exception:
         return _json_resp({"ok": False, "error": "invalid_json"}, 400)
 
+    # Admin boundary (localhost convenience mode if no token configured)
     allowed, error = require_admin_token(request)
     if not allowed:
         return _json_resp({"ok": False, "error": error or "unauthorized"}, 403)
@@ -103,18 +122,21 @@ async def create_checkpoint_handler(request: web.Request) -> web.Response:
     if deny_resp:
         return deny_resp
 
+    # Extract info
     workflow = data.get("workflow") or data.get("prompt")
     name = data.get("name", "Untitled Snapshot")
     description = data.get("description", "")
 
     if not workflow or not isinstance(workflow, dict):
-         return _json_resp({"ok": False, "error": "missing_workflow"}, 400)
+        return _json_resp({"ok": False, "error": "missing_workflow"}, 400)
 
     try:
         meta = create_checkpoint(name, workflow, description)
         return _json_resp({"ok": True, "checkpoint": meta}, 201)
     except ValueError as e:
-        return _json_resp({"ok": False, "error": "validation_error", "detail": str(e)}, 400)
+        return _json_resp(
+            {"ok": False, "error": "validation_error", "detail": str(e)}, 400
+        )
     except Exception as e:
         logger.exception("Create checkpoint failed")
         return _json_resp({"ok": False, "error": str(e)}, 500)
@@ -122,7 +144,8 @@ async def create_checkpoint_handler(request: web.Request) -> web.Response:
 
 async def get_checkpoint_handler(request: web.Request) -> web.Response:
     """GET /openclaw/checkpoints/{id}"""
-    if web is None: raise RuntimeError("aiohttp not available")
+    if web is None:
+        raise RuntimeError("aiohttp not available")
 
     checkpoint_id = request.match_info.get("id")
     if not checkpoint_id:
@@ -147,11 +170,12 @@ async def get_checkpoint_handler(request: web.Request) -> web.Response:
 
 async def delete_checkpoint_handler(request: web.Request) -> web.Response:
     """DELETE /openclaw/checkpoints/{id}"""
-    if web is None: raise RuntimeError("aiohttp not available")
+    if web is None:
+        raise RuntimeError("aiohttp not available")
 
     checkpoint_id = request.match_info.get("id")
     if not checkpoint_id:
-         return _json_resp({"ok": False, "error": "missing_id"}, 400)
+        return _json_resp({"ok": False, "error": "missing_id"}, 400)
 
     allowed, error = require_admin_token(request)
     if not allowed:

@@ -134,7 +134,7 @@ async def secrets_put_handler(request: web.Request) -> web.Response:
 
     Save API key to server store.
 
-    Body: {"provider": "openai"|"anthropic"|"generic", "api_key": "sk-..."}
+    Body: {"provider": "openai"|"anthropic"|"generic", "api_key": "<YOUR_API_KEY>"}
 
     Security:
     - Admin-gated

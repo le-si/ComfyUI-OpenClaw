@@ -238,7 +238,7 @@ async def llm_models_handler(request: web.Request) -> web.Response:
     provider_override = (request.query.get("provider") or "").strip().lower()
     effective, _sources = get_effective_config()
     provider = provider_override or (effective.get("provider") or "openai")
-    
+
     # Resolve Base URL (Runtime config > Catalog Default)
     # Allows users to override base_url for standard providers (e.g. self-hosted OpenAI compat)
     runtime_base_url = (effective.get("base_url") or "").strip()
@@ -268,15 +268,18 @@ async def llm_models_handler(request: web.Request) -> web.Response:
     # Priority: Runtime URL -> Info Default
     base_url = runtime_base_url if runtime_base_url else info.base_url
     if not base_url:
-         return web.json_response(
-            {"ok": False, "error": f"No base URL configured for provider '{provider}'."},
+        return web.json_response(
+            {
+                "ok": False,
+                "error": f"No base URL configured for provider '{provider}'.",
+            },
             status=400,
         )
 
     # Cache Key: (provider, base_url)
     # This ensures switching base_url (e.g. from OpenAI to local proxy) doesn't use stale cache.
     cache_key = (provider, base_url)
-    
+
     # Check Cache
     now = time.time()
     cached_entry = _MODEL_LIST_CACHE.get(cache_key)
@@ -336,20 +339,26 @@ async def llm_models_handler(request: web.Request) -> web.Response:
             body = resp.read(1_000_000)
         payload = json.loads(body.decode("utf-8", errors="replace"))
         models = _extract_models_from_payload(payload)
-        
+
         # Update Cache
         _MODEL_LIST_CACHE[cache_key] = (now, models)
-        
+
         return web.json_response(
             {"ok": True, "provider": provider, "models": models, "cached": False}
         )
     except urllib.error.HTTPError as e:
         # Fallback Check
         if cached_entry:
-             ts, models = cached_entry
-             warning = f"Using cached list (refresh failed: HTTP {e.code} {e.reason})"
-             return web.json_response(
-                {"ok": True, "provider": provider, "models": models, "cached": True, "warning": warning}
+            ts, models = cached_entry
+            warning = f"Using cached list (refresh failed: HTTP {e.code} {e.reason})"
+            return web.json_response(
+                {
+                    "ok": True,
+                    "provider": provider,
+                    "models": models,
+                    "cached": True,
+                    "warning": warning,
+                }
             )
         return web.json_response(
             {"ok": False, "error": f"HTTP error {e.code}: {e.reason}"}, status=502
@@ -358,10 +367,16 @@ async def llm_models_handler(request: web.Request) -> web.Response:
         logger.exception("Failed to fetch model list")
         # Fallback Check
         if cached_entry:
-             ts, models = cached_entry
-             warning = f"Using cached list (refresh failed: {str(e)})"
-             return web.json_response(
-                {"ok": True, "provider": provider, "models": models, "cached": True, "warning": warning}
+            ts, models = cached_entry
+            warning = f"Using cached list (refresh failed: {str(e)})"
+            return web.json_response(
+                {
+                    "ok": True,
+                    "provider": provider,
+                    "models": models,
+                    "cached": True,
+                    "warning": warning,
+                }
             )
         return web.json_response({"ok": False, "error": str(e)}, status=500)
 

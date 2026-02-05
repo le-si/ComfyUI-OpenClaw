@@ -4,6 +4,15 @@
 # Install: pip install pre-commit && pre-commit install
 # Update baseline: detect-secrets scan --baseline .secrets.baseline
 
+exclude: |
+  (?x)^(
+    REFERENCE/.*|
+    node_modules/.*|
+    test-results/.*|
+    playwright-report/.*|
+    playwright/\\.cache/.*
+  )$
+
 repos:
   # Secret detection
   - repo: https://github.com/Yelp/detect-secrets
@@ -11,8 +20,6 @@ repos:
     hooks:
       - id: detect-secrets
         args:
-          - --config
-          - .detect-secrets.cfg
           - --baseline
           - .secrets.baseline
         exclude: |

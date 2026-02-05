@@ -31,7 +31,16 @@ export async function mockComfyUiCore(page) {
 }
 
 export async function waitForMoltbotReady(page) {
-  await page.waitForFunction(() => window.__moltbotTestReady === true, null, { timeout: 30_000 });
+  await page.waitForFunction(
+    () => window.__moltbotTestReady === true || window.__moltbotTestError,
+    null,
+    { timeout: 30_000 }
+  );
+
+  const error = await page.evaluate(() => window.__moltbotTestError);
+  if (error) {
+    throw new Error(`OpenClaw test harness failed to load: ${error?.message || error}`);
+  }
 
   // Basic sanity: header + tab bar exists
   await expect(page.locator('.moltbot-header')).toBeVisible();

@@ -4,6 +4,46 @@
  */
 
 /**
+ * Simple DOM factory helper.
+ * @param {string} tag - HTML tag name
+ * @param {string} className - Optional class name
+ * @param {string} text - Optional text content
+ */
+export function makeEl(tag, className = "", text = "") {
+    const el = document.createElement(tag);
+    if (className) el.className = className;
+    if (text !== undefined && text !== null && text !== "") {
+        el.textContent = text;
+    }
+    return el;
+}
+
+/**
+ * Lightweight toast helper for UI feedback.
+ * @param {string} message
+ * @param {"info"|"error"|"success"} variant
+ */
+export function showToast(message, variant = "info") {
+    const toast = document.createElement("div");
+    toast.className = `moltbot-toast moltbot-toast-${variant}`;
+    toast.textContent = message;
+    toast.style.position = "fixed";
+    toast.style.right = "16px";
+    toast.style.bottom = "16px";
+    toast.style.padding = "8px 12px";
+    toast.style.borderRadius = "6px";
+    toast.style.background = variant === "error" ? "#5a1e1e" : (variant === "success" ? "#1e5a2b" : "#2d2d2d");
+    toast.style.color = "#fff";
+    toast.style.zIndex = "9999";
+    toast.style.boxShadow = "0 4px 12px rgba(0,0,0,0.3)";
+    document.body.appendChild(toast);
+
+    setTimeout(() => {
+        toast.remove();
+    }, 2500);
+}
+
+/**
  * Display an error message within a container.
  * Looks for an existing .moltbot-error-box, or creates one at the top.
  */

@@ -14,6 +14,7 @@ except Exception:  # pragma: no cover
     def unittest_run_loop(fn):  # type: ignore
         return fn
 
+
 from api.checkpoints_handler import (
     create_checkpoint_handler,
     delete_checkpoint_handler,
@@ -85,7 +86,10 @@ class TestCheckpointsAPI(AioHTTPTestCase):
         self.assertEqual(resp.status, 404)
 
     @patch("api.checkpoints_handler.check_rate_limit", return_value=True)
-    @patch("api.checkpoints_handler.require_admin_token", return_value=(False, "invalid_admin_token"))
+    @patch(
+        "api.checkpoints_handler.require_admin_token",
+        return_value=(False, "invalid_admin_token"),
+    )
     @unittest_run_loop
     async def test_auth_denied(self, _mock_admin, _mock_rl):
         resp = await self.client.get("/openclaw/checkpoints")

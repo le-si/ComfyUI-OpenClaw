@@ -546,8 +546,8 @@ function createCollapsibleSection(title, description, defaultExpanded = false) {
           <li>ENV keys always take priority over stored keys.</li>
           <li>Secrets are stored as plaintext JSON on disk (protected by OS permissions).</li>
         </ul>
-        <p><b>PowerShell</b>: <code>$env:OPENCLAW_LLM_API_KEY="sk-..."</code></p>
-        <p><b>CMD</b>: <code>set OPENCLAW_LLM_API_KEY=sk-...</code></p>
+        <p><b>PowerShell</b>: <code>$env:OPENCLAW_LLM_API_KEY="&lt;YOUR_API_KEY&gt;"</code></p>
+        <p><b>CMD</b>: <code>set OPENCLAW_LLM_API_KEY=&lt;YOUR_API_KEY&gt;</code></p>
         `
     );
     titleWrap.appendChild(helpBtn);
