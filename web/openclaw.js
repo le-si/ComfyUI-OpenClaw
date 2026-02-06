@@ -18,21 +18,7 @@ import { LibraryTab } from "./tabs/library_tab.js";
 import { ApprovalsTab } from "./tabs/approvals_tab.js";
 import { ExplorerTab } from "./tabs/explorer_tab.js";
 
-function isExtensionEnabled() {
-    try {
-        return app?.ui?.settings?.getSettingValue?.("Moltbot.General.Enable", true) !== false;
-    } catch (e) {
-        return true;
-    }
-}
 
-function isErrorBoundariesEnabled() {
-    try {
-        return app?.ui?.settings?.getSettingValue?.("Moltbot.General.ErrorBoundaries", true) !== false;
-    } catch (e) {
-        return true;
-    }
-}
 
 function ensureCssInjected(id, href) {
     if (document.getElementById(id)) return;
@@ -130,22 +116,34 @@ app.registerExtension({
     async setup() {
         console.log("[OpenClaw] Extension loading...");
 
+        // F26: Boot Diagnostics
+        if (typeof fetchApi !== "function") {
+            console.warn("[OpenClaw] ⚠️ Critical: fetchApi shim is missing. Backend calls may fail.");
+        }
+        if (!app) {
+            console.warn("[OpenClaw] ⚠️ Critical: ComfyUI 'app' instance is missing.");
+        } else {
+            // Try to log version if available (ComfyUI doesn't standardly expose it in app object easily,
+            // but we can log that we hooked it).
+            console.log("[OpenClaw] Hooked into ComfyUI app instance.");
+        }
+
         // Register Settings (F7)
         if (app?.ui?.settings?.addSetting) {
             app.ui.settings.addSetting({
-                id: "Moltbot.General.Enable",
+                id: "OpenClaw.General.Enable",
                 name: "Enable OpenClaw (requires restart)",
                 type: "boolean",
                 defaultValue: true,
             });
             app.ui.settings.addSetting({
-                id: "Moltbot.General.ErrorBoundaries",
+                id: "OpenClaw.General.ErrorBoundaries",
                 name: "Enable Error Boundaries (requires restart)",
                 type: "boolean",
                 defaultValue: true,
             });
             app.ui.settings.addSetting({
-                id: "Moltbot.Info",
+                id: "OpenClaw.Info",
                 name: "ℹ️ Configure OpenClaw in the sidebar (left panel)",
                 type: "text",
                 defaultValue: "",
@@ -153,7 +151,19 @@ app.registerExtension({
             });
         }
 
-        if (!isExtensionEnabled()) {
+        // Helper to read settings with backward compatibility
+        const getSetting = (key, def) => {
+            if (!app?.ui?.settings?.getSettingValue) return def;
+            // 1. Try new key
+            let val = app.ui.settings.getSettingValue(`OpenClaw.${key}`, undefined);
+            if (val !== undefined) return val;
+            // 2. Try legacy key
+            val = app.ui.settings.getSettingValue(`Moltbot.${key}`, undefined);
+            if (val !== undefined) return val;
+            return def;
+        };
+
+        if (getSetting("General.Enable", true) === false) {
             console.log("[OpenClaw] Extension disabled via settings");
             return;
         }
@@ -162,29 +172,44 @@ app.registerExtension({
         ensureOpenClawCssInjected();
 
         // Optional hardening (R6)
-        if (isErrorBoundariesEnabled()) {
+        if (getSetting("General.ErrorBoundaries", true)) {
             ensureErrorBoundaryCssInjected();
             installGlobalErrorHandlers();
         }
 
         // Register Tabs Dynamics
-        await registerSupportedTabs();
+        try {
+            await registerSupportedTabs();
+        } catch (e) {
+            console.error("[OpenClaw] Critical error registering tabs:", e);
+            // Ensure core tabs are registered even if capabilities failed catastrophically
+            tabManager.registerTab(settingsTab);
+        }
 
         // Preferred: modern sidebar API
-        if (app?.extensionManager?.registerSidebarTab) {
-            app.extensionManager.registerSidebarTab({
-                id: "comfyui-openclaw",
-                icon: "pi pi-bolt",
-                title: "OpenClaw",
-                tooltip: "OpenClaw: AI assistant for ComfyUI",
-                type: "custom",
-                render: (container) => {
-                    moltbotUI.mount(container);
-                },
-            });
-        } else {
+        try {
+            if (app?.extensionManager?.registerSidebarTab) {
+                app.extensionManager.registerSidebarTab({
+                    id: "comfyui-openclaw",
+                    icon: "pi pi-bolt",
+                    title: "OpenClaw",
+                    tooltip: "OpenClaw: AI assistant for ComfyUI",
+                    type: "custom",
+                    render: (container) => {
+                        try {
+                            moltbotUI.mount(container);
+                        } catch (renderError) {
+                            console.error("[OpenClaw] UI Mount Error:", renderError);
+                            container.innerHTML = `<div style="padding:10px; color:red">UI Crash: ${renderError.message}</div>`;
+                        }
+                    },
+                });
+            } else {
+                throw new Error("Sidebar API missing");
+            }
+        } catch (e) {
             // Legacy fallback: left menu button + floating panel
-            console.log("[OpenClaw] Sidebar API not found, using legacy menu button");
+            console.log("[OpenClaw] Sidebar API not found or failed, using legacy menu button:", e);
             installLegacyMenuButton();
         }
 

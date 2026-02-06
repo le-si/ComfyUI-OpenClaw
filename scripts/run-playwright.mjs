@@ -59,7 +59,7 @@ function ensurePlaywrightBrowsersIfNeeded() {
   }
   if (res.status !== 0) {
     console.error(`[OpenClaw] Playwright install failed with exit code ${res.status}`);
-    process.exit(res.status ?? 1);
+    process.exit(res.status === undefined || res.status === null ? 1 : res.status);
   }
 }
 

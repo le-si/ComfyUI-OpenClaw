@@ -42,13 +42,14 @@ repos:
       - id: check-added-large-files
         args: ['--maxkb=500']
 
-  # Python formatting (optional but recommended)
-  - repo: https://github.com/psf/black
-    rev: 24.1.1
+  # Python formatting (single-file execution to avoid multiprocessing socket issues)
+  - repo: local
     hooks:
-      - id: black
-        language_version: python3
-        args: ['--check', '--diff']
+      - id: black-single
+        name: black (single-file, no multiprocessing)
+        entry: bash -lc 'status=0; for f in "$@"; do python3 -m black --check --diff "$f" || status=$?; done; exit $status' --
+        language: system
+        types: [python]
         # Remove --check --diff to auto-format
 
   # Python import sorting

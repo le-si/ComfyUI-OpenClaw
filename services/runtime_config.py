@@ -129,15 +129,31 @@ def _save_file_config(config: Dict[str, Any]) -> bool:
 
 
 def _get_env_value(key: str) -> Optional[str]:
-    """Get environment variable value for a config key (prefers new names, falls back to legacy)."""
+    """
+    Get environment variable value for a config key (prefers new names, falls back to legacy).
+    Logs a warning exactly once per key if legacy variable is used.
+    """
     env_vars = ENV_MAPPINGS.get(key)
     if not env_vars:
         return None
     primary, legacy = env_vars
+
     # Respect explicit empty-string overrides: treat "present in env" as an override.
     if primary in os.environ:
         return os.environ.get(primary)
+
     if legacy in os.environ:
+        # Check if we've already warned for this key to avoid spam
+        if not getattr(_get_env_value, "_warned_legacy", None):
+            _get_env_value._warned_legacy = set()
+
+        if legacy not in _get_env_value._warned_legacy:
+            logger.warning(
+                f"Config: Using legacy environment variable {legacy}. "
+                f"Please update to {primary} in future versions."
+            )
+            _get_env_value._warned_legacy.add(legacy)
+
         return os.environ.get(legacy)
     return None
 

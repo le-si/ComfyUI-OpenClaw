@@ -27,7 +27,13 @@ except ImportError:
     from services.trace import get_effective_trace_id
     from services.webhook_auth import get_auth_summary, require_auth
 
-logger = logging.getLogger("ComfyUI-OpenClaw.api.webhook")
+try:
+    from ..services.diagnostics_flags import diagnostics
+except ImportError:
+    from services.diagnostics_flags import diagnostics
+
+# R46: Scoped logger for safe-by-default redaction
+logger = diagnostics.get_logger("ComfyUI-OpenClaw.api.webhook", "webhook")
 
 
 def safe_error_response(status: int, error: str, detail: str = "") -> web.Response:
@@ -80,6 +86,8 @@ async def webhook_handler(request: web.Request) -> web.Response:
         # Require auth
         valid, error = require_auth(request, raw_body)
         if not valid:
+            # R46: Use debug log for details (safe redaction), warning for summary
+            logger.debug(f"Webhook auth failed details", data={"error": error})
             logger.warning(f"Webhook auth failed: {error}")
             metrics.inc("webhook_denied")
 
@@ -96,6 +104,20 @@ async def webhook_handler(request: web.Request) -> web.Response:
         # Parse JSON
         try:
             data = json.loads(raw_body.decode("utf-8"))
+            # R46: Log payload if validation diagnostics enabled
+            if diagnostics.is_enabled("webhook.validate"):
+                # Use a separate logger for validation if we want specific granularity,
+                # or just reuse the main one but check the flag dynamically?
+                # Since logger is scoped to "webhook", we can check specific sub-flag here manually.
+                # Actually, let's just log to the main scoped logger, but with a clear prefix.
+                # Or create a sub-scope logger?
+                # For simplicity, reuse main logger but only call debug if specific intent matches?
+                # The 'diagnostics.get_logger' wraps 'debug' with 'is_enabled("webhook")'.
+                # If we want detailed validation logs only on "webhook.validate", we can do:
+                diagnostics.get_logger(
+                    "ComfyUI-OpenClaw.api.webhook.validate", "webhook.validate"
+                ).debug("Incoming Payload", data=data)
+
         except (json.JSONDecodeError, UnicodeDecodeError) as e:
             metrics.inc("webhook_denied")
             return safe_error_response(400, "invalid_json")

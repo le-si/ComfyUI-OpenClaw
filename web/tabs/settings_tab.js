@@ -20,11 +20,14 @@ export const settingsTab = {
         container.innerHTML = "";
 
         // If everything is 404, backend routes not registered
+
+        // -- UI Boot Diagnostics / Backend Warning --
         const all404 = [healthRes, logRes, configRes].every(r => r && r.ok === false && r.status === 404);
         if (all404) {
             const warn = createSection("Backend Not Loaded");
             const hint = document.createElement("div");
             hint.className = "moltbot-note";
+            hint.style.borderLeft = "4px solid #ff4444";
             hint.innerHTML = `
                 OpenClaw UI loaded, but the server endpoints returned <code>HTTP 404</code>.
                 This usually means ComfyUI did not load the Python part of this custom node pack.
@@ -43,11 +46,56 @@ export const settingsTab = {
             container.appendChild(warn);
         }
 
-        // -- Health Section --
+        // -- System Health & Diagnostics --
         const healthSec = createSection("System Health");
+
+        // F26: Diagnostics Block (Shim status + ComfyUI version)
+        const diagDetails = document.createElement("details");
+        diagDetails.style.marginBottom = "10px";
+        diagDetails.style.padding = "8px";
+        diagDetails.style.background = "var(--comfy-input-bg)";
+        diagDetails.style.borderRadius = "4px";
+        diagDetails.style.fontSize = "12px";
+        diagDetails.style.color = "var(--input-text)";
+
+        // Detect Shim
+        const hasShim = typeof window.comfyAPI?.fetchApi === "function" || typeof window.fetchApi === "function" || !!healthRes.ok;
+        // Note: fetchApi is imported in module scope, not global. If request worked, shim worked.
+        // Actually best check is if healthRes.ok or we can inspect 'moltbotApi.prefix' implicitly.
+
+        const packVer = (healthRes.ok && healthRes.data?.pack?.version) || "Unknown";
+        const basePath = (healthRes.ok && healthRes.data?.pack?.base_path) || "/openclaw (inferred)";
+        const comfyVersion = await detectComfyUiVersion(moltbotApi);
+
+        // Collapsed by default; auto-expand if errors
+        diagDetails.open = all404 || !hasShim;
+
+        const summary = document.createElement("summary");
+        summary.style.display = "flex";
+        summary.style.justifyContent = "space-between";
+        summary.style.alignItems = "center";
+        summary.style.cursor = "pointer";
+        summary.innerHTML = `
+            <span><b>UI Boot Status</b></span>
+            <span>${all404 ? "⚠️ Backend 404" : "✓ Connected"}</span>
+        `;
+
+        const body = document.createElement("div");
+        body.innerHTML = `
+            <div style="margin-top:4px; opacity:0.8;">
+                ComfyUI: ${comfyVersion || "Unknown"} | Pack: ${packVer} | Prefix: ${basePath}
+            </div>
+            <div style="margin-top:4px; font-size:11px; color:${hasShim ? "var(--input-text)" : "#ff6666"}">
+                Shim: ${hasShim ? "✓ Detected" : "⚠️ Missing (shim broken)"}
+            </div>
+        `;
+
+        diagDetails.appendChild(summary);
+        diagDetails.appendChild(body);
+        healthSec.appendChild(diagDetails);
+
         if (healthRes.ok) {
             const { pack, config, uptime_sec } = healthRes.data;
-            addRow(healthSec, "Ver", `${pack.version}`);
             addRow(healthSec, "Uptime", `${Math.floor(uptime_sec)}s`);
 
             const keyStatus = config.llm_key_configured
@@ -56,12 +104,14 @@ export const settingsTab = {
             const keyClass = (config.llm_key_configured || !config.llm_key_required) ? "ok" : "error";
             addRow(healthSec, "API Key", keyStatus, keyClass);
         } else {
-            addRow(healthSec, "Status", "Error", "error");
-            const detail = [
-                healthRes.status ? `HTTP ${healthRes.status}` : null,
-                healthRes.error || "request_failed",
-            ].filter(Boolean).join(" — ");
-            addRow(healthSec, "Detail", detail);
+            if (!all404) {
+                addRow(healthSec, "Status", "Error", "error");
+                const detail = [
+                    healthRes.status ? `HTTP ${healthRes.status}` : null,
+                    healthRes.error || "request_failed",
+                ].filter(Boolean).join(" — ");
+                addRow(healthSec, "Detail", detail);
+            }
         }
         container.appendChild(healthSec);
 
@@ -666,4 +716,61 @@ function addRow(container, key, val, valClass = "") {
     row.appendChild(k);
     row.appendChild(v);
     container.appendChild(row);
+}
+
+async function detectComfyUiVersion(api) {
+    const candidates = [
+        () => window?.COMFYUI_VERSION,
+        () => window?.comfyui_version,
+        () => window?.ComfyUI?.version,
+        () => window?.app?.version,
+        () => window?.app?.ui?.settings?.getSettingValue?.("ComfyUI.Version", null),
+        () => window?.app?.ui?.settings?.getSettingValue?.("comfyui.version", null),
+    ];
+
+    for (const get of candidates) {
+        try {
+            const v = normalizeVersion(get?.());
+            if (v) return v;
+        } catch { }
+    }
+
+    const endpoints = ["/system_stats", "/system_info", "/version"];
+    for (const path of endpoints) {
+        try {
+            const res = await api.fetch(path, { timeout: 1500 });
+            if (!res.ok) continue;
+            const v = extractComfyVersion(res.data);
+            if (v) return v;
+        } catch { }
+    }
+
+    return null;
+}
+
+function extractComfyVersion(data) {
+    if (!data) return null;
+    if (typeof data === "string") return normalizeVersion(data);
+    if (typeof data !== "object") return null;
+
+    const direct = normalizeVersion(data.comfyui_version || data.comfyuiVersion);
+    if (direct) return direct;
+
+    const nested = normalizeVersion(data.comfyui?.version || data.comfyui?.comfyui_version);
+    if (nested) return nested;
+
+    const system = normalizeVersion(data.system?.comfyui_version || data.system?.version);
+    if (system) return system;
+
+    const name = String(data.name || data.app || "").toLowerCase();
+    const namedVersion = normalizeVersion(data.version);
+    if (namedVersion && name.includes("comfy")) return namedVersion;
+
+    return null;
+}
+
+function normalizeVersion(value) {
+    if (value === null || value === undefined) return null;
+    const str = String(value).trim();
+    return str ? str : null;
 }

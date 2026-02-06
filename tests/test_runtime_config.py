@@ -12,6 +12,7 @@ import unittest
 from unittest.mock import patch
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+import logging
 
 
 class TestRuntimeConfig(unittest.TestCase):
@@ -40,6 +41,12 @@ class TestRuntimeConfig(unittest.TestCase):
             "MOLTBOT_LLM_MAX_RETRIES",
             "MOLTBOT_ENABLE_UI_CONFIG_WRITE",
             "MOLTBOT_ADMIN_TOKEN",
+            "OPENCLAW_LLM_PROVIDER",
+            "OPENCLAW_LLM_MODEL",
+            "OPENCLAW_LLM_BASE_URL",
+            "OPENCLAW_LLM_TIMEOUT",
+            "OPENCLAW_LLM_MAX_RETRIES",
+            "OPENCLAW_ADMIN_TOKEN",
         ]:
             os.environ.pop(key, None)
 
@@ -53,19 +60,56 @@ class TestRuntimeConfig(unittest.TestCase):
         self.assertEqual(sources["provider"], "default")
 
     def test_env_override(self):
-        """ENV vars should override defaults and file config."""
+        """ENV vars should override defaults and file config (Legacy)."""
         from services.runtime_config import get_effective_config
 
         with patch.dict(
             os.environ,
             {"MOLTBOT_LLM_PROVIDER": "anthropic", "MOLTBOT_LLM_MODEL": "claude-3"},
         ):
+            with self.assertLogs(
+                "ComfyUI-OpenClaw.services.runtime_config", level="WARNING"
+            ) as cm:
+                effective, sources = get_effective_config()
+                self.assertEqual(effective["provider"], "anthropic")
+                self.assertEqual(sources["provider"], "env")
+
+                # Verify warning log for legacy usage
+                self.assertTrue(
+                    any(
+                        "legacy environment variable MOLTBOT_LLM_PROVIDER" in o
+                        for o in cm.output
+                    )
+                )
+
+    def test_env_override_openclaw(self):
+        """OPENCLAW ENV vars should override defaults."""
+        from services.runtime_config import get_effective_config
+
+        with patch.dict(
+            os.environ,
+            {"OPENCLAW_LLM_PROVIDER": "gemini", "OPENCLAW_LLM_MODEL": "gemini-pro"},
+        ):
             effective, sources = get_effective_config()
 
-            self.assertEqual(effective["provider"], "anthropic")
-            self.assertEqual(effective["model"], "claude-3")
+            self.assertEqual(effective["provider"], "gemini")
+            self.assertEqual(effective["model"], "gemini-pro")
             self.assertEqual(sources["provider"], "env")
-            self.assertEqual(sources["model"], "env")
+
+    def test_env_precedence(self):
+        """OPENCLAW vars should take precedence over MOLTBOT vars."""
+        from services.runtime_config import get_effective_config
+
+        with patch.dict(
+            os.environ,
+            {
+                "OPENCLAW_LLM_PROVIDER": "openclaw-provider",
+                "MOLTBOT_LLM_PROVIDER": "legacy-provider",
+            },
+        ):
+            effective, sources = get_effective_config()
+            self.assertEqual(effective["provider"], "openclaw-provider")
+            # Should NOT log warning if primary is found (legacy is ignored)
 
     def test_validate_provider(self):
         """Should reject unknown providers."""
@@ -177,10 +221,13 @@ class TestRuntimeConfig(unittest.TestCase):
         # No token configured: convenience mode (caller must still enforce loopback-only).
         self.assertTrue(validate_admin_token("any"))
 
-        # With token
+        # With token (Legacy)
         with patch.dict(os.environ, {"MOLTBOT_ADMIN_TOKEN": "secret123"}):
             self.assertTrue(validate_admin_token("secret123"))
-            self.assertFalse(validate_admin_token("wrong"))
+
+        # With token (New)
+        with patch.dict(os.environ, {"OPENCLAW_ADMIN_TOKEN": "newsecret"}):
+            self.assertTrue(validate_admin_token("newsecret"))
 
 
 if __name__ == "__main__":

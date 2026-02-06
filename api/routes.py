@@ -3,29 +3,8 @@ API routes for observability endpoints.
 Registers /openclaw/* endpoints (and legacy /moltbot/*) against ComfyUI PromptServer.
 """
 
-from __future__ import annotations
-
-import json
-import os
-import sys
-import time
-
-try:
-    from aiohttp import web  # type: ignore
-except ModuleNotFoundError:  # pragma: no cover (optional for unit tests)
-    web = None  # type: ignore
-
-PACK_NAME = PACK_VERSION = PACK_START_TIME = LOG_FILE = get_api_key = None  # type: ignore
-metrics = tail_log = require_observability_access = check_rate_limit = trace_store = None  # type: ignore
-webhook_handler = webhook_submit_handler = webhook_validate_handler = capabilities_handler = preflight_handler = None  # type: ignore
-config_get_handler = config_put_handler = llm_test_handler = llm_models_handler = None  # type: ignore
-secrets_status_handler = secrets_put_handler = secrets_delete_handler = None  # type: ignore
-list_checkpoints_handler = create_checkpoint_handler = get_checkpoint_handler = delete_checkpoint_handler = None  # type: ignore
-"""
-API routes for observability endpoints.
-Registers /openclaw/* endpoints (and legacy /moltbot/*) against ComfyUI PromptServer.
-"""
-
+# IMPORTANT: __future__ imports MUST be the first non-docstring line in the file.
+# Do not move this import or insert code above it, or ComfyUI route registration will fail.
 from __future__ import annotations
 
 import json
@@ -69,9 +48,14 @@ if web is not None:
         from ..api.webhook import webhook_handler
         from ..api.webhook_submit import webhook_submit_handler
         from ..api.webhook_validate import webhook_validate_handler
-        from ..config import LOG_FILE, PACK_NAME, VERSION, config_path
+
+        # IMPORTANT: use PACK_VERSION / PACK_START_TIME from config.
+        # Do NOT import VERSION or config_path (they do not exist) or route registration will fail.
+        from ..config import LOG_FILE, PACK_NAME, PACK_START_TIME, PACK_VERSION
         from ..services.rate_limit import check_rate_limit
-        from ..services.trace import trace
+
+        # IMPORTANT: services.trace does NOT expose a `trace` symbol.
+        # Do not import `trace` here or route registration will fail.
         from ..services.trace_store import trace_store
     else:  # pragma: no cover (test-only import mode)
         from api.capabilities import capabilities_handler
@@ -92,7 +76,13 @@ if web is not None:
         from api.webhook import webhook_handler
         from api.webhook_submit import webhook_submit_handler
         from api.webhook_validate import webhook_validate_handler
+
+        # IMPORTANT: keep PACK_* imports aligned with config.py (VERSION/config_path do not exist).
+        from config import LOG_FILE, PACK_NAME, PACK_START_TIME, PACK_VERSION
         from services.redaction import redact_text  # type: ignore
+
+        # IMPORTANT: services.trace does NOT expose a `trace` symbol.
+        # Do not import `trace` here or route registration will fail.
         from services.trace_store import trace_store  # type: ignore
 
 
@@ -354,6 +344,13 @@ def register_dual_route(server, method: str, path: str, handler) -> None:
     and directly to the aiohttp router with and without /api prefix
     to ensure robustness against loading order (R26/F24).
     """
+    # IMPORTANT: handler MUST be callable. If imports fail, handlers remain None.
+    # Registering a None handler crashes ComfyUI at startup (aiohttp assertion).
+    if not callable(handler):
+        print(
+            f"[OpenClaw] Warning: Skipping route {method} {path} because handler is missing (None)."
+        )
+        return
     # 1. Standard ComfyUI registration
     if method == "GET":
         server.routes.get(path)(handler)
