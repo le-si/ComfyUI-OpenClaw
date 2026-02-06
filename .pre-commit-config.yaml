@@ -42,13 +42,14 @@ repos:
       - id: check-added-large-files
         args: ['--maxkb=500']
 
-  # Python formatting (single-file execution to avoid multiprocessing socket issues)
+  # Python formatting (cross-platform, single-file runner to avoid black multiprocessing issues)
   - repo: local
     hooks:
       - id: black-single
-        name: black (single-file, no multiprocessing)
-        entry: bash -lc 'status=0; for f in "$@"; do python3 -m black --check --diff "$f" || status=$?; done; exit $status' --
-        language: system
+        name: black (single-file)
+        entry: python scripts/precommit_black_single.py
+        language: python
+        additional_dependencies: ['black==24.1.1']
         types: [python]
         # Remove --check --diff to auto-format
 

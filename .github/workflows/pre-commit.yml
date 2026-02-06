@@ -23,8 +23,11 @@ jobs:
         with:
           python-version: "3.11"
 
-      - name: Install pre-commit
-        run: pip install pre-commit
+      - name: Install pre-commit (and formatters)
+        run: |
+          # Install black/isort explicitly so CI doesn't fail due to missing tools
+          # if a hook is configured to run via system python.
+          pip install pre-commit black==24.1.1 isort==5.13.2
 
       - name: Run all pre-commit hooks
         run: pre-commit run --all-files --show-diff-on-failure

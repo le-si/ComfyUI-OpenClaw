@@ -44,7 +44,11 @@ if web is not None:
             llm_test_handler,
         )
         from ..api.preflight_handler import inventory_handler, preflight_handler
-        from ..api.secrets import secrets_delete_handler, secrets_put_handler
+        from ..api.secrets import (
+            secrets_delete_handler,
+            secrets_put_handler,
+            secrets_status_handler,
+        )
         from ..api.webhook import webhook_handler
         from ..api.webhook_submit import webhook_submit_handler
         from ..api.webhook_validate import webhook_validate_handler
@@ -52,7 +56,15 @@ if web is not None:
         # IMPORTANT: use PACK_VERSION / PACK_START_TIME from config.
         # Do NOT import VERSION or config_path (they do not exist) or route registration will fail.
         from ..config import LOG_FILE, PACK_NAME, PACK_START_TIME, PACK_VERSION
+
+        # CRITICAL: These imports MUST remain present.
+        # If edited out, module-level placeholders stay as None and handlers raise at runtime
+        # (e.g., TypeError: 'NoneType' object is not callable), producing noisy aiohttp tracebacks.
+        from ..services.access_control import require_observability_access
+        from ..services.log_tail import tail_log
+        from ..services.metrics import metrics
         from ..services.rate_limit import check_rate_limit
+        from ..services.redaction import redact_text
 
         # IMPORTANT: services.trace does NOT expose a `trace` symbol.
         # Do not import `trace` here or route registration will fail.
@@ -72,13 +84,21 @@ if web is not None:
             llm_test_handler,
         )
         from api.preflight_handler import inventory_handler, preflight_handler
-        from api.secrets import secrets_delete_handler, secrets_put_handler
+        from api.secrets import (
+            secrets_delete_handler,
+            secrets_put_handler,
+            secrets_status_handler,
+        )
         from api.webhook import webhook_handler
         from api.webhook_submit import webhook_submit_handler
         from api.webhook_validate import webhook_validate_handler
 
         # IMPORTANT: keep PACK_* imports aligned with config.py (VERSION/config_path do not exist).
         from config import LOG_FILE, PACK_NAME, PACK_START_TIME, PACK_VERSION
+        from services.access_control import require_observability_access  # type: ignore
+        from services.log_tail import tail_log  # type: ignore
+        from services.metrics import metrics  # type: ignore
+        from services.rate_limit import check_rate_limit  # type: ignore
         from services.redaction import redact_text  # type: ignore
 
         # IMPORTANT: services.trace does NOT expose a `trace` symbol.
@@ -93,6 +113,29 @@ def check_dependency(module_name: str) -> bool:
         return True
     except ImportError:
         return False
+
+
+def _ensure_observability_deps_ready() -> tuple[bool, str | None]:
+    """
+    Defensive guard against a recurring class of regressions:
+    if the import block above is edited incorrectly, the module-level
+    placeholders stay as None and handlers raise TypeError at runtime.
+    """
+    missing: list[str] = []
+    if not callable(require_observability_access):
+        missing.append("require_observability_access")
+    if not callable(check_rate_limit):
+        missing.append("check_rate_limit")
+    if not callable(tail_log):
+        missing.append("tail_log")
+    if missing:
+        return (
+            False,
+            "Backend not fully initialized (missing route dependencies: "
+            + ", ".join(missing)
+            + ").",
+        )
+    return True, None
 
 
 async def health_handler(request: web.Request) -> web.Response:
@@ -201,6 +244,9 @@ async def logs_tail_handler(request: web.Request) -> web.Response:
     """GET /moltbot/logs/tail - Returns the last N lines of the log file."""
     if web is None:
         raise RuntimeError("aiohttp not available")
+    ok, init_error = _ensure_observability_deps_ready()
+    if not ok:
+        return web.json_response({"ok": False, "error": init_error}, status=500)
     # S14: Access Control
     allowed, error = require_observability_access(request)
     if not allowed:
@@ -301,6 +347,9 @@ async def trace_handler(request: web.Request) -> web.Response:
     """GET /moltbot/trace/{prompt_id} - Returns trace_id and redacted timeline."""
     if web is None:
         raise RuntimeError("aiohttp not available")
+    ok, init_error = _ensure_observability_deps_ready()
+    if not ok:
+        return web.json_response({"ok": False, "error": init_error}, status=500)
     allowed, error = require_observability_access(request)
     if not allowed:
         return web.json_response({"ok": False, "error": error}, status=403)

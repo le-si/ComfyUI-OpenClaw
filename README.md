@@ -308,8 +308,3 @@ python3 -m unittest discover -s tests -p "test_*.py"
 ## Security
 
 Read `SECURITY.md` before exposing any endpoint beyond localhost. The project is designed to be secure-by-default (deny-by-default auth, SSRF protections, redaction, bounded outputs), but unsafe deployment can still create risk.
-
-## Project planning
-
-- `ROADMAP.md` tracks feature status and priorities.
-- `.planning/` contains detailed plans and implementation records.

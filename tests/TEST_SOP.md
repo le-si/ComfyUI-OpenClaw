@@ -1,53 +1,52 @@
-﻿# Test SOP
+# Test SOP
 
-This document defines the **mandatory test workflow** for this repo. Follow it **before every push** unless explicitly skipping tests for a scoped reason.
+This document defines the **mandatory test workflow** for this repo. Run it **before every push** (unless you explicitly document why you’re skipping).
 
 ## Prerequisites
-- Python 3.10+
-- Node.js 20+
-- `pre-commit` installed (`pip install pre-commit`)
-- Playwright browsers installed (one-time): `npx playwright install chromium`
+- Python 3.10+ (CI uses 3.10/3.11)
+- Node.js 18+ (CI uses 20)
+- `pre-commit` installed: `python -m pip install pre-commit`
+- Frontend deps installed: `npm install`
 
 ## Required Pre-Push Workflow (Must Run)
 1) Detect Secrets (baseline-based)
-```
+```bash
 pre-commit run detect-secrets --all-files
 ```
 
 2) Run all pre-commit hooks
-```
-pre-commit run --all-files
+```bash
+pre-commit run --all-files --show-diff-on-failure
 ```
 
-3) Frontend E2E (Playwright)
+3) Backend unit tests (recommended; CI enforces)
+```bash
+MOLTBOT_STATE_DIR="$(pwd)/moltbot_state/_local_unit" python -m unittest discover -s tests -p "test_*.py" -v
 ```
-npm install
+
+4) Frontend E2E (Playwright; CI enforces)
+```bash
+# One-time browser install (recommended)
+npx playwright install chromium
+
 npm test
 ```
 
-## Optional (Local Developer Confidence)
-Run only if your environment has Python deps installed.
-```
-python3 -m unittest tests.test_checkpoints -v
-python3 -m unittest tests.test_preflight -v
-python3 -m unittest tests.test_checkpoints_api -v
-python3 -m unittest tests.test_api_model_list -v
-```
+For OS-specific E2E setup (Windows/WSL temp-dir shims), see `tests/E2E_TESTING_SOP.md`.
 
-## CI Equivalence (What the pipeline enforces)
-- Pre-commit hooks (all files)
-- Playwright E2E (`npm test`)
-- Import smoke tests
+## WSL / Restricted Environments
+If `pre-commit` fails due to cache permissions, run with a writable cache directory:
+```bash
+PRE_COMMIT_HOME=/tmp/pre-commit-cache pre-commit run --all-files --show-diff-on-failure
+```
 
 ## Troubleshooting Quick Fixes
 **Detect-secrets fails**
-- Ensure `.secrets.baseline` is up to date.
-- Replace real-looking secrets in docs/examples with `<YOUR_API_KEY>`.
+- Update `.secrets.baseline` (or mark known false positives) and avoid real-looking secrets in docs/tests.
 
-**Playwright fails to install**
-- Ensure `npm` and `node` are on PATH.
-- Reinstall browsers: `npx playwright install chromium`
+**Playwright fails (missing browsers)**
+- Install browsers: `npx playwright install chromium`
 
 **E2E fails with “test harness failed to load”**
-- Check console error in the CI log (module import/exports mismatch).
-- Verify all referenced JS files exist and export the expected names.
+- Check the console error (module import/exports mismatch is the most common cause).
+- Verify all referenced JS modules exist and export expected names.

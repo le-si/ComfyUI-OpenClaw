@@ -26,6 +26,9 @@ def get_capabilities() -> dict:
         "features": {
             "webhook_submit": True,
             "logs_tail": True,
+            # Legacy flag (kept for older frontends/tests).
+            # Do not remove without a migration window + frontend update.
+            "doctor": True,
             "job_monitor": True,
             "callback_delivery": True,
             "presets": True,

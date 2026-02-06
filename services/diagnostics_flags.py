@@ -70,7 +70,9 @@ class ScopedLogger:
     2. Redacts sensitive data before logging.
     """
 
-    def __init__(self, logger: logging.Logger, subsystem: str, manager: DiagnosticsManager):
+    def __init__(
+        self, logger: logging.Logger, subsystem: str, manager: DiagnosticsManager
+    ):
         self._logger = logger
         self._subsystem = subsystem
         self._manager = manager
@@ -88,18 +90,19 @@ class ScopedLogger:
 
         # Prepare message
         prefix = f"[DIAG:{self._subsystem}]"
-        
+
         # Reduct data if present
         if data:
             safe_data = redact_dict_safe(data)
             # Serialize for clarity
             import json
+
             try:
                 # Use default str for non-serializable objects
                 json_part = json.dumps(safe_data, default=str)
             except Exception:
                 json_part = str(safe_data)
-            
+
             self._logger.info(f"{prefix} {msg} | Data: {json_part}", **kwargs)
         else:
             self._logger.info(f"{prefix} {msg}", **kwargs)
