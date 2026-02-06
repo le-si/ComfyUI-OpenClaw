@@ -120,6 +120,23 @@ class TestCommandRouterPhase2(unittest.TestCase):
             "my-template", {}, require_approval=True
         )
 
+    def test_run_requires_approval_for_untrusted_user(self):
+        # Non-admin, not in allowlist => approval required
+        self.client.submit_job.return_value = {
+            "ok": True,
+            "data": {
+                "pending": True,
+                "approval_id": "apr-untrusted",
+                "trace_id": "tid-u",
+            },
+        }
+        req = self._req("/run my-template prompt=hi", sender="123")
+        resp = asyncio.run(self.router.handle(req))
+        self.assertIn("Approval", resp.text)
+        self.client.submit_job.assert_called_with(
+            "my-template", {"prompt": "hi"}, require_approval=True
+        )
+
     def test_admin_gating_deny(self):
         # User 123 is not admin
         req = self._req("/approvals", sender="123")

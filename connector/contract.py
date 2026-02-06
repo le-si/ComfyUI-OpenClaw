@@ -23,3 +23,24 @@ class CommandResponse:
     text: str
     files: List[str] = field(default_factory=list)  # Local paths to upload
     buttons: List[dict] = field(default_factory=list)  # Simple quick replies
+
+
+class Platform:
+    """Abstract base class for chat platforms."""
+
+    async def start(self):
+        """Start the platform connection/polling."""
+        pass
+
+    async def stop(self):
+        """Stop/cleanup."""
+        pass
+
+    async def send_image(self, channel_id: str, image_data: bytes, filename: str = "image.png", caption: Optional[str] = None):
+        """Send an image to the channel."""
+        pass
+
+    async def send_message(self, channel_id: str, text: str):
+        """Send a text message to the channel."""
+        pass
+

@@ -24,6 +24,7 @@ openclaw_state/
 *.log
 test_output.txt
 test_auth_out.txt
+connector_state.json*
 .DS_Store
 .vscode/
 .idea/

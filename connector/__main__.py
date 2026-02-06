@@ -12,6 +12,7 @@ from .openclaw_client import OpenClawClient
 from .platforms.discord_gateway import DiscordGateway
 from .platforms.line_webhook import LINEWebhookServer
 from .platforms.telegram_polling import TelegramPolling
+from .results_poller import ResultsPoller
 from .router import CommandRouter
 
 # Configure logging
@@ -24,7 +25,7 @@ logger = logging.getLogger("connector")
 
 
 async def main():
-    logger.info("Initializing OpenClaw Connector (Phase 3)...")
+    logger.info("Initializing OpenClaw Connector (Phase 5)...")
 
     # 1. Config
     try:
@@ -42,14 +43,25 @@ async def main():
     client = OpenClawClient(config)
     await client.start()  # Start session
 
-    router = CommandRouter(config, client)
+    # Shared Platforms Registry
+    platforms = {}
+    
+    # Initialize Poller
+    poller = ResultsPoller(config, client, platforms)
+    
+    # Initialize Router with Poller
+    router = CommandRouter(config, client, poller=poller)
 
     tasks = []
+    # Start Poller
+    tasks.append(asyncio.create_task(poller.start()))
+
     line_server = None
 
     # 3. Platforms
     if config.telegram_bot_token:
         tg = TelegramPolling(config, router)
+        platforms["telegram"] = tg
         tasks.append(asyncio.create_task(tg.start()))
     else:
         logger.info(
@@ -58,12 +70,14 @@ async def main():
 
     if config.discord_bot_token:
         dc = DiscordGateway(config, router)
+        platforms["discord"] = dc
         tasks.append(asyncio.create_task(dc.start()))
     else:
         logger.info("Discord not configured (OPENCLAW_CONNECTOR_DISCORD_TOKEN missing)")
 
     if config.line_channel_secret and config.line_channel_access_token:
         line_server = LINEWebhookServer(config, router)
+        platforms["line"] = line_server
         await line_server.start()
         # If only LINE is active, tasks will be empty. Add a sleeper to keep loop alive.
         if not tasks:
@@ -100,6 +114,8 @@ async def main():
     finally:
         if line_server:
             await line_server.stop()
+        if poller:
+            await poller.stop()
         await client.close()
         logger.info("Connector stopped.")
 

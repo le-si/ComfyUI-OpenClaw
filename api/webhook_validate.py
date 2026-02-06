@@ -28,7 +28,14 @@ try:
 except ModuleNotFoundError:  # pragma: no cover
     web = None  # type: ignore
 
-try:
+# Import discipline:
+# - ComfyUI runtime: package-relative imports only (prevents collisions with other custom nodes).
+# - Unit tests: allow top-level fallbacks.
+#
+# IMPORTANT (recurring production bug):
+# Do NOT wrap these imports in a broad `try/except ImportError`. In ComfyUI, that can silently
+# import another pack's top-level `services` module and break allowlists/auth in surprising ways.
+if __package__ and "." in __package__:
     from ..models.schemas import MAX_BODY_SIZE, WebhookJobRequest
     from ..services.execution_budgets import BudgetExceededError, check_render_size
     from ..services.metrics import metrics
@@ -36,14 +43,17 @@ try:
     from ..services.templates import get_template_service
     from ..services.trace import get_effective_trace_id
     from ..services.webhook_auth import require_auth
-except ImportError:
+else:  # pragma: no cover (test-only import mode)
     from models.schemas import MAX_BODY_SIZE, WebhookJobRequest
-    from services.execution_budgets import BudgetExceededError, check_render_size
-    from services.metrics import metrics
-    from services.rate_limit import check_rate_limit
-    from services.templates import get_template_service
-    from services.trace import get_effective_trace_id
-    from services.webhook_auth import require_auth
+    from services.execution_budgets import (  # type: ignore
+        BudgetExceededError,
+        check_render_size,
+    )
+    from services.metrics import metrics  # type: ignore
+    from services.rate_limit import check_rate_limit  # type: ignore
+    from services.templates import get_template_service  # type: ignore
+    from services.trace import get_effective_trace_id  # type: ignore
+    from services.webhook_auth import require_auth  # type: ignore
 
 logger = logging.getLogger("ComfyUI-OpenClaw.api.webhook_validate")
 

@@ -49,7 +49,12 @@ async def submit_prompt(
     Raises:
         BudgetExceededError: If concurrency or size budgets are exceeded
     """
-    from services.execution_budgets import check_render_size, get_limiter
+    # NOTE: Must try relative import first. In ComfyUI runtime, `services` is not a top-level module.
+    # Keeping this order prevents "No module named 'services.execution_budgets'" during queue submit.
+    try:
+        from .execution_budgets import check_render_size, get_limiter
+    except ImportError:
+        from services.execution_budgets import check_render_size, get_limiter  # type: ignore
 
     # R33: Check render size budget
     check_render_size(prompt_workflow, trace_id=trace_id)

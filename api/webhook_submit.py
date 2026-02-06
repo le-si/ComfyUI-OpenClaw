@@ -8,7 +8,14 @@ import logging
 
 from aiohttp import web
 
-try:
+# Import discipline:
+# - ComfyUI runtime: package-relative imports only (prevents collisions with other custom nodes).
+# - Unit tests: allow top-level fallbacks.
+#
+# IMPORTANT (recurring production bug):
+# Do NOT wrap these imports in a broad `try/except ImportError`. In ComfyUI, that can silently
+# import another pack's top-level `services` module and break allowlists/auth in surprising ways.
+if __package__ and "." in __package__:
     from ..models.schemas import MAX_BODY_SIZE, WebhookJobRequest
     from ..services.callback_delivery import start_callback_watch
     from ..services.execution_budgets import BudgetExceededError
@@ -20,19 +27,18 @@ try:
     from ..services.trace import get_effective_trace_id
     from ..services.trace_store import trace_store
     from ..services.webhook_auth import require_auth
-except ImportError:
-    # Handle path issues for testing or different contexts
+else:  # pragma: no cover (test-only import mode)
     from models.schemas import MAX_BODY_SIZE, WebhookJobRequest
-    from services.callback_delivery import start_callback_watch
-    from services.execution_budgets import BudgetExceededError
-    from services.idempotency_store import IdempotencyStore
-    from services.metrics import metrics
-    from services.queue_submit import submit_prompt
-    from services.rate_limit import check_rate_limit
-    from services.templates import get_template_service
-    from services.trace import get_effective_trace_id
-    from services.trace_store import trace_store
-    from services.webhook_auth import require_auth
+    from services.callback_delivery import start_callback_watch  # type: ignore
+    from services.execution_budgets import BudgetExceededError  # type: ignore
+    from services.idempotency_store import IdempotencyStore  # type: ignore
+    from services.metrics import metrics  # type: ignore
+    from services.queue_submit import submit_prompt  # type: ignore
+    from services.rate_limit import check_rate_limit  # type: ignore
+    from services.templates import get_template_service  # type: ignore
+    from services.trace import get_effective_trace_id  # type: ignore
+    from services.trace_store import trace_store  # type: ignore
+    from services.webhook_auth import require_auth  # type: ignore
 
 logger = logging.getLogger("ComfyUI-OpenClaw.api.webhook_submit")
 

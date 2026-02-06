@@ -60,6 +60,171 @@ npm test
 
 For OS-specific E2E setup (Windows/WSL temp-dir shims), see `tests/E2E_TESTING_SOP.md`.
 
+## Chat Connector (Telegram / Discord / LINE) — Manual Test SOP
+
+The chat connector runs as a **separate process** and talks to your local ComfyUI/OpenClaw via HTTP.
+
+### Prereq: use the correct Python interpreter
+
+The connector requires `aiohttp`. A common failure mode on Windows is:
+- `pip show aiohttp` succeeds (installed in your conda env)
+- but `python3 -m connector` uses a different Python (e.g. system Python) and crashes with `ModuleNotFoundError: aiohttp`
+
+Sanity check:
+```powershell
+python -c "import sys; print(sys.executable)"
+python -c "import aiohttp; print(aiohttp.__version__)"
+```
+
+Run the connector with **the same** interpreter:
+```powershell
+python -m connector
+```
+
+### Common env (all platforms)
+
+- `OPENCLAW_CONNECTOR_URL`: ComfyUI base URL (default: `http://127.0.0.1:8188`)
+- `OPENCLAW_CONNECTOR_ADMIN_TOKEN`: optional; required for admin endpoints if your server enforces it
+- `OPENCLAW_CONNECTOR_DEBUG=1`: verbose logs (recommended while setting up allowlists)
+
+### 1) Telegram (recommended first: no webhook/HTTPS required)
+
+Minimum:
+```powershell
+$env:OPENCLAW_CONNECTOR_TELEGRAM_TOKEN="123456:ABC..."
+$env:OPENCLAW_CONNECTOR_TELEGRAM_ALLOWED_USERS="123456789"   # your Telegram user_id
+$env:OPENCLAW_CONNECTOR_ADMIN_USERS="123456789"             # for admin-only commands
+python -m connector
+```
+
+Test commands (in Telegram chat with the bot):
+- `/help`
+- `/status`
+- `/jobs`
+- `/run <template_id> key=value --approval`
+- `/approvals`
+- `/approve <approval_id>`
+
+### 2) Discord (no webhook/HTTPS required; requires Message Content Intent)
+
+In Discord Developer Portal, enable **Message Content Intent** for your bot, otherwise the connector can connect but won’t receive message text.
+
+Minimum:
+```powershell
+$env:OPENCLAW_CONNECTOR_DISCORD_TOKEN="discord_bot_token"
+$env:OPENCLAW_CONNECTOR_DISCORD_ALLOWED_USERS="your_discord_user_id"
+$env:OPENCLAW_CONNECTOR_ADMIN_USERS="your_discord_user_id"
+python -m connector
+```
+
+Optional allowlist by channel instead:
+```powershell
+$env:OPENCLAW_CONNECTOR_DISCORD_ALLOWED_CHANNELS="your_channel_id"
+```
+
+### 3) LINE (requires a public HTTPS webhook URL)
+
+LINE is webhook-based: LINE servers must be able to `POST` into your connector.
+Localhost (`127.0.0.1`) is not reachable from LINE, so you typically need **Cloudflare Tunnel** or **ngrok**.
+
+Minimum:
+```powershell
+$env:OPENCLAW_CONNECTOR_LINE_CHANNEL_SECRET="line_channel_secret"
+$env:OPENCLAW_CONNECTOR_LINE_CHANNEL_ACCESS_TOKEN="line_channel_access_token"
+$env:OPENCLAW_CONNECTOR_LINE_ALLOWED_USERS="your_line_user_id"
+$env:OPENCLAW_CONNECTOR_ADMIN_USERS="your_line_user_id"
+python -m connector
+```
+
+Optional bind/port/path:
+```powershell
+$env:OPENCLAW_CONNECTOR_LINE_BIND="127.0.0.1"
+$env:OPENCLAW_CONNECTOR_LINE_PORT="8099"
+$env:OPENCLAW_CONNECTOR_LINE_PATH="/line/webhook"
+```
+
+After starting the connector, expose it via tunnel and set the LINE webhook URL to:
+`https://<public-host>/line/webhook`
+
+If messages are ignored, enable debug and check allowlist logs (user/group/room IDs).
+
+## Templates + `/run` — Authoring & Validation SOP
+
+`/run` does **not** take a ComfyUI “workflow id”. It takes a **`template_id`** that maps to a JSON workflow file.
+
+### Where templates live
+
+In this repo (and in your ComfyUI install), templates are loaded from:
+- `data/templates/*.json` (the exported ComfyUI workflow in API format)
+- `data/templates/manifest.json` (optional metadata: defaults, etc)
+
+### Step-by-step: create a new template
+
+1) Export a workflow JSON from ComfyUI (API format)
+- Build your workflow in ComfyUI
+- Export the workflow JSON (API format) to a file, e.g. `z.json`
+
+2) Copy the exported file into the template directory
+- Place it at: `data/templates/z.json`
+
+3) Replace input values with placeholders
+
+The renderer performs **strict placeholder substitution**:
+- ✅ supported: a JSON string value exactly equal to `{{key}}`
+  - Example: `"text": "{{positive_prompt}}"`
+- ❌ not supported: partial substitutions
+  - Example: `"text": "Prompt: {{positive_prompt}}"` (will not be replaced)
+
+So for each field you want to make configurable via chat/webhook, replace the value with a placeholder:
+- `{{positive_prompt}}`
+- `{{negative_prompt}}`
+- `{{seed}}`
+- etc.
+
+4) Add an entry to `manifest.json`
+
+This step is **optional**. If you want defaults/metadata, add a new entry under `templates` in `data/templates/manifest.json`:
+
+```json
+"your_template_id": {
+  "path": "z.json",
+  "allowed_inputs": ["positive_prompt"],
+  "defaults": {}
+}
+```
+
+Rules:
+- `your_template_id` becomes the identifier used by `/run your_template_id ...` (typically match the file name, e.g. `z`)
+- `allowed_inputs` is **metadata only** (not enforced); it can be used by UIs/tools for hints
+- `defaults` is optional but recommended (use `{}` if none)
+- JSON cannot contain trailing commas
+
+5) Restart ComfyUI
+
+Not strictly required (the backend hot-reloads `manifest.json`), but restarting ComfyUI is still recommended after significant template changes.
+
+### Validate templates are visible
+
+Use the template quick-list endpoint:
+- `GET /openclaw/templates`
+- `GET /api/openclaw/templates` (browser-friendly)
+- Diagnostics (when a template is unexpectedly missing):
+  - `GET /api/openclaw/templates?debug=1` (shows which `manifest.json` path was actually loaded)
+
+Expected response:
+- `ok: true`
+- `templates: [{ id, allowed_inputs, defaults }, ...]`
+
+### Use `/run` from chat
+
+Once the template appears in `/openclaw/templates`, you can run it via chat:
+- Run immediately:
+  - `/run your_template_id positive_prompt="a cat" seed=123`
+- Request approval:
+  - `/run your_template_id positive_prompt="a cat" seed=123 --approval`
+
+Unused keys have no effect unless the workflow contains a matching `{{key}}` placeholder.
+
 ## WSL / Restricted Environments
 If `pre-commit` fails due to cache permissions, run with a writable cache directory:
 ```bash

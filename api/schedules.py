@@ -12,10 +12,16 @@ from ..services.scheduler.models import Schedule, TriggerType
 from ..services.scheduler.storage import get_schedule_store
 from ..services.templates import is_template_allowed
 
-try:
+# Import discipline:
+# - ComfyUI runtime: package-relative imports only (prevents collisions with other custom nodes).
+# - Unit tests: allow top-level fallbacks.
+#
+# IMPORTANT: Avoid a broad `try/except ImportError` here. Falling back to `services.*` in ComfyUI
+# can silently import another pack's module and break auth/approval semantics.
+if __package__ and "." in __package__:
     from ..services.webhook_auth import AuthError
-except ImportError:
-    from services.webhook_auth import AuthError
+else:  # pragma: no cover (test-only import mode)
+    from services.webhook_auth import AuthError  # type: ignore
 
 logger = logging.getLogger("ComfyUI-OpenClaw.api.schedules")
 
@@ -112,8 +118,8 @@ class ScheduleHandlers:
         template_id = data["template_id"]
         if not self._template_checker(template_id):
             return web.json_response(
-                {"error": f"template_id '{template_id}' is not in allowlist"},
-                status=403,
+                {"error": f"template_id '{template_id}' not found"},
+                status=404,
             )
 
         # Build schedule
@@ -165,8 +171,8 @@ class ScheduleHandlers:
             template_id = data["template_id"]
             if not self._template_checker(template_id):
                 return web.json_response(
-                    {"error": f"template_id '{template_id}' is not in allowlist"},
-                    status=403,
+                    {"error": f"template_id '{template_id}' not found"},
+                    status=404,
                 )
             existing.template_id = template_id
 

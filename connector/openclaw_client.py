@@ -142,6 +142,31 @@ class OpenClawClient:
         # Remediation: Cancel -> Interrupt (Global)
         return await self._request("POST", "/api/interrupt", {})
 
+    async def get_view(self, filename: str, subfolder: str = "", type: str = "output") -> Optional[bytes]:
+        """Download image/file from ComfyUI /view endpoint."""
+        params = {"filename": filename, "subfolder": subfolder, "type": type}
+        url = f"{self.base_url}/view"
+        
+        session = self.session
+        local_session = False
+        if not session:
+            session = _create_session()
+            local_session = True
+            
+        try:
+            async with session.get(url, params=params, headers=self.headers) as resp:
+                if resp.status == 200:
+                    return await resp.read()
+                else:
+                    logger.warning(f"get_view failed: {resp.status}")
+                    return None
+        except Exception as e:
+            logger.error(f"get_view error: {e}")
+            return None
+        finally:
+            if local_session:
+                await session.close()
+
     # --- Approvals ---
 
     async def get_approvals(self) -> dict:

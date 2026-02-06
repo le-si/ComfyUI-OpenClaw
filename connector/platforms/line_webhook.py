@@ -153,17 +153,16 @@ class LINEWebhookServer:
             is_allowed = True
 
         if not is_allowed:
-            # Remediation: Explicit logging for empty list or reject
-            msg = f"Ignored LINE message from user={user_id} in channel={channel_id}."
+            # Informational only: untrusted messages are accepted but will require approval.
+            msg = f"Untrusted LINE message from user={user_id} in channel={channel_id}."
             if (
                 not self.config.line_allowed_users
                 and not self.config.line_allowed_groups
             ):
-                msg += " (Allow lists are empty! Configure OPENCLAW_CONNECTOR_LINE_ALLOWED_USERS/GROUPS)"
+                msg += " (Allow lists are empty; all users will require approval)"
             else:
-                msg += " (Not in allowlist)"
+                msg += " (Not in allowlist; approval required)"
             logger.warning(msg)
-            return
 
         req = CommandRequest(
             platform="line",
@@ -214,3 +213,38 @@ class LINEWebhookServer:
                     )
         except Exception as e:
             logger.error(f"LINE reply exception: {e}")
+
+    async def send_image(self, channel_id: str, image_data: bytes, filename: str = "image.png", caption: Optional[str] = None):
+        """
+        Send image via LINE.
+        NOTE: LINE requires a public HTTPS URL for images. 
+        Raw bytes upload is not supported in the standard Push API the same way.
+        This stub logs a warning until we implement a public hosting shim or use Imgur/S3.
+        """
+        logger.warning("LINE send_image not implemented (requires public URL). Skipping.")
+
+    async def send_message(self, channel_id: str, text: str):
+        """Send push message."""
+        aiohttp, _ = _import_aiohttp_web()
+        if not aiohttp or not self.session:
+            return
+
+        url = "https://api.line.me/v2/bot/message/push"
+        headers = {
+            "Content-Type": "application/json",
+            "Authorization": f"Bearer {self.config.line_channel_access_token}",
+        }
+        
+        body = {
+            "to": channel_id,
+            "messages": [{"type": "text", "text": text[:2000]}] # LINE limit handling
+        }
+
+        try:
+            async with self.session.post(url, headers=headers, json=body) as resp:
+                if resp.status != 200:
+                    err = await resp.text()
+                    logger.error(f"LINE send_message failed: {resp.status} {err}")
+        except Exception as e:
+            logger.error(f"LINE send_message error: {e}")
+

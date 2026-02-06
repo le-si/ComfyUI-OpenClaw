@@ -12,17 +12,26 @@ from typing import Optional
 
 from aiohttp import web
 
-try:
+# Import discipline:
+# - ComfyUI runtime: this pack is loaded as a package; MUST use package-relative imports to avoid
+#   collisions with other custom nodes or other top-level modules named `services`.
+# - Unit tests: modules may be imported as top-level (e.g. `api.*`), so allow top-level fallbacks.
+#
+# IMPORTANT (recurring production bug):
+# Do NOT wrap these imports in a broad `try/except ImportError` without checking `__package__`.
+# If the pack is loaded in a way that makes relative imports fail, falling back to `from services...`
+# can silently import the WRONG module (another custom node or ComfyUI-adjacent package), causing
+# template allowlists to appear "missing" even when `data/templates/manifest.json` is correct.
+if __package__ and "." in __package__:
     from ..services.execution_budgets import BudgetExceededError
     from ..services.templates import is_template_allowed
     from ..services.trace import generate_trace_id
     from ..services.webhook_auth import AuthError
-except ImportError:
-    # Fallback for ComfyUI's non-package loader or ad-hoc imports.
-    from services.execution_budgets import BudgetExceededError
-    from services.templates import is_template_allowed
-    from services.trace import generate_trace_id
-    from services.webhook_auth import AuthError
+else:  # pragma: no cover (test-only import mode)
+    from services.execution_budgets import BudgetExceededError  # type: ignore
+    from services.templates import is_template_allowed  # type: ignore
+    from services.trace import generate_trace_id  # type: ignore
+    from services.webhook_auth import AuthError  # type: ignore
 
 logger = logging.getLogger("ComfyUI-OpenClaw.api.triggers")
 
@@ -117,8 +126,8 @@ class TriggerHandlers:
         # Check template allowlist
         if not self._template_checker(template_id):
             return web.json_response(
-                {"error": f"template_id '{template_id}' is not in allowlist"},
-                status=403,
+                {"error": f"template_id '{template_id}' not found"},
+                status=404,
             )
 
         # Extract optional fields
@@ -162,7 +171,17 @@ class TriggerHandlers:
         callback: Optional[dict],
     ) -> web.Response:
         """Create an approval request instead of immediate execution."""
-        from services.approvals import ApprovalSource, get_approval_service
+        # IMPORTANT (recurring production bug):
+        # In ComfyUI runtime, do NOT import `services.*` as a fallback here.
+        # If another custom node exposes a top-level `services` package, you'll import the wrong
+        # module and create hard-to-debug runtime mismatches (approvals/allowlists/etc).
+        if __package__ and "." in __package__:
+            from ..services.approvals import ApprovalSource, get_approval_service
+        else:  # pragma: no cover (test-only import mode)
+            from services.approvals import (  # type: ignore
+                ApprovalSource,
+                get_approval_service,
+            )
 
         service = get_approval_service()
 
@@ -265,7 +284,14 @@ async def execute_approved_trigger(
     Raises:
         ValueError: If approval not found or not approved
     """
-    from services.approvals import ApprovalStatus, get_approval_service
+    # IMPORTANT: See note above about avoiding `services.*` imports in ComfyUI runtime.
+    if __package__ and "." in __package__:
+        from ..services.approvals import ApprovalStatus, get_approval_service
+    else:  # pragma: no cover (test-only import mode)
+        from services.approvals import (  # type: ignore
+            ApprovalStatus,
+            get_approval_service,
+        )
 
     service = get_approval_service()
     approval = service.get(approval_id)

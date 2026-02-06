@@ -6,7 +6,9 @@ WebSocket connection to Discord Gateway (simplified) with Rate Limit Handling.
 import asyncio
 import json
 import logging
+import logging
 import time
+from typing import Optional
 
 from ..config import ConnectorConfig
 from ..contract import CommandRequest, CommandResponse
@@ -135,12 +137,10 @@ class DiscordGateway:
         if channel_id in self.config.discord_allowed_channels:
             is_allowed = True
 
-        if not is_allowed:
-            if self.config.debug:
-                logger.debug(
-                    f"Ignored Discord message user={user_id} chan={channel_id}"
-                )
-            return
+        if not is_allowed and self.config.debug:
+            logger.debug(
+                f"Untrusted Discord message user={user_id} chan={channel_id} (will require approval)"
+            )
 
         # Build Request
         req = CommandRequest(
@@ -201,3 +201,59 @@ class DiscordGateway:
                     )
 
                 break
+
+    async def send_image(self, channel_id: str, image_data: bytes, filename: str = "image.png", caption: Optional[str] = None):
+        """Send image via Discord API."""
+        if not self.session:
+            return
+
+        import aiohttp
+
+        url = f"https://discord.com/api/v10/channels/{channel_id}/messages"
+        headers = {
+            "Authorization": f"Bot {self.token}",
+            # Do NOT set Content-Type; FormData handling does it
+        }
+
+        data = aiohttp.FormData()
+        if caption:
+            data.add_field("payload_json", json.dumps({"content": caption}))
+        
+        data.add_field("files[0]", image_data, filename=filename, content_type="image/png")
+
+        try:
+            async with self.session.post(url, headers=headers, data=data) as resp:
+                if resp.status != 200:
+                    err = await resp.text()
+                    logger.error(f"Discord send_image failed: {resp.status} {err}")
+        except Exception as e:
+            logger.error(f"Discord send_image error: {e}")
+
+    async def send_message(self, channel_id: str, text: str):
+        """Send text message."""
+        if not self.session:
+            return
+        
+        import aiohttp
+        url = f"https://discord.com/api/v10/channels/{channel_id}/messages"
+        headers = {
+            "Authorization": f"Bot {self.token}",
+            "Content-Type": "application/json" # Explicit for JSON
+        }
+        
+        # Simple Length Limit
+        if len(text) > 1900:
+            text = text[:1900] + "..."
+
+        payload = {"content": text}
+        
+        try:
+            async with self.session.post(url, headers=headers, json=payload) as r:
+                if r.status != 200:
+                    # Ignore 429 for now in this simple implementation or copy logic?
+                    # Copying simple logging
+                    err = await r.text()
+                    logger.error(f"Discord send_message failed: {r.status} {err}")
+        except Exception as e:
+            logger.error(f"Discord send_message error: {e}")
+

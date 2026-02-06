@@ -6,6 +6,7 @@ Long-polling implementation for Telegram Bot API.
 import asyncio
 import logging
 import time
+from typing import Optional
 
 from ..config import ConnectorConfig
 from ..contract import CommandRequest, CommandResponse
@@ -62,12 +63,28 @@ class TelegramPolling:
 
         async with self.session.get(url, params=params) as resp:
             if resp.status != 200:
-                logger.error(f"Telegram API Error {resp.status}")
+                # IMPORTANT (debuggability): Telegram frequently returns actionable details in the body
+                # for non-200 responses (e.g. 409 conflict: "terminated by other getUpdates request",
+                # or "webhook is active"). Log the response text in debug mode to speed up diagnosis.
+                try:
+                    body = await resp.text()
+                except Exception:
+                    body = ""
+                if body:
+                    logger.error(f"Telegram API Error {resp.status}: {body}")
+                else:
+                    logger.error(f"Telegram API Error {resp.status}")
                 await asyncio.sleep(5)
                 return
 
             data = await resp.json()
             if not data.get("ok"):
+                # Telegram sometimes returns `ok=false` with a useful description even on 200.
+                # Keep logs concise, but include enough context to fix config issues quickly.
+                desc = (
+                    data.get("description") or data.get("error_code") or "unknown_error"
+                )
+                logger.warning(f"Telegram API returned ok=false: {desc}")
                 return
 
             updates = data.get("result", [])
@@ -97,12 +114,10 @@ class TelegramPolling:
         if chat_id in self.config.telegram_allowed_chats:
             is_allowed = True
 
-        if not is_allowed:
-            if self.config.debug:
-                logger.debug(
-                    f"Ignored Telegram message from unauthorized user={user_id} chat={chat_id}"
-                )
-            return
+        if not is_allowed and self.config.debug:
+            logger.debug(
+                f"Untrusted Telegram message user={user_id} chat={chat_id} (will require approval)"
+            )
 
         # Build Request
         req = CommandRequest(
@@ -139,3 +154,44 @@ class TelegramPolling:
                     )
         except Exception as e:
             logger.error(f"Telegram send exception: {e}")
+
+    async def send_image(self, channel_id: str, image_data: bytes, filename: str = "image.png", caption: Optional[str] = None):
+        """Send photo via Telegram sendPhoto."""
+        if not self.session:
+            return
+
+        import aiohttp  # Lazy import safe here as we have session
+
+        url = f"{self.base_url}/sendPhoto"
+        data = aiohttp.FormData()
+        data.add_field("chat_id", channel_id)
+        if caption:
+            data.add_field("caption", caption)
+        
+        data.add_field("photo", image_data, filename=filename, content_type="image/png")
+        
+        try:
+            async with self.session.post(url, data=data) as resp:
+                if resp.status != 200:
+                    err = await resp.text()
+                    logger.error(f"Telegram send_image failed: {resp.status} {err}")
+        except Exception as e:
+            logger.error(f"Telegram send_image error: {e}")
+
+    async def send_message(self, channel_id: str, text: str):
+        """Send text message."""
+        if not self.session:
+            return
+        
+        # Reuse internal logic logic but public
+        # Using simplified direct call
+        url = f"{self.base_url}/sendMessage"
+        payload = {"chat_id": channel_id, "text": text}
+        try:
+            async with self.session.post(url, json=payload) as r:
+                if r.status != 200:
+                    err = await r.text()
+                    logger.error(f"Telegram send_message failed: {r.status} {err}")
+        except Exception as e:
+            logger.error(f"Telegram send_message error: {e}")
+

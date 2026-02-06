@@ -34,6 +34,11 @@ class TestTemplateService(unittest.TestCase):
         with open(os.path.join(self.test_dir, "t1.json"), "w") as f:
             json.dump(self.template_data, f)
 
+        # Create an additional template file that is NOT in the manifest.
+        # Policy: `<template_id>.json` on disk should be runnable even without a manifest entry.
+        with open(os.path.join(self.test_dir, "t2.json"), "w") as f:
+            json.dump({"node1": {"inputs": {"text": "{{input_any}}"}}}, f)
+
         self.service = TemplateService(templates_root=self.test_dir)
 
     def tearDown(self):
@@ -51,10 +56,11 @@ class TestTemplateService(unittest.TestCase):
         with self.assertRaises(ValueError):
             self.service.render_template("unknown", {})
 
-    def test_not_allowed_input(self):
-        """Test forbidden input raises ValueError."""
-        with self.assertRaises(ValueError):
-            self.service.render_template("t1", {"forbidden": "val"})
+    def test_extra_input_is_ignored(self):
+        """Extra inputs should not raise (policy: no per-template input allowlist)."""
+        rendered = self.service.render_template("t1", {"forbidden": "val"})
+        # Placeholder remains because `forbidden` does not match any placeholder in the template.
+        self.assertEqual(rendered["node1"]["inputs"]["text"], "{{input1}}")
 
     def test_render_substitution(self):
         """Test variable substitution."""
@@ -72,6 +78,11 @@ class TestTemplateService(unittest.TestCase):
         self.assertEqual(
             rendered["node1"]["inputs"]["text"], "prefix {{input1}} suffix"
         )
+
+    def test_file_based_template_without_manifest_entry(self):
+        """Templates present as `<id>.json` should be runnable even if not in manifest.json."""
+        rendered = self.service.render_template("t2", {"input_any": "hello"})
+        self.assertEqual(rendered["node1"]["inputs"]["text"], "hello")
 
 
 if __name__ == "__main__":

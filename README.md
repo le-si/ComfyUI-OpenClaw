@@ -213,13 +213,15 @@ Callback delivery allowlist (sidecar HTTP adapter):
 
 ## Templates
 
-Templates live in `data/templates/` and are loaded from `data/templates/manifest.json`.
+Templates live in `data/templates/`.
 
-- Only templates listed in the manifest are usable.
-- Each template declares `allowed_inputs` and optional defaults.
+- Any `data/templates/<template_id>.json` file is runnable (template ID = filename stem).
+- `data/templates/manifest.json` is optional metadata (e.g. defaults).
 - Rendering performs **strict placeholder substitution**:
   - Only exact string values matching `{{key}}` are replaced
   - Partial substitutions (e.g. `"foo {{bar}}"`) are intentionally not supported
+
+For the full step-by-step guide (where to put exported workflow JSON, how to author `manifest.json`, how to verify `/openclaw/templates`, and how to use `/run`), see `tests/TEST_SOP.md`.
 
 ## Execution Budgets
 

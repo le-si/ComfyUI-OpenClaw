@@ -12,13 +12,17 @@ from .contract import CommandRequest, CommandResponse
 from .openclaw_client import OpenClawClient
 from .state import ConnectorState
 
+if False:  # Type hinting only
+    from .results_poller import ResultsPoller
+
 logger = logging.getLogger(__name__)
 
 
 class CommandRouter:
-    def __init__(self, config: ConnectorConfig, client: OpenClawClient):
+    def __init__(self, config: ConnectorConfig, client: OpenClawClient, poller: "ResultsPoller" = None):
         self.config = config
         self.client = client
+        self.poller = poller
         self.state = ConnectorState(path=self.config.state_path)
 
     async def handle(self, req: CommandRequest) -> CommandResponse:
@@ -42,7 +46,7 @@ class CommandRouter:
         handlers = {
             ("/status", "status"): (self._handle_status, False),
             ("/help", "help", "/start"): (self._handle_help, False),
-            ("/run", "run"): (self._handle_run, True),
+            ("/run", "run"): (self._handle_run, False),
             ("/interrupt", "interrupt", "/cancel", "cancel", "/stop"): (
                 self._handle_interrupt,
                 True,
@@ -90,6 +94,50 @@ class CommandRouter:
     def _is_admin(self, user_id: str) -> bool:
         return str(user_id) in self.config.admin_users
 
+    def _is_trusted(self, req: CommandRequest) -> bool:
+        """
+        Trusted users can execute /run immediately.
+        Untrusted users are routed to approval flow.
+        """
+        if self._is_admin(req.sender_id):
+            return True
+
+        platform = (req.platform or "").lower()
+        sender_id = str(req.sender_id)
+        channel_id = str(req.channel_id)
+
+        if platform == "telegram":
+            try:
+                uid = int(sender_id)
+            except Exception:
+                uid = None
+            try:
+                cid = int(channel_id)
+            except Exception:
+                cid = None
+            if uid is not None and uid in self.config.telegram_allowed_users:
+                return True
+            if cid is not None and cid in self.config.telegram_allowed_chats:
+                return True
+            return False
+
+        if platform == "discord":
+            if sender_id in self.config.discord_allowed_users:
+                return True
+            if channel_id in self.config.discord_allowed_channels:
+                return True
+            return False
+
+        if platform == "line":
+            if sender_id in self.config.line_allowed_users:
+                return True
+            if channel_id in self.config.line_allowed_groups:
+                return True
+            return False
+
+        # Unknown platform: trust only admins
+        return False
+
     # --- Handlers ---
 
     async def _handle_status(
@@ -130,11 +178,11 @@ class CommandRouter:
             )
 
         # Parse flags
-        require_approval = False
+        explicit_approval = False
         clean_args = []
         for arg in args:
             if arg in ("--require-approval", "--approval", "-a"):
-                require_approval = True
+                explicit_approval = True
             else:
                 clean_args.append(arg)
 
@@ -147,6 +195,9 @@ class CommandRouter:
             if "=" in arg:
                 k, v = arg.split("=", 1)
                 inputs[k.strip()] = v.strip()
+
+        trusted = self._is_trusted(req)
+        require_approval = explicit_approval or (not trusted)
 
         res = await self.client.submit_job(
             template_id, inputs, require_approval=require_approval
@@ -163,6 +214,9 @@ class CommandRouter:
                 return CommandResponse(text=msg)
             else:
                 prompt_id = data.get("prompt_id", "unknown")
+                if self.poller:
+                    self.poller.track_job(prompt_id, req.platform, req.channel_id, req.sender_id)
+
                 return CommandResponse(
                     text=f"[Job Submitted]\nID: {prompt_id}\nTemplate: {template_id}\nTrace: {trace_id}"
                 )
@@ -232,7 +286,12 @@ class CommandRouter:
 
         # Phase 4: Show execution result
         if "prompt_id" in data:
-            msg += f"\nExecuted: {data['prompt_id']}"
+            pid = data['prompt_id']
+            msg += f"\nExecuted: {pid}"
+            if self.poller:
+                # Approval request might have come from different flow, but usually user invoking /approve 
+                # wants the result. Using current req context is safest assumption for "ChatOps".
+                self.poller.track_job(pid, req.platform, req.channel_id, req.sender_id)
         elif data.get("executed") is False:
             msg += "\n(Not Executed)"
             if err := data.get("execution_error"):
@@ -297,7 +356,7 @@ class CommandRouter:
             text=(
                 "OpenClaw Connector\n"
                 "/status - Check system health and queue\n"
-                "/run <template> [k=v] - Run a generation (Admin)\n"
+                "/run <template> [k=v] - Run a generation (trusted users auto-exec; others require approval)\n"
                 "/stop - Global Interrupt (Admin)\n"
                 "/history <id> - Job details\n"
                 "/jobs - Queue summary\n"

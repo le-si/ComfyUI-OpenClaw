@@ -147,15 +147,17 @@ def _register_routes_once():
             source="unknown",
         ):
             """Submit function for scheduler and trigger-triggered runs."""
-            from .services.idempotency_store import get_store
+            # NOTE: Use IdempotencyStore API (check_and_record/update_prompt_id).
+            # Avoid legacy get_store/get/set usage; wrong API here breaks route registration at runtime.
+            from .services.idempotency_store import IdempotencyStore
             from .services.queue_submit import submit_prompt
             from .services.templates import get_template_service
 
             # Check idempotency
-            store = get_store()
-            existing = store.get(idempotency_key)
-            if existing:
-                return {"prompt_id": existing.get("prompt_id"), "deduped": True}
+            store = IdempotencyStore()
+            is_dup, existing_prompt_id = store.check_and_record(idempotency_key)
+            if is_dup:
+                return {"prompt_id": existing_prompt_id, "deduped": True}
 
             # Render template
             tmpl_svc = get_template_service()
@@ -174,7 +176,7 @@ def _register_routes_once():
 
             # Store for dedupe
             if result.get("prompt_id"):
-                store.set(idempotency_key, {"prompt_id": result["prompt_id"]})
+                store.update_prompt_id(idempotency_key, result["prompt_id"])
 
             return result
 
