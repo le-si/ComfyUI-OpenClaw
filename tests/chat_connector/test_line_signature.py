@@ -1,13 +1,16 @@
 """
 Unit Tests for LINE Signature Verification (F29 Phase 3).
 """
-import unittest
+
 import base64
 import hashlib
 import hmac
+import unittest
+from unittest.mock import MagicMock
+
 from connector.config import ConnectorConfig
 from connector.platforms.line_webhook import LINEWebhookServer
-from unittest.mock import MagicMock
+
 
 class TestLINESignature(unittest.TestCase):
     def setUp(self):
@@ -19,8 +22,10 @@ class TestLINESignature(unittest.TestCase):
     def test_verify_valid_signature(self):
         body = b'{"events":[]}'
         secret = b"mysecret"
-        sig = base64.b64encode(hmac.new(secret, body, hashlib.sha256).digest()).decode('utf-8')
-        
+        sig = base64.b64encode(hmac.new(secret, body, hashlib.sha256).digest()).decode(
+            "utf-8"
+        )
+
         self.assertTrue(self.server._verify_signature(body, sig))
 
     def test_verify_invalid_signature(self):
@@ -30,6 +35,7 @@ class TestLINESignature(unittest.TestCase):
 
     def test_verify_empty(self):
         self.assertFalse(self.server._verify_signature(b"", ""))
+
 
 if __name__ == "__main__":
     unittest.main()

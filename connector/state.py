@@ -2,6 +2,7 @@
 Connector State Management (F29 Phase 2).
 Simple JSON persistence for offsets and cancel markers.
 """
+
 import json
 import logging
 import os
@@ -10,6 +11,7 @@ from typing import Dict, List, Set
 logger = logging.getLogger(__name__)
 
 STATE_FILE = "connector_state.json"
+
 
 class ConnectorState:
     def __init__(self, path: str = None):
@@ -47,7 +49,6 @@ class ConnectorState:
     # Cancel Markers (Transient)
     def mark_cancelled(self, prompt_id: str):
         self.cancelled_prompts.add(prompt_id)
-    
+
     def is_cancelled(self, prompt_id: str) -> bool:
         return prompt_id in self.cancelled_prompts
-

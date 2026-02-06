@@ -2,10 +2,12 @@
 Connector Configuration (F29).
 Loads environment variables and validates allowlists.
 """
+
 import os
 import sys
 from dataclasses import dataclass, field
 from typing import List, Optional
+
 
 @dataclass
 class ConnectorConfig:
@@ -39,11 +41,14 @@ class ConnectorConfig:
     debug: bool = False
     state_path: Optional[str] = None
 
+
 def load_config() -> ConnectorConfig:
     """Load configuration from environment variables."""
     cfg = ConnectorConfig()
 
-    cfg.openclaw_url = os.environ.get("OPENCLAW_CONNECTOR_URL", "http://127.0.0.1:8188").rstrip("/")
+    cfg.openclaw_url = os.environ.get(
+        "OPENCLAW_CONNECTOR_URL", "http://127.0.0.1:8188"
+    ).rstrip("/")
     cfg.admin_token = os.environ.get("OPENCLAW_CONNECTOR_ADMIN_TOKEN")
     cfg.debug = os.environ.get("OPENCLAW_CONNECTOR_DEBUG", "0") == "1"
     cfg.state_path = os.environ.get("OPENCLAW_CONNECTOR_STATE_PATH")
@@ -51,30 +56,42 @@ def load_config() -> ConnectorConfig:
     # Telegram
     cfg.telegram_bot_token = os.environ.get("OPENCLAW_CONNECTOR_TELEGRAM_TOKEN")
     if t_users := os.environ.get("OPENCLAW_CONNECTOR_TELEGRAM_ALLOWED_USERS"):
-        cfg.telegram_allowed_users = [int(u.strip()) for u in t_users.split(",") if u.strip().isdigit()]
+        cfg.telegram_allowed_users = [
+            int(u.strip()) for u in t_users.split(",") if u.strip().isdigit()
+        ]
     if t_chats := os.environ.get("OPENCLAW_CONNECTOR_TELEGRAM_ALLOWED_CHATS"):
-        cfg.telegram_allowed_chats = [int(u.strip()) for u in t_chats.split(",") if u.strip().lstrip("-").isdigit()]
+        cfg.telegram_allowed_chats = [
+            int(u.strip())
+            for u in t_chats.split(",")
+            if u.strip().lstrip("-").isdigit()
+        ]
 
     # Discord
     cfg.discord_bot_token = os.environ.get("OPENCLAW_CONNECTOR_DISCORD_TOKEN")
     if d_users := os.environ.get("OPENCLAW_CONNECTOR_DISCORD_ALLOWED_USERS"):
         cfg.discord_allowed_users = [u.strip() for u in d_users.split(",") if u.strip()]
     if d_chans := os.environ.get("OPENCLAW_CONNECTOR_DISCORD_ALLOWED_CHANNELS"):
-        cfg.discord_allowed_channels = [u.strip() for u in d_chans.split(",") if u.strip()]
+        cfg.discord_allowed_channels = [
+            u.strip() for u in d_chans.split(",") if u.strip()
+        ]
 
     # LINE
     cfg.line_channel_secret = os.environ.get("OPENCLAW_CONNECTOR_LINE_CHANNEL_SECRET")
-    cfg.line_channel_access_token = os.environ.get("OPENCLAW_CONNECTOR_LINE_CHANNEL_ACCESS_TOKEN")
+    cfg.line_channel_access_token = os.environ.get(
+        "OPENCLAW_CONNECTOR_LINE_CHANNEL_ACCESS_TOKEN"
+    )
     if l_users := os.environ.get("OPENCLAW_CONNECTOR_LINE_ALLOWED_USERS"):
         cfg.line_allowed_users = [u.strip() for u in l_users.split(",") if u.strip()]
     if l_groups := os.environ.get("OPENCLAW_CONNECTOR_LINE_ALLOWED_GROUPS"):
         cfg.line_allowed_groups = [u.strip() for u in l_groups.split(",") if u.strip()]
-    
+
     cfg.line_bind_host = os.environ.get("OPENCLAW_CONNECTOR_LINE_BIND", "127.0.0.1")
     if l_port := os.environ.get("OPENCLAW_CONNECTOR_LINE_PORT"):
         if l_port.isdigit():
             cfg.line_bind_port = int(l_port)
-    cfg.line_webhook_path = os.environ.get("OPENCLAW_CONNECTOR_LINE_PATH", "/line/webhook")
+    cfg.line_webhook_path = os.environ.get(
+        "OPENCLAW_CONNECTOR_LINE_PATH", "/line/webhook"
+    )
 
     # Admin
     if admins := os.environ.get("OPENCLAW_CONNECTOR_ADMIN_USERS"):

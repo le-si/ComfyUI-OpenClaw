@@ -307,13 +307,22 @@ def validate_config_update(updates: Dict[str, Any]) -> Tuple[Dict[str, Any], lis
                     continue
 
                 # S16.1: Strict Host Allowlist (Exact Match)
-                # Deny by default unless host is explicitly allowed
+                # Deny by default unless host is explicitly allowed.
+                # NOTE: built-in provider public hosts are allowlisted by default.
                 allowed_hosts_str = os.environ.get(
                     "OPENCLAW_LLM_ALLOWED_HOSTS"
                 ) or os.environ.get("MOLTBOT_LLM_ALLOWED_HOSTS", "")
-                allowed_hosts = set(
+                allowed_hosts_env = set(
                     h.lower().strip() for h in allowed_hosts_str.split(",") if h.strip()
                 )
+                try:
+                    from .providers.catalog import get_default_public_llm_hosts
+
+                    allowed_hosts = (
+                        set(get_default_public_llm_hosts()) | allowed_hosts_env
+                    )
+                except Exception:
+                    allowed_hosts = allowed_hosts_env
 
                 # Check opt-in for "Any Public Host" (risky, for flexibility)
                 allow_any = _env_flag(

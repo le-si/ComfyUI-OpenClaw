@@ -2,16 +2,26 @@
 Telegram Polling Platform (F29 Remediation).
 Long-polling implementation for Telegram Bot API.
 """
-import aiohttp
+
 import asyncio
 import logging
 import time
+
 from ..config import ConnectorConfig
 from ..contract import CommandRequest, CommandResponse
 from ..router import CommandRouter
 from ..state import ConnectorState
 
 logger = logging.getLogger(__name__)
+
+
+def _import_aiohttp():
+    try:
+        import aiohttp  # type: ignore
+    except ModuleNotFoundError:
+        return None
+    return aiohttp
+
 
 class TelegramPolling:
     def __init__(self, config: ConnectorConfig, router: CommandRouter):
@@ -20,12 +30,17 @@ class TelegramPolling:
         self.state_store = ConnectorState(path=self.config.state_path)
         self.token = config.telegram_bot_token
         self.base_url = f"https://api.telegram.org/bot{self.token}"
-        
+
         # Remediation: Load offset from persistent state
         self.offset = self.state_store.get_offset("telegram")
         self.session = None
 
     async def start(self):
+        aiohttp = _import_aiohttp()
+        if aiohttp is None:
+            logger.warning("aiohttp not installed. Skipping Telegram adapter.")
+            return
+
         if not self.token:
             logger.warning("Telegram token not configured. Skipping.")
             return
@@ -44,7 +59,7 @@ class TelegramPolling:
     async def _poll_once(self):
         url = f"{self.base_url}/getUpdates"
         params = {"offset": self.offset, "timeout": 30}
-        
+
         async with self.session.get(url, params=params) as resp:
             if resp.status != 200:
                 logger.error(f"Telegram API Error {resp.status}")
@@ -62,7 +77,7 @@ class TelegramPolling:
                     self.offset = next_offset
                     # Remediation: Persist offset
                     self.state_store.set_offset("telegram", self.offset)
-                
+
                 await self._process_update(update)
 
     async def _process_update(self, update: dict):
@@ -81,10 +96,12 @@ class TelegramPolling:
             is_allowed = True
         if chat_id in self.config.telegram_allowed_chats:
             is_allowed = True
-            
+
         if not is_allowed:
             if self.config.debug:
-                logger.debug(f"Ignored Telegram message from unauthorized user={user_id} chat={chat_id}")
+                logger.debug(
+                    f"Ignored Telegram message from unauthorized user={user_id} chat={chat_id}"
+                )
             return
 
         # Build Request
@@ -95,7 +112,7 @@ class TelegramPolling:
             username=username,
             message_id=str(message["message_id"]),
             text=text,
-            timestamp=time.time()
+            timestamp=time.time(),
         )
 
         try:
@@ -103,18 +120,22 @@ class TelegramPolling:
             await self._send_response(chat_id, resp)
         except Exception as e:
             logger.exception(f"Error handling command: {e}")
-            await self._send_response(chat_id, CommandResponse(text="[Error] Internal processing error."))
+            await self._send_response(
+                chat_id, CommandResponse(text="[Error] Internal processing error.")
+            )
 
     async def _send_response(self, chat_id: int, resp: CommandResponse):
         url = f"{self.base_url}/sendMessage"
         payload = {
             "chat_id": chat_id,
             # Remediation: Plain text only, no parse_mode
-            "text": resp.text
+            "text": resp.text,
         }
         try:
             async with self.session.post(url, json=payload) as r:
                 if r.status != 200:
-                    logger.error(f"Failed to send Telegram response: {r.status} {await r.text()}")
+                    logger.error(
+                        f"Failed to send Telegram response: {r.status} {await r.text()}"
+                    )
         except Exception as e:
             logger.error(f"Telegram send exception: {e}")

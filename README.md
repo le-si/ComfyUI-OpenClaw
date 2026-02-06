@@ -124,7 +124,8 @@ Notes:
 
 - Queue submission uses `OPENCLAW_COMFYUI_URL` (default `http://127.0.0.1:8188`).
 - Custom `base_url` is protected by SSRF policy:
-  - allow exact hosts via `OPENCLAW_LLM_ALLOWED_HOSTS=host1,host2`
+  - built-in provider hosts are allowlisted by default
+  - allow additional exact hosts via `OPENCLAW_LLM_ALLOWED_HOSTS=host1,host2`
   - or opt in to any public host via `OPENCLAW_ALLOW_ANY_PUBLIC_LLM_HOST=1`
   - `OPENCLAW_ALLOW_INSECURE_BASE_URL=1` disables SSRF blocking (not recommended)
 

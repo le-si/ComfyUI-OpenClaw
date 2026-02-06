@@ -105,7 +105,7 @@ Since the connector runs on `localhost` (default port 8099), you must expose it 
 | `/jobs` | View active jobs and queue summary. |
 | `/history <id>` | View details of a finished job. |
 | `/help` | Show available commands. |
-| `/run <template> [k=v]` | Submit a job (via Triggers API; requires Admin). |
+| `/run <template> [k=v] [--approval]` | Submit a job. Use `--approval` to request approval gate instead of creating job immediately. |
 | `/stop` | **Global Interrupt**: Stop all running generations. |
 
 **Admin Only:**
@@ -115,7 +115,44 @@ Since the connector runs on `localhost` (default port 8099), you must expose it 
 | :--- | :--- |
 | `/trace <id>` | View raw execution logs/trace for a job. |
 | `/approvals` | List pending approvals. |
-| `/approve <id>` | Approve a paused workflow. |
+| `/approve <id>` | Approve a pending request (triggers execution immediately). |
 | `/reject <id> [reason]` | Reject a workflow. |
 | `/schedules` | List schedules. |
 | `/schedule run <id>` | Trigger a schedule immediately. |
+
+## Usage Examples
+
+### Approval Gated Run
+
+1. **Submission (Admin)**:
+
+   ```
+   User: /run my-template steps=20 --approval
+   Bot:  [Approval Requested]
+         ID: apr_12345
+         Trace: ...
+         Expires: 2026-02-07T12:00:00Z
+   ```
+
+2. **Approval (Admin)**:
+
+   ```
+   User: /approve apr_12345
+   Bot:  [Approved] apr_12345
+         Executed: p_98765
+   ```
+
+### Common Failure Modes
+
+- **(Not Executed)**:
+  - If `/approve` returns `[Approved] ... (Not Executed)`, it means the request state was updated to Approved, but the job could not be autostarted.
+  - **Reason**: Backend might lack a submit handler for this trigger type, or `auto_execute` failed. Check `openclaw` server logs.
+  - **Action**: Manually run the job using the template/inputs from the approval request.
+
+- **Access Denied**:
+  - Sender is not in `OPENCLAW_CONNECTOR_ADMIN_USERS`.
+  - Fix: Add ID to `.env` and restart connector.
+
+- **HTTP 403 (Admin Token)**:
+  - Connector has the right user allowlist, but the upstream OpenClaw server rejected the Admin Token.
+  - Fix: Ensure `OPENCLAW_CONNECTOR_ADMIN_TOKEN` matches the server's `OPENCLAW_ADMIN_TOKEN`.

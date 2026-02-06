@@ -6,6 +6,7 @@ R16: Default base URLs and provider metadata.
 from dataclasses import dataclass
 from enum import Enum
 from typing import Dict, Optional
+from urllib.parse import urlparse
 
 
 class ProviderType(Enum):
@@ -174,3 +175,40 @@ def get_provider_info(provider: str) -> Optional[ProviderInfo]:
 def list_providers() -> list:
     """List all available provider names."""
     return list(PROVIDER_CATALOG.keys())
+
+
+def get_default_public_llm_hosts() -> set[str]:
+    """
+    Return the default *public* LLM hosts that are safe to allow by default.
+
+    Rationale:
+    - We want built-in providers to work out-of-the-box without requiring users to
+      configure an SSRF allowlist.
+    - Custom Base URLs must still pass SSRF validation (host allowlist + public IP).
+    - Local providers are intentionally excluded here because SSRF validation blocks
+      loopback/private IPs by design.
+    """
+    hosts: set[str] = set()
+
+    for info in PROVIDER_CATALOG.values():
+        if not info.base_url:
+            continue
+        try:
+            parsed = urlparse(info.base_url)
+        except Exception:
+            continue
+
+        if parsed.scheme != "https":
+            continue
+
+        host = parsed.hostname
+        if not host:
+            continue
+
+        host = host.lower().rstrip(".")
+        if host in ("localhost", "127.0.0.1", "::1"):
+            continue
+
+        hosts.add(host)
+
+    return hosts

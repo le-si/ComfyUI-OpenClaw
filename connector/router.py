@@ -54,7 +54,7 @@ class CommandRouter:
             ("/schedule", "schedule"): (self._handle_schedule_subcommand, True),
             # Phase 3 Introspection
             ("/history", "history"): (self._handle_history, False),
-            ("/trace", "trace"): (self._handle_trace, True), # Admin only
+            ("/trace", "trace"): (self._handle_trace, True),  # Admin only
             ("/jobs", "jobs", "queue"): (self._handle_jobs, False),
         }
 
@@ -125,22 +125,47 @@ class CommandRouter:
         self, req: CommandRequest, args: List[str]
     ) -> CommandResponse:
         if not args:
-            return CommandResponse(text="Usage: /run <template_id> [key=value ...]")
+            return CommandResponse(
+                text="Usage: /run <template_id> [key=value ...] [--approval]"
+            )
 
-        template_id = args[0]
+        # Parse flags
+        require_approval = False
+        clean_args = []
+        for arg in args:
+            if arg in ("--require-approval", "--approval", "-a"):
+                require_approval = True
+            else:
+                clean_args.append(arg)
+
+        if not clean_args:
+            return CommandResponse(text="Usage: /run <template_id> ...")
+
+        template_id = clean_args[0]
         inputs = {}
-        for arg in args[1:]:
+        for arg in clean_args[1:]:
             if "=" in arg:
                 k, v = arg.split("=", 1)
                 inputs[k.strip()] = v.strip()
 
-        res = await self.client.submit_job(template_id, inputs)
+        res = await self.client.submit_job(
+            template_id, inputs, require_approval=require_approval
+        )
         if res.get("ok"):
             data = res.get("data", {})
-            prompt_id = data.get("prompt_id", "unknown")
-            return CommandResponse(
-                text=f"[Job Submitted]\nID: {prompt_id}\nTemplate: {template_id}"
-            )
+            trace_id = data.get("trace_id", "unknown")
+
+            if data.get("pending"):
+                approval_id = data.get("approval_id", "unknown")
+                msg = f"[Approval Requested]\nID: {approval_id}\nTrace: {trace_id}"
+                if "expires_at" in data:
+                    msg += f"\nExpires: {data['expires_at']}"
+                return CommandResponse(text=msg)
+            else:
+                prompt_id = data.get("prompt_id", "unknown")
+                return CommandResponse(
+                    text=f"[Job Submitted]\nID: {prompt_id}\nTemplate: {template_id}\nTrace: {trace_id}"
+                )
         else:
             err = res.get("error", "Unknown error")
             return CommandResponse(text=f"[Submission Failed] Reason: {err}")
@@ -197,11 +222,23 @@ class CommandRouter:
         if not args:
             return CommandResponse(text="Usage: /approve <id>")
 
-        res = await self.client.approve_request(args[0])
+        # Assuming auto_execute=True by default for chat logic
+        res = await self.client.approve_request(args[0], auto_execute=True)
         if not res.get("ok"):
             return CommandResponse(text=f"[Failed] {res.get('error')}")
 
-        return CommandResponse(text=f"[Approved] {args[0]}")
+        data = res.get("data", {})
+        msg = f"[Approved] {args[0]}"
+
+        # Phase 4: Show execution result
+        if "prompt_id" in data:
+            msg += f"\nExecuted: {data['prompt_id']}"
+        elif data.get("executed") is False:
+            msg += "\n(Not Executed)"
+            if err := data.get("execution_error"):
+                msg += f"\nError: {err}"
+
+        return CommandResponse(text=msg)
 
     async def _handle_reject(
         self, req: CommandRequest, args: List[str]
@@ -272,38 +309,50 @@ class CommandRouter:
             )
         )
 
-    async def _handle_history(self, req: CommandRequest, args: List[str]) -> CommandResponse:
-        if not args: return CommandResponse(text="Usage: /history <prompt_id>")
+    async def _handle_history(
+        self, req: CommandRequest, args: List[str]
+    ) -> CommandResponse:
+        if not args:
+            return CommandResponse(text="Usage: /history <prompt_id>")
         res = await self.client.get_history(args[0])
         if not res.get("ok"):
             return CommandResponse(text=f"[Error] {res.get('error')}")
-        
+
         # Simple format
         data = res.get("data", {})
         status = data.get("status", {}).get("status_str", "unknown")
         # Assuming backend returns a structure we can summarise
-        return CommandResponse(text=f"Job {args[0]}: {status}\nFull details: not implemented in connector view yet.")
+        return CommandResponse(
+            text=f"Job {args[0]}: {status}\nFull details: not implemented in connector view yet."
+        )
 
-    async def _handle_trace(self, req: CommandRequest, args: List[str]) -> CommandResponse:
-        if not args: return CommandResponse(text="Usage: /trace <prompt_id>")
+    async def _handle_trace(
+        self, req: CommandRequest, args: List[str]
+    ) -> CommandResponse:
+        if not args:
+            return CommandResponse(text="Usage: /trace <prompt_id>")
         res = await self.client.get_trace(args[0])
         if not res.get("ok"):
             return CommandResponse(text=f"[Error] {res.get('error')}")
-        
-        # Dump trace 
-        return CommandResponse(text=f"Trace {args[0]}: {str(res.get('data'))[:1000]}...")
 
-    async def _handle_jobs(self, req: CommandRequest, args: List[str]) -> CommandResponse:
+        # Dump trace
+        return CommandResponse(
+            text=f"Trace {args[0]}: {str(res.get('data'))[:1000]}..."
+        )
+
+    async def _handle_jobs(
+        self, req: CommandRequest, args: List[str]
+    ) -> CommandResponse:
         # Try native /openclaw/jobs first
         res = await self.client.get_jobs()
         if res.get("ok"):
-             # Format nice summary
-             return CommandResponse(text=f"Default Jobs View: {res.get('data')}")
-        
+            # Format nice summary
+            return CommandResponse(text=f"Default Jobs View: {res.get('data')}")
+
         # Fallback: Queue
         q = await self.client.get_prompt_queue()
         if q.get("ok"):
-             rem = q.get("data", {}).get("exec_info", {}).get("queue_remaining", "?")
-             return CommandResponse(text=f"[Fallback] Queue Remaining: {rem}")
-        
+            rem = q.get("data", {}).get("exec_info", {}).get("queue_remaining", "?")
+            return CommandResponse(text=f"[Fallback] Queue Remaining: {rem}")
+
         return CommandResponse(text="[Error] Could not fetch jobs or queue.")

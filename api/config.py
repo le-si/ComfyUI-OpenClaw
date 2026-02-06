@@ -153,7 +153,19 @@ def _get_llm_allowed_hosts() -> set:
     allowed_hosts_str = os.environ.get("OPENCLAW_LLM_ALLOWED_HOSTS") or os.environ.get(
         "MOLTBOT_LLM_ALLOWED_HOSTS", ""
     )
-    return {h.lower().strip() for h in allowed_hosts_str.split(",") if h.strip()}
+    env_hosts = {h.lower().strip() for h in allowed_hosts_str.split(",") if h.strip()}
+
+    # Default allowlist: built-in provider public hosts.
+    # This makes core providers work out-of-the-box while keeping custom base URLs
+    # constrained to explicit allowlists (or OPENCLAW_ALLOW_ANY_PUBLIC_LLM_HOST=1).
+    try:
+        from ..services.providers.catalog import get_default_public_llm_hosts
+    except ImportError:  # pragma: no cover
+        from services.providers.catalog import (
+            get_default_public_llm_hosts,  # type: ignore
+        )
+
+    return set(get_default_public_llm_hosts()) | env_hosts
 
 
 def _extract_models_from_payload(payload: dict) -> list:

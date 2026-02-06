@@ -254,9 +254,17 @@ class LLMClient:
             allowed_hosts_str = os.environ.get(
                 "OPENCLAW_LLM_ALLOWED_HOSTS"
             ) or os.environ.get("MOLTBOT_LLM_ALLOWED_HOSTS", "")
-            allowed_hosts = set(
+            allowed_hosts_env = set(
                 h.lower().strip() for h in allowed_hosts_str.split(",") if h.strip()
             )
+            try:
+                from ..services.providers.catalog import get_default_public_llm_hosts
+            except ImportError:
+                from services.providers.catalog import (
+                    get_default_public_llm_hosts,  # type: ignore
+                )
+
+            allowed_hosts = set(get_default_public_llm_hosts()) | allowed_hosts_env
             allow_any = _env_flag(
                 "OPENCLAW_ALLOW_ANY_PUBLIC_LLM_HOST",
                 "MOLTBOT_ALLOW_ANY_PUBLIC_LLM_HOST",

@@ -27,6 +27,60 @@ class TestModelListAPI(unittest.IsolatedAsyncioTestCase):
     @patch("api.config.require_admin_token")
     @patch("services.safe_io.validate_outbound_url")
     @patch("urllib.request.urlopen")
+    async def test_handler_default_allowlist_allows_builtin_hosts(
+        self,
+        mock_urlopen,
+        mock_validate_url,
+        mock_require_admin,
+        mock_rate_limit,
+        mock_get_key,
+        mock_get_config,
+    ):
+        """
+        Built-in providers should work out-of-the-box without requiring
+        OPENCLAW_LLM_ALLOWED_HOSTS to be set.
+        """
+        mock_rate_limit.return_value = True
+        mock_require_admin.return_value = (True, None)
+        mock_get_config.return_value = (
+            {"provider": "gemini", "base_url": ""},
+            {},
+        )
+        mock_get_key.return_value = "sk-test"
+
+        def _assert_allowlist(url, *, allow_hosts=None, allow_any_public_host=False):
+            self.assertFalse(allow_any_public_host)
+            self.assertIsNotNone(allow_hosts)
+            self.assertIn("generativelanguage.googleapis.com", set(allow_hosts))
+            return ("https", "generativelanguage.googleapis.com", 443)
+
+        mock_validate_url.side_effect = _assert_allowlist
+
+        mock_response = MagicMock()
+        mock_response.read.return_value = json.dumps(
+            {"data": [{"id": "gemini-2.0-flash"}]}
+        ).encode("utf-8")
+        mock_response.__enter__.return_value = mock_response
+        mock_urlopen.return_value = mock_response
+
+        request = MagicMock()
+        request.query = {}
+        request.remote = "127.0.0.1"
+
+        with patch.dict("os.environ", {}, clear=True):
+            resp = await llm_models_handler(request)
+
+        self.assertEqual(resp.status, 200, f"Expected 200 OK, got {resp.status}")
+        data = json.loads(resp.body)
+        self.assertTrue(data["ok"])
+        self.assertIn("gemini-2.0-flash", data["models"])
+
+    @patch("api.config.get_effective_config")
+    @patch("services.providers.keys.get_api_key_for_provider")
+    @patch("api.config.check_rate_limit")
+    @patch("api.config.require_admin_token")
+    @patch("services.safe_io.validate_outbound_url")
+    @patch("urllib.request.urlopen")
     async def test_handler_success(
         self,
         mock_urlopen,

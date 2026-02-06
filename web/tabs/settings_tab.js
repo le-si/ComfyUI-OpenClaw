@@ -605,6 +605,7 @@ function createCollapsibleSection(title, description, defaultExpanded = false) {
           <li>Only use UI storage on a single-user, localhost-only setup.</li>
           <li>ENV keys always take priority over stored keys.</li>
           <li>Secrets are stored as plaintext JSON on disk (protected by OS permissions).</li>
+          <li>Outbound LLM requests are protected by an SSRF policy. Built-in providers are allowlisted by default; custom Base URL hosts must be added via <code>OPENCLAW_LLM_ALLOWED_HOSTS</code> (or use <code>OPENCLAW_ALLOW_ANY_PUBLIC_LLM_HOST=1</code> at your own risk).</li>
         </ul>
         <p><b>PowerShell</b>: <code>$env:OPENCLAW_LLM_API_KEY="&lt;YOUR_API_KEY&gt;"</code></p>
         <p><b>CMD</b>: <code>set OPENCLAW_LLM_API_KEY=&lt;YOUR_API_KEY&gt;</code></p>

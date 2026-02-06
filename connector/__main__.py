@@ -2,27 +2,30 @@
 Connector Entrypoint (F29).
 Runs the connector process properly.
 """
+
 import asyncio
 import logging
 import sys
+
 from .config import load_config
 from .openclaw_client import OpenClawClient
-from .router import CommandRouter
-from .platforms.telegram_polling import TelegramPolling
 from .platforms.discord_gateway import DiscordGateway
 from .platforms.line_webhook import LINEWebhookServer
+from .platforms.telegram_polling import TelegramPolling
+from .router import CommandRouter
 
 # Configure logging
 logging.basicConfig(
     level=logging.INFO,
     format="[%(asctime)s] %(name)s %(levelname)s: %(message)s",
-    handlers=[logging.StreamHandler(sys.stdout)]
+    handlers=[logging.StreamHandler(sys.stdout)],
 )
 logger = logging.getLogger("connector")
 
+
 async def main():
     logger.info("Initializing OpenClaw Connector (Phase 3)...")
-    
+
     # 1. Config
     try:
         config = load_config()
@@ -37,10 +40,10 @@ async def main():
 
     # 2. Components
     client = OpenClawClient(config)
-    await client.start() # Start session
-    
+    await client.start()  # Start session
+
     router = CommandRouter(config, client)
-    
+
     tasks = []
     line_server = None
 
@@ -49,7 +52,9 @@ async def main():
         tg = TelegramPolling(config, router)
         tasks.append(asyncio.create_task(tg.start()))
     else:
-        logger.info("Telegram not configured (OPENCLAW_CONNECTOR_TELEGRAM_TOKEN missing)")
+        logger.info(
+            "Telegram not configured (OPENCLAW_CONNECTOR_TELEGRAM_TOKEN missing)"
+        )
 
     if config.discord_bot_token:
         dc = DiscordGateway(config, router)
@@ -62,14 +67,20 @@ async def main():
         await line_server.start()
         # If only LINE is active, tasks will be empty. Add a sleeper to keep loop alive.
         if not tasks:
-            tasks.append(asyncio.create_task(asyncio.sleep(3600*24*365))) # Sleep forever
+            tasks.append(
+                asyncio.create_task(asyncio.sleep(3600 * 24 * 365))
+            )  # Sleep forever
     elif config.line_channel_secret:
-         logger.warning("LINE configured but Access Token missing. Skipping.")
+        logger.warning("LINE configured but Access Token missing. Skipping.")
     else:
-        logger.info("LINE not configured (OPENCLAW_CONNECTOR_LINE_CHANNEL_SECRET missing)")
+        logger.info(
+            "LINE not configured (OPENCLAW_CONNECTOR_LINE_CHANNEL_SECRET missing)"
+        )
 
     if not tasks and not line_server:
-        logger.error("No platforms configured! Set TELEGRAM_TOKEN, DISCORD_TOKEN, or LINE_SECRET.")
+        logger.error(
+            "No platforms configured! Set TELEGRAM_TOKEN, DISCORD_TOKEN, or LINE_SECRET."
+        )
         await client.close()
         return
 
@@ -91,6 +102,7 @@ async def main():
             await line_server.stop()
         await client.close()
         logger.info("Connector stopped.")
+
 
 if __name__ == "__main__":
     try:

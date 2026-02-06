@@ -2,8 +2,10 @@
 Connector Contract (F29).
 Shared data models for request/response.
 """
+
 from dataclasses import dataclass, field
 from typing import List, Optional
+
 
 @dataclass
 class CommandRequest:
@@ -15,8 +17,9 @@ class CommandRequest:
     text: str
     timestamp: float
 
+
 @dataclass
 class CommandResponse:
     text: str
     files: List[str] = field(default_factory=list)  # Local paths to upload
-    buttons: List[dict] = field(default_factory=list) # Simple quick replies
+    buttons: List[dict] = field(default_factory=list)  # Simple quick replies
