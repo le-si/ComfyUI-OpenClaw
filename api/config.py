@@ -528,8 +528,73 @@ async def llm_test_handler(request: web.Request) -> web.Response:
 
     actor_ip = get_client_ip(request)
     try:
-        # Initialize client (uses effective config by default)
-        client = LLMClient()
+        # IMPORTANT (Settings UX / provider mismatch):
+        # - The Settings UI allows selecting provider/model/base_url without persisting config immediately.
+        # - If this endpoint only uses effective config, "Test Connection" can misleadingly test the
+        #   previous provider (often "openai") and report: "API key not configured for provider 'openai'"
+        #   even when the UI is set to Gemini and a Gemini key is stored.
+        # Therefore, accept optional overrides in the JSON body.
+        #
+        # Contract:
+        # - Empty body -> test effective config
+        # - Body may include: provider, model, base_url, timeout_sec, max_retries
+        try:
+            body = await request.json()
+            if body is None:
+                body = {}
+        except Exception:
+            body = {}
+
+        if body and not isinstance(body, dict):
+            return web.json_response(
+                {"ok": False, "error": "Expected JSON object body (or empty body)"},
+                status=400,
+            )
+
+        provider = (
+            body.get("provider") if isinstance(body.get("provider"), str) else None
+        )
+        model = body.get("model") if isinstance(body.get("model"), str) else None
+        base_url = (
+            body.get("base_url") if isinstance(body.get("base_url"), str) else None
+        )
+
+        timeout_val = body.get("timeout_sec")
+        timeout_sec = None
+        if (
+            isinstance(timeout_val, (int, float, str))
+            and str(timeout_val).strip() != ""
+        ):
+            try:
+                timeout_sec = int(timeout_val)
+            except Exception:
+                return web.json_response(
+                    {"ok": False, "error": "timeout_sec must be an integer"},
+                    status=400,
+                )
+
+        retries_val = body.get("max_retries")
+        max_retries = None
+        if (
+            isinstance(retries_val, (int, float, str))
+            and str(retries_val).strip() != ""
+        ):
+            try:
+                max_retries = int(retries_val)
+            except Exception:
+                return web.json_response(
+                    {"ok": False, "error": "max_retries must be an integer"},
+                    status=400,
+                )
+
+        # Initialize client (uses effective config by default; overrides if provided)
+        client = LLMClient(
+            provider=provider,
+            base_url=base_url,
+            model=model,
+            timeout=timeout_sec,
+            max_retries=max_retries,
+        )
 
         # Run test in a worker thread since LLMClient is sync
         result = await run_in_thread(
@@ -547,6 +612,8 @@ async def llm_test_handler(request: web.Request) -> web.Response:
                     "ok": True,
                     "message": "Connection successful",
                     "response": result["text"].strip(),
+                    "provider": client.provider,
+                    "model": client.model,
                 }
             )
         else:

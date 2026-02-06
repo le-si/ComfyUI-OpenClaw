@@ -249,14 +249,16 @@ export class MoltbotAPI {
     }
 
     // Backwards compatibility alias for settings_tab.js
-    async testLLM(adminToken) {
+    async testLLM(adminToken, overrides = null) {
         return this.fetch(this._path("/llm/test"), {
             method: "POST",
             headers: {
                 "Content-Type": "application/json",
                 ...this._adminTokenHeaders(adminToken),
             },
-            body: JSON.stringify({}),
+            // IMPORTANT: Settings UI uses this to test the currently selected provider/model
+            // without requiring a config "Save" first. Backend accepts an empty body too.
+            body: JSON.stringify(overrides || {}),
             timeout: 30000,
         });
     }

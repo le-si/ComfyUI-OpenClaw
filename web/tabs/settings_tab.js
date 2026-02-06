@@ -152,6 +152,9 @@ export const settingsTab = {
             modelWrap.style.gap = "8px";
             modelWrap.style.alignItems = "center";
 
+            // Model selection UX:
+            // - Default: free-text input (works even if model listing isn't supported).
+            // - After "Load Models": show a real <select> for discoverability + still allow "Custom…".
             const modelInput = document.createElement("input");
             modelInput.type = "text";
             modelInput.className = "moltbot-input";
@@ -159,11 +162,69 @@ export const settingsTab = {
             modelInput.disabled = sources.model === "env";
             modelInput.style.flex = "1";
 
-            // Datalist for remote suggestions
+            const modelSelect = document.createElement("select");
+            modelSelect.className = "moltbot-input";
+            modelSelect.disabled = sources.model === "env";
+            modelSelect.style.flex = "1";
+            modelSelect.style.display = "none"; // shown after models load
+
+            const MODEL_CUSTOM = "__custom__";
+
+            // Datalist for remote suggestions (used in custom/free-text mode)
             const modelListId = "openclaw-model-list";
             modelInput.setAttribute("list", modelListId);
             const modelDatalist = document.createElement("datalist");
             modelDatalist.id = modelListId;
+
+            let lastLoadedModels = [];
+            let modelsLoaded = false;
+
+            const updateModelUiVisibility = () => {
+                // IMPORTANT (UX): Users expect an actual dropdown after "Load Models" even if the current
+                // model is not in the returned list (e.g., switching provider but model still set to an
+                // old value like "gpt-4o-mini"). Keep the <select> visible and use "Custom…" as a bridge.
+                const showSelect = modelsLoaded;
+                const showInput = !modelsLoaded || modelSelect.value === MODEL_CUSTOM;
+
+                modelSelect.style.display = showSelect ? "" : "none";
+                modelInput.style.display = showInput ? "" : "none";
+            };
+
+            const populateModelSelect = (models) => {
+                modelSelect.innerHTML = "";
+
+                const customOpt = document.createElement("option");
+                customOpt.value = MODEL_CUSTOM;
+                customOpt.textContent = "Custom…";
+                modelSelect.appendChild(customOpt);
+
+                models.slice(0, 5000).forEach((m) => {
+                    const opt = document.createElement("option");
+                    opt.value = m;
+                    opt.textContent = m;
+                    modelSelect.appendChild(opt);
+                });
+
+                modelsLoaded = true;
+                const current = (modelInput.value || "").trim();
+                if (current && models.includes(current)) {
+                    modelSelect.value = current;
+                } else {
+                    modelSelect.value = MODEL_CUSTOM;
+                }
+                updateModelUiVisibility();
+            };
+
+            modelSelect.onchange = () => {
+                const v = modelSelect.value;
+                if (v === MODEL_CUSTOM) {
+                    updateModelUiVisibility();
+                    modelInput.focus();
+                    return;
+                }
+                modelInput.value = v;
+                updateModelUiVisibility();
+            };
 
             const refreshModelsBtn = document.createElement("button");
             refreshModelsBtn.className = "moltbot-btn moltbot-btn-secondary";
@@ -187,11 +248,13 @@ export const settingsTab = {
                 if (res.ok) {
                     modelDatalist.innerHTML = "";
                     const models = Array.isArray(res.data?.models) ? res.data.models : [];
+                    lastLoadedModels = models;
                     models.slice(0, 5000).forEach(m => {
                         const opt = document.createElement("option");
                         opt.value = m;
                         modelDatalist.appendChild(opt);
                     });
+                    populateModelSelect(models);
                     modelsStatus.textContent = `✓ ${models.length} models`;
                     modelsStatus.className = "moltbot-status ok";
                 } else {
@@ -205,6 +268,7 @@ export const settingsTab = {
                 refreshModelsBtn.disabled = false;
             };
 
+            modelWrap.appendChild(modelSelect);
             modelWrap.appendChild(modelInput);
             modelWrap.appendChild(refreshModelsBtn);
             modelWrap.appendChild(modelsStatus);
@@ -340,7 +404,17 @@ export const settingsTab = {
                 statusDiv.textContent = "Testing...";
                 statusDiv.className = "moltbot-status";
 
-                const res = await moltbotApi.testLLM(token);
+                // IMPORTANT (provider mismatch): "Test Connection" must test the provider/model currently
+                // selected in the UI, even if the user hasn't clicked Save yet. Otherwise, the backend
+                // falls back to the effective config (often "openai") and produces confusing errors like:
+                // "API key not configured for provider 'openai'" while the UI is set to Gemini.
+                const res = await moltbotApi.testLLM(token, {
+                    provider: providerSelect.value,
+                    model: modelInput.value,
+                    base_url: baseUrlInput.value,
+                    timeout_sec: parseInt(timeoutInput.value) || 120,
+                    max_retries: parseInt(retriesInput.value) || 3,
+                });
                 if (res.ok) {
                     statusDiv.textContent = "✓ Success! " + (res.response ? `"${res.response}"` : "");
                     statusDiv.className = "moltbot-status ok";
