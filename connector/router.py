@@ -15,6 +15,9 @@ from .state import ConnectorState
 if False:  # Type hinting only
     from .results_poller import ResultsPoller
 
+from .llm_client import LLMClient
+from .prompts import CHAT_SYSTEM_PROMPT, CHAT_STATUS_PROMPT
+
 logger = logging.getLogger(__name__)
 
 
@@ -60,6 +63,8 @@ class CommandRouter:
             ("/history", "history"): (self._handle_history, False),
             ("/trace", "trace"): (self._handle_trace, True),  # Admin only
             ("/jobs", "jobs", "queue"): (self._handle_jobs, False),
+            # F30: Chat Assistant
+            ("/chat", "chat"): (self._handle_chat, False),
         }
 
         # Find Handler
@@ -415,3 +420,118 @@ class CommandRouter:
             return CommandResponse(text=f"[Fallback] Queue Remaining: {rem}")
 
         return CommandResponse(text="[Error] Could not fetch jobs or queue.")
+
+    # -------------------------------------------------------------------------
+    # F30: Chat LLM Assistant
+    # -------------------------------------------------------------------------
+
+    async def _handle_chat(
+        self, req: CommandRequest, args: List[str]
+    ) -> CommandResponse:
+        """
+        /chat [subcommand] <message>
+        Subcommands: run, template, status
+        Default: general chat
+        
+        Security: Never auto-executes commands. Only suggests command text.
+        """
+        llm = LLMClient(self.client)
+
+        if not await llm.is_configured():
+            return CommandResponse(
+                text="[Chat Error] LLM not configured. Configure in OpenClaw Settings."
+            )
+
+        # Parse subcommand
+        if not args:
+            return CommandResponse(
+                text="Usage: /chat <message> or /chat run|template|status <request>"
+            )
+
+        subcommand = args[0].lower()
+        message = " ".join(args[1:]) if len(args) > 1 else ""
+
+        trust_level = "TRUSTED" if self._is_trusted(req) else "UNTRUSTED"
+
+        if subcommand == "run":
+            return await self._chat_run(llm, message, trust_level)
+        elif subcommand == "template":
+            return await self._chat_template(llm, message)
+        elif subcommand == "status":
+            return await self._chat_status(llm)
+        else:
+            # General chat: first word is part of message
+            full_message = " ".join(args)
+            return await self._chat_general(llm, full_message, trust_level)
+
+    async def _chat_general(
+        self, llm: LLMClient, message: str, trust_level: str
+    ) -> CommandResponse:
+        """General chat with assistant."""
+        system_prompt = CHAT_SYSTEM_PROMPT.format(trust_level=trust_level)
+        response = await llm.chat(system_prompt, message)
+        return CommandResponse(text=response)
+
+    async def _chat_run(
+        self, llm: LLMClient, request: str, trust_level: str
+    ) -> CommandResponse:
+        """Suggest a /run command based on user request."""
+        if not request:
+            return CommandResponse(text="Usage: /chat run <description of what you want>")
+
+        # Get available templates (simplified - could fetch from API)
+        templates = "txt2img, img2img, upscale (examples)"
+
+        system_prompt = CHAT_SYSTEM_PROMPT.format(trust_level=trust_level)
+        user_prompt = f"""User wants to run a generation. Suggest a `/run` command.
+
+Request: {request}
+Available templates: {templates}
+Trust level: {trust_level}
+
+Remember: {"add --approval flag" if trust_level == "UNTRUSTED" else "no --approval needed"}.
+Output only the command in a code block."""
+
+        response = await llm.chat(system_prompt, user_prompt)
+        return CommandResponse(text=response)
+
+    async def _chat_template(
+        self, llm: LLMClient, request: str
+    ) -> CommandResponse:
+        """Generate a template JSON suggestion."""
+        if not request:
+            return CommandResponse(text="Usage: /chat template <description>")
+
+        system_prompt = CHAT_SYSTEM_PROMPT.format(trust_level="N/A")
+        user_prompt = f"""Generate a workflow template JSON for this request:
+
+Request: {request}
+
+Output:
+1. Suggested filename
+2. Template JSON in a code block
+
+Keep it minimal."""
+
+        response = await llm.chat(system_prompt, user_prompt)
+        return CommandResponse(text=response)
+
+    async def _chat_status(self, llm: LLMClient) -> CommandResponse:
+        """Summarize system status using LLM."""
+        # Fetch status data
+        health = await self.client.get_health()
+        jobs = await self.client.get_jobs()
+        queue = await self.client.get_prompt_queue()
+
+        status_data = {
+            "health": health.get("data", {}) if health.get("ok") else "unavailable",
+            "jobs": jobs.get("data", {}) if jobs.get("ok") else "unavailable",
+            "queue": queue.get("data", {}) if queue.get("ok") else "unavailable",
+        }
+
+        system_prompt = CHAT_SYSTEM_PROMPT.format(trust_level="N/A")
+        user_prompt = CHAT_STATUS_PROMPT.format(status_data=status_data)
+
+        response = await llm.chat(system_prompt, user_prompt)
+        return CommandResponse(text=response)
+

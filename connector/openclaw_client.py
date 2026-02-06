@@ -95,6 +95,10 @@ class OpenClawClient:
 
     # --- Observability ---
 
+    async def get_openclaw_config(self) -> dict:
+        """Fetch OpenClaw runtime config (provider, model, base_url, etc.)."""
+        return await self._request("GET", "/openclaw/config")
+
     async def get_health(self) -> dict:
         res = await self._request("GET", "/openclaw/health")
         # Health endpoint might return nested structure, but we just want the wrapper
