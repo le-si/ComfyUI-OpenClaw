@@ -88,6 +88,8 @@ class TelegramPolling:
                 return
 
             updates = data.get("result", [])
+            if self.config.debug and not updates:
+                logger.debug("Telegram poll OK (no updates). offset=%s", self.offset)
             for update in updates:
                 next_offset = update["update_id"] + 1
                 if next_offset > self.offset:
@@ -98,18 +100,35 @@ class TelegramPolling:
                 await self._process_update(update)
 
     async def _process_update(self, update: dict):
-        message = update.get("message")
+        # Telegram update shapes vary by chat type and sender mode.
+        # - Normal groups/DMs: `message`
+        # - Edited messages: `edited_message`
+        # - Channels: `channel_post` / `edited_channel_post`
+        #
+        # IMPORTANT (recurring support issue):
+        # If users say "DM works but group/channel does nothing" AND connector logs show no
+        # `DEBUG raw message`, it's often because updates are arriving under `channel_post`
+        # (or `sender_chat` anonymous posts) which older code ignored.
+        message = (
+            update.get("message")
+            or update.get("edited_message")
+            or update.get("channel_post")
+            or update.get("edited_channel_post")
+        )
         if not message or "text" not in message:
             return
 
         chat_id = message["chat"]["id"]
-        user_id = message["from"]["id"]
-        username = message["from"].get("username", "unknown")
+        # `from` may be missing for channel posts; `sender_chat` is used for anonymous admins.
+        from_obj = message.get("from") or {}
+        sender_chat = message.get("sender_chat") or {}
+        user_id = from_obj.get("id")
+        username = from_obj.get("username") or sender_chat.get("username") or "unknown"
         text = message["text"]
 
         # Security Check
         is_allowed = False
-        if user_id in self.config.telegram_allowed_users:
+        if isinstance(user_id, int) and user_id in self.config.telegram_allowed_users:
             is_allowed = True
         if chat_id in self.config.telegram_allowed_chats:
             is_allowed = True
@@ -122,7 +141,9 @@ class TelegramPolling:
         # Build Request
         req = CommandRequest(
             platform="telegram",
-            sender_id=str(user_id),
+            # If `user_id` is missing (channel posts), fall back to chat_id so allowlisting by
+            # `OPENCLAW_CONNECTOR_TELEGRAM_ALLOWED_CHATS` still works deterministically.
+            sender_id=str(user_id) if user_id is not None else str(chat_id),
             channel_id=str(chat_id),
             username=username,
             message_id=str(message["message_id"]),
@@ -194,4 +215,3 @@ class TelegramPolling:
                     logger.error(f"Telegram send_message failed: {r.status} {err}")
         except Exception as e:
             logger.error(f"Telegram send_message error: {e}")
-

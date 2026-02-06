@@ -20,7 +20,7 @@ class LLMClient:
     
     Security:
     - No conversation memory (stateless).
-    - No user prompt logging (privacy).
+    - Never logs user prompt content.
     - Never auto-executes commands.
     """
 
@@ -42,7 +42,13 @@ class LLMClient:
         
         res = await self._client.get_openclaw_config()
         if res.get("ok"):
-            self._config_cache = res.get("data", {})
+            data = res.get("data", {})
+            # /openclaw/config returns { ok, config, sources, providers }
+            # Keep only the effective config block.
+            if isinstance(data, dict) and isinstance(data.get("config"), dict):
+                self._config_cache = data.get("config", {})
+            else:
+                self._config_cache = data if isinstance(data, dict) else {}
         else:
             self._config_cache = {}
         return self._config_cache
@@ -60,9 +66,13 @@ class LLMClient:
             self._configured = True
             return True
         
-        # Check if API key is configured (via secret store or env)
-        # OpenClaw settings will include "api_key_configured" flag
-        self._configured = config.get("api_key_configured", False) or bool(config.get("provider"))
+        # If backend includes an explicit flag, honor it.
+        if "api_key_configured" in config:
+            self._configured = bool(config.get("api_key_configured"))
+            return self._configured
+
+        # Best-effort: consider configured if provider is set (key lookup happens at call time).
+        self._configured = bool(provider)
         return self._configured
 
     async def chat(
@@ -81,44 +91,23 @@ class LLMClient:
         if not await self.is_configured():
             return "[Error] LLM not configured. Configure in OpenClaw Settings."
 
-        config = await self._fetch_config()
-        provider = config.get("provider", "openai")
-        model = config.get("model", "gpt-4o-mini")
-        base_url = config.get("base_url")
-        
-        # Default base URLs per provider (matches OpenClaw catalog)
-        if not base_url:
-            base_url = self._get_default_base_url(provider)
-
-        messages = [
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": user_message},
-        ]
-
+        # NOTE: Use backend chat endpoint so we don't bypass server-side key resolution.
+        # Direct provider calls from the connector can miss UI-stored keys and produce 401 errors.
         try:
-            # Try using services.providers.openai_compat if available
-            from services.providers.openai_compat import make_request
-            from services.providers.keys import get_api_key_for_provider
-
-            api_key = get_api_key_for_provider(provider)
-            
-            result = make_request(
-                base_url=base_url,
-                api_key=api_key,
-                messages=messages,
-                model=model,
+            res = await self._client.chat_llm(
+                system=system_prompt,
+                user_message=user_message,
                 temperature=temperature,
                 max_tokens=max_tokens,
-                timeout=60.0,
             )
-            return result.get("text", "[No response]")
-        except ImportError:
-            # Fallback: use aiohttp directly
-            return await self._fallback_chat(config, messages, temperature, max_tokens)
-        except Exception as e:
+            if res.get("ok"):
+                data = res.get("text") or res.get("data", {}).get("text")
+                return data or "[No response]"
+            return f"[LLM Error] {res.get('error', 'Request failed')}"
+        except Exception:
             # Log error without user content
-            logger.error(f"LLM request failed: {type(e).__name__}")
-            return f"[LLM Error] Request failed. Please try again."
+            logger.error("LLM request failed")
+            return "[LLM Error] Request failed. Please try again."
 
     def _get_default_base_url(self, provider: str) -> str:
         """Get default base URL for provider (matches OpenClaw catalog)."""

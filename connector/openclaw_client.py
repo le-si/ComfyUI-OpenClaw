@@ -52,7 +52,9 @@ class OpenClawClient:
         if self.session:
             await self.session.close()
 
-    async def _request(self, method: str, path: str, json_data: dict = None) -> dict:
+    async def _request(
+        self, method: str, path: str, json_data: dict = None, timeout: int = 10
+    ) -> dict:
         url = f"{self.base_url}{path}"
         session = self.session
 
@@ -64,7 +66,7 @@ class OpenClawClient:
 
         try:
             async with session.request(
-                method, url, headers=self.headers, json=json_data, timeout=10
+                method, url, headers=self.headers, json=json_data, timeout=timeout
             ) as resp:
                 result = {"ok": resp.status in (200, 201, 202)}
 
@@ -87,7 +89,9 @@ class OpenClawClient:
 
                 return result
         except Exception as e:
-            logger.error(f"Request failed {method} {path}: {e}")
+            logger.error(
+                f"Request failed {method} {path}: {type(e).__name__}: {e}"
+            )
             return {"ok": False, "error": str(e)}
         finally:
             if local_session:
@@ -98,6 +102,30 @@ class OpenClawClient:
     async def get_openclaw_config(self) -> dict:
         """Fetch OpenClaw runtime config (provider, model, base_url, etc.)."""
         return await self._request("GET", "/openclaw/config")
+
+    async def get_templates(self) -> dict:
+        """Fetch available templates (ids + metadata)."""
+        return await self._request("GET", "/openclaw/templates")
+
+    async def chat_llm(
+        self,
+        system: str,
+        user_message: str,
+        temperature: float = 0.7,
+        max_tokens: int = 1024,
+    ) -> dict:
+        """Run a server-side LLM chat (uses backend config + keys)."""
+        # NOTE: Must call backend so UI-stored secrets are available (connector has no access).
+        payload = {
+            "system": system,
+            "user_message": user_message,
+            "temperature": temperature,
+            "max_tokens": max_tokens,
+        }
+        # NOTE: LLM calls can exceed the default 10s HTTP timeout.
+        return await self._request(
+            "POST", "/openclaw/llm/chat", payload, timeout=120
+        )
 
     async def get_health(self) -> dict:
         res = await self._request("GET", "/openclaw/health")

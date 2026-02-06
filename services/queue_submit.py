@@ -67,6 +67,28 @@ async def submit_prompt(
     if extra_data:
         payload["extra_data"] = extra_data
 
+    # NOTE: Debug-only full payload logging for troubleshooting mismatched outputs.
+    # Enable with OPENCLAW_DEBUG_PROMPT_PAYLOAD=1. This may include sensitive prompt content.
+    if os.environ.get("OPENCLAW_DEBUG_PROMPT_PAYLOAD", "").strip().lower() in (
+        "1",
+        "true",
+        "yes",
+        "on",
+    ):
+        try:
+            logger.warning(
+                "DEBUG prompt payload (trace=%s source=%s): %s",
+                trace_id,
+                source,
+                json.dumps(payload, ensure_ascii=False),
+            )
+        except Exception:
+            logger.warning(
+                "DEBUG prompt payload (trace=%s source=%s): <failed to serialize>",
+                trace_id,
+                source,
+            )
+
     # R33: Acquire concurrency budget
     limiter = get_limiter()
     async with limiter.acquire(source=source, trace_id=trace_id):

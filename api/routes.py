@@ -20,7 +20,7 @@ except ModuleNotFoundError:  # pragma: no cover (optional for unit tests)
 PACK_NAME = PACK_VERSION = PACK_START_TIME = LOG_FILE = get_api_key = None  # type: ignore
 metrics = tail_log = require_observability_access = check_rate_limit = trace_store = None  # type: ignore
 webhook_handler = webhook_submit_handler = webhook_validate_handler = capabilities_handler = preflight_handler = None  # type: ignore
-config_get_handler = config_put_handler = llm_test_handler = llm_models_handler = None  # type: ignore
+config_get_handler = config_put_handler = llm_test_handler = llm_models_handler = llm_chat_handler = None  # type: ignore
 templates_list_handler = None  # type: ignore
 secrets_status_handler = secrets_put_handler = secrets_delete_handler = None  # type: ignore
 list_checkpoints_handler = create_checkpoint_handler = get_checkpoint_handler = delete_checkpoint_handler = None  # type: ignore
@@ -43,6 +43,7 @@ if web is not None:
             config_put_handler,
             llm_models_handler,
             llm_test_handler,
+            llm_chat_handler,
         )
         from ..api.preflight_handler import inventory_handler, preflight_handler
         from ..api.secrets import (
@@ -84,6 +85,7 @@ if web is not None:
             config_put_handler,
             llm_models_handler,
             llm_test_handler,
+            llm_chat_handler,
         )
         from api.preflight_handler import inventory_handler, preflight_handler
         from api.secrets import (
@@ -454,6 +456,8 @@ def register_routes(server) -> None:
             ("GET", f"{prefix}/config", config_get_handler),
             ("PUT", f"{prefix}/config", config_put_handler),
             ("POST", f"{prefix}/llm/test", llm_test_handler),
+            # NOTE: Connector uses this endpoint to avoid missing UI-stored keys.
+            ("POST", f"{prefix}/llm/chat", llm_chat_handler),
             (
                 "GET",
                 f"{prefix}/llm/models",

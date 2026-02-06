@@ -271,6 +271,11 @@ def validate_config_update(updates: Dict[str, Any]) -> Tuple[Dict[str, Any], lis
             if not isinstance(val, str):
                 errors.append("base_url must be a string")
                 continue
+            # NOTE: Allow empty base_url (use provider default).
+            # Without this, UI saves can fail with "Invalid scheme" on blank base_url.
+            if val.strip() == "":
+                sanitized[key] = ""
+                continue
             # S16: Base URL policy
 
             # 1. Allow if it matches the *default* base_url for the selected provider

@@ -634,3 +634,91 @@ async def llm_test_handler(request: web.Request) -> web.Response:
             },
             status=500,
         )
+
+
+async def llm_chat_handler(request: web.Request) -> web.Response:
+    """
+    POST /openclaw/llm/chat (legacy: /moltbot/llm/chat)
+    Run a simple chat completion using server-side LLM config + keys.
+    This endpoint is intended for the connector; no prompt content is logged.
+    """
+    if web is None:
+        raise RuntimeError("aiohttp not available")
+    try:
+        from ..services.async_utils import run_in_thread
+    except ImportError:
+        from services.async_utils import run_in_thread
+
+    # S17: Rate Limit
+    if not check_rate_limit(request, "admin"):
+        return web.json_response(
+            {"ok": False, "error": "Rate limit exceeded"}, status=429
+        )
+
+    # NOTE: Keep this server-side. Connector cannot access UI-stored secrets directly.
+    # This endpoint ensures keys are resolved via backend config + secret store.
+    # S13: Validate admin boundary (or loopback if no admin token configured)
+    allowed, err = require_admin_token(request)
+    if not allowed:
+        return web.json_response(
+            {
+                "ok": False,
+                "error": err or "Unauthorized",
+            },
+            status=403,
+        )
+
+    try:
+        body = await request.json()
+    except Exception:
+        body = {}
+
+    if not isinstance(body, dict):
+        return web.json_response(
+            {"ok": False, "error": "Expected JSON object body"},
+            status=400,
+        )
+
+    system = body.get("system") if isinstance(body.get("system"), str) else ""
+    user_message = (
+        body.get("user_message")
+        if isinstance(body.get("user_message"), str)
+        else body.get("message") if isinstance(body.get("message"), str) else ""
+    )
+    temperature = body.get("temperature") if isinstance(body.get("temperature"), (int, float)) else 0.7
+    max_tokens = body.get("max_tokens") if isinstance(body.get("max_tokens"), int) else 1024
+
+    if not user_message:
+        return web.json_response(
+            {"ok": False, "error": "missing_user_message"},
+            status=400,
+        )
+
+    try:
+        client = LLMClient()
+
+        def _run():
+            return client.complete(
+                system=system,
+                user_message=user_message,
+                temperature=temperature,
+                max_tokens=max_tokens,
+            )
+
+        result = await run_in_thread(_run)
+        text = ""
+        if isinstance(result, dict):
+            text = result.get("text") or ""
+        return web.json_response({"ok": True, "text": text})
+    except ValueError as e:
+        # Common: missing API key for selected provider
+        return web.json_response(
+            {"ok": False, "error": str(e)},
+            status=400,
+        )
+    except Exception as e:
+        logger.error(f"LLM chat request failed: {type(e).__name__}")
+        return web.json_response(
+            {"ok": False, "error": "llm_request_failed"},
+            status=500,
+        )

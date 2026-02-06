@@ -43,6 +43,12 @@ class ConnectorConfig:
     # Privileged Access (ID match across platforms; Telegram Int vs Discord Str handled by router)
     admin_users: List[str] = field(default_factory=list)
 
+    # Security (F32)
+    rate_limit_user_rpm: int = 10  # Requests per minute per user
+    rate_limit_channel_rpm: int = 30  # Requests per minute per channel
+    max_command_length: int = 4096  # Max characters in a single command
+    llm_max_tokens_per_request: int = 1024  # LLM token budget
+
     # Global
     debug: bool = False
     state_path: Optional[str] = None
@@ -107,5 +113,16 @@ def load_config() -> ConnectorConfig:
     # Admin
     if admins := os.environ.get("OPENCLAW_CONNECTOR_ADMIN_USERS"):
         cfg.admin_users = [u.strip() for u in admins.split(",") if u.strip()]
+
+    # Security (F32)
+    if rpm := os.environ.get("OPENCLAW_CONNECTOR_RATE_LIMIT_USER_RPM"):
+        if rpm.isdigit():
+            cfg.rate_limit_user_rpm = int(rpm)
+    if rpm := os.environ.get("OPENCLAW_CONNECTOR_RATE_LIMIT_CHANNEL_RPM"):
+        if rpm.isdigit():
+            cfg.rate_limit_channel_rpm = int(rpm)
+    if max_len := os.environ.get("OPENCLAW_CONNECTOR_MAX_COMMAND_LENGTH"):
+        if max_len.isdigit():
+            cfg.max_command_length = int(max_len)
 
     return cfg

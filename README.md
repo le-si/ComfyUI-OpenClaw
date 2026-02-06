@@ -7,6 +7,40 @@ ComfyUI-OpenClaw is a **ComfyUI custom node pack** that adds:
 - A secure-by-default HTTP API for automation (webhooks, triggers, schedules, approvals, presets)
 - And more exciting features being added continuously
 
+![OpenClaw /run command example](assets/run.png)
+
+---
+
+## Table of Contents
+
+- [Installation](#installation)
+- [Quick Start (Minimal)](#quick-start-minimal)
+  - [Configure an LLM key](#1-configure-an-llm-key-for-plannerrefinervision-helpers)
+  - [Configure webhook auth](#2-configure-webhook-auth-required-for-webhook)
+  - [Set an Admin Token](#3-optional-recommended-set-an-admin-token)
+- [Nodes](#nodes)
+- [Extension UI](#extension-ui)
+- [API Overview](#api-overview)
+  - [Observability](#observability-read-only)
+  - [LLM config](#llm-config-non-secret)
+  - [Webhooks](#webhooks)
+  - [Triggers + approvals](#triggers--approvals-admin)
+  - [Schedules](#schedules-admin)
+  - [Presets](#presets-admin)
+  - [Packs](#packs-admin)
+  - [Bridge](#bridge-sidecar-optional)
+- [Templates](#templates)
+- [Execution Budgets](#execution-budgets)
+- [LLM Failover](#llm-failover)
+- [State Directory & Logs](#state-directory--logs)
+- [Troubleshooting](#troubleshooting)
+- [Tests](#tests)
+- [Updating](#updating)
+- [Remote Control (Connector)](#-remote-control-connector)
+- [Security](#security)
+
+---
+
 ## Installation
 
 - ComfyUI-Manager: install as a custom node (recommended for most users), then restart ComfyUI.
@@ -223,6 +257,30 @@ Templates live in `data/templates/`.
 
 For the full step-by-step guide (where to put exported workflow JSON, how to author `manifest.json`, how to verify `/openclaw/templates`, and how to use `/run`), see `tests/TEST_SOP.md`.
 
+### Basic `/run` usage (chat)
+
+**Free-text prompt mode (no `key=value` needed):**
+
+```
+/run z 画面中央是一位年轻女性… seed=-1
+```
+
+The connector will map the free text into a prompt field using:
+
+- `allowed_inputs` if a single key is declared in `manifest.json`, or
+- fallback order: `positive_prompt` → `prompt` → `text` → `positive` → `caption`.
+
+**Key=value mode (explicit mapping):**
+
+```
+/run z positive_prompt="a cat" seed=-1
+```
+
+Important:
+
+- Ensure your workflow uses the same placeholder (e.g., `"text": "{{positive_prompt}}"`).
+- `seed=-1` gives random seeds; a fixed seed reproduces outputs.
+
 ## Execution Budgets
 
 Queue submissions are protected by concurrency caps and render size budgets (`services/execution_budgets.py`).
@@ -294,6 +352,13 @@ Notes:
 ### Webhooks return `403 auth_not_configured`
 
 Set webhook auth env vars (see “Quick Start”) and restart ComfyUI.
+
+### Admin Token: server-side vs UI
+
+`OPENCLAW_ADMIN_TOKEN` is a **server-side environment variable**.  
+The Settings UI can **use** an Admin Token for authenticated requests, but **cannot set or persist** the server token.
+
+Full setup steps: see `tests/TEST_SOP.md`.
 
 ## Tests
 

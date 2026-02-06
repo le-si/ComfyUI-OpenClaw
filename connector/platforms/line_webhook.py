@@ -34,6 +34,10 @@ def _import_aiohttp_web():
 
 
 class LINEWebhookServer:
+    # F32 WP2: Replay protection config
+    REPLAY_WINDOW_SEC = 300  # 5 minutes
+    NONCE_CACHE_SIZE = 1000
+
     def __init__(self, config: ConnectorConfig, router: CommandRouter):
         self.config = config
         self.router = router
@@ -41,6 +45,8 @@ class LINEWebhookServer:
         self.runner = None
         self.site = None
         self.session = None
+        # F32 WP2: LRU nonce cache (event_id -> timestamp)
+        self._nonce_cache: dict = {}
 
     async def start(self):
         """Start the webhook server."""
@@ -96,6 +102,11 @@ class LINEWebhookServer:
             logger.warning("Invalid LINE Signature")
             return web.Response(status=401, text="Invalid Signature")
 
+        # F32 WP2: Replay protection (timestamp + nonce)
+        if not self._check_replay_protection(body_text):
+            logger.warning("Replay attack detected or stale request")
+            return web.Response(status=403, text="Replay Rejected")
+
         # 2. Parse Event
         try:
             payload = json.loads(body_text)
@@ -123,6 +134,55 @@ class LINEWebhookServer:
         ).decode("utf-8")
 
         return hmac.compare_digest(generated, signature)
+
+    def _check_replay_protection(self, body_text: str) -> bool:
+        """
+        F32 WP2: Replay protection using timestamp + nonce.
+        Returns False if request should be rejected.
+        """
+        try:
+            payload = json.loads(body_text)
+        except json.JSONDecodeError:
+            return False  # Will be caught later as Bad JSON
+
+        events = payload.get("events", [])
+        if not events:
+            return True  # No events to process
+
+        now = time.time() * 1000  # LINE timestamps are in ms
+
+        for event in events:
+            # Check timestamp freshness
+            ts = event.get("timestamp", 0)
+            age_sec = (now - ts) / 1000
+            if age_sec > self.REPLAY_WINDOW_SEC or age_sec < -60:
+                # Allow 60s clock skew in the future
+                logger.debug(f"Stale or future event: age={age_sec:.1f}s")
+                return False
+
+            # Check nonce (use replyToken or webhookEventId as unique identifier)
+            nonce = event.get("webhookEventId") or event.get("replyToken")
+            if nonce:
+                if nonce in self._nonce_cache:
+                    logger.debug(f"Duplicate nonce: {nonce}")
+                    return False
+                # Add to cache with timestamp
+                self._nonce_cache[nonce] = ts
+                # Evict old entries if cache is full
+                self._evict_old_nonces()
+
+        return True
+
+    def _evict_old_nonces(self):
+        """Remove old entries from nonce cache."""
+        if len(self._nonce_cache) <= self.NONCE_CACHE_SIZE:
+            return
+
+        now = time.time() * 1000
+        cutoff = now - (self.REPLAY_WINDOW_SEC * 1000)
+        self._nonce_cache = {
+            k: v for k, v in self._nonce_cache.items() if v > cutoff
+        }
 
     async def _process_event(self, event: dict):
         """Convert LINE event to CommandRequest and route."""

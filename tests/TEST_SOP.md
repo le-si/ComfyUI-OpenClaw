@@ -217,6 +217,14 @@ Expected response:
 
 ### Use `/run` from chat
 
+**Free-text prompt support (no `key=value` needed):**
+- `/run <template_id> <free text> seed=-1`
+- Connector maps free-text to a prompt key:
+  - If `manifest.json` `allowed_inputs` has exactly one key → it uses that.
+  - Otherwise prefers: `positive_prompt` → `prompt` → `text` → `positive` → `caption`.
+  - If none match, defaults to `positive_prompt`.
+- Ensure the template uses the same placeholder (e.g., `"text": "{{positive_prompt}}"`).
+
 Once the template appears in `/openclaw/templates`, you can run it via chat:
 - Run immediately:
   - `/run your_template_id positive_prompt="a cat" seed=123`
@@ -224,6 +232,40 @@ Once the template appears in `/openclaw/templates`, you can run it via chat:
   - `/run your_template_id positive_prompt="a cat" seed=123 --approval`
 
 Unused keys have no effect unless the workflow contains a matching `{{key}}` placeholder.
+
+## Admin Token & UI Usage (SOP)
+
+**Key rule:** `OPENCLAW_ADMIN_TOKEN` is a **server-side environment variable**.  
+The UI can **use** an Admin Token for authenticated requests, but **cannot set or persist** the server token.
+
+### Recommended setup (local only)
+1) **Set server token (env)**
+```powershell
+$env:OPENCLAW_ADMIN_TOKEN="your_admin_token_here"
+```
+2) **Restart ComfyUI**
+3) **Enter the same token in the Settings UI**
+   - This only stores it in the browser session for API calls.
+
+### Windows CMD (per-session)
+```cmd
+set OPENCLAW_ADMIN_TOKEN=your_admin_token_here
+set OPENCLAW_LLM_API_KEY=your_api_key_here
+set OPENCLAW_LLM_PROVIDER=gemini
+```
+
+### Windows CMD (persistent, user-level)
+```cmd
+setx OPENCLAW_ADMIN_TOKEN "your_admin_token_here"
+setx OPENCLAW_LLM_API_KEY "your_api_key_here"
+setx OPENCLAW_LLM_PROVIDER "gemini"
+```
+
+> After `setx`, open a **new** terminal session before launching ComfyUI.
+
+### Security Notes
+- Do **not** expose ComfyUI to the internet with UI-only tokens.
+- Admin token must remain server-side and protected by OS/environment.
 
 ## WSL / Restricted Environments
 If `pre-commit` fails due to cache permissions, run with a writable cache directory:

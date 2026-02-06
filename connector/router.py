@@ -17,6 +17,7 @@ if False:  # Type hinting only
 
 from .llm_client import LLMClient
 from .prompts import CHAT_SYSTEM_PROMPT, CHAT_STATUS_PROMPT
+from .rate_limiter import RateLimiter
 
 logger = logging.getLogger(__name__)
 
@@ -27,10 +28,38 @@ class CommandRouter:
         self.client = client
         self.poller = poller
         self.state = ConnectorState(path=self.config.state_path)
+        self._template_meta_cache: Dict[str, Dict[str, Any]] = {}
+        # F32 WP2: Rate limiter
+        self._rate_limiter = RateLimiter(
+            user_rpm=self.config.rate_limit_user_rpm,
+            channel_rpm=self.config.rate_limit_channel_rpm,
+        )
 
     async def handle(self, req: CommandRequest) -> CommandResponse:
         """Main dispatch loop."""
         text = req.text.strip()
+        # NOTE: Debug-only raw message logging for troubleshooting parsing issues.
+        # Enable with OPENCLAW_CONNECTOR_DEBUG=1. May include sensitive user content.
+        if self.config.debug:
+            logger.info(
+                "DEBUG raw message: platform=%s user=%s chat=%s text=%r",
+                req.platform,
+                req.sender_id,
+                req.channel_id,
+                text,
+            )
+
+        # F32 WP2: Rate limiting
+        if not self._rate_limiter.is_allowed(str(req.sender_id), str(req.channel_id)):
+            return CommandResponse(
+                text="[Rate Limited] Too many requests. Please wait a moment."
+            )
+
+        # F32 WP5: Command length limit
+        if len(text) > self.config.max_command_length:
+            return CommandResponse(
+                text=f"[Error] Command too long ({len(text)} chars). Max: {self.config.max_command_length}."
+            )
 
         try:
             parts = shlex.split(text)
@@ -44,6 +73,17 @@ class CommandRouter:
 
         cmd = parts[0].lower()
         args = parts[1:]
+
+        # Telegram group commands often include the bot username suffix, e.g. `/help@mybot`.
+        # If we don't strip it, the command won't match our dispatch table and appears "dead"
+        # even though polling is working.
+        if (req.platform or "").lower() == "telegram" and cmd.startswith("/") and "@" in cmd:
+            cmd = cmd.split("@", 1)[0]
+
+        # Some users type `@bot /help` in group chats. Treat that as a command too.
+        if cmd.startswith("@") and args and args[0].startswith("/"):
+            cmd = args[0].lower()
+            args = args[1:]
 
         # Dispatch Table
         handlers = {
@@ -179,7 +219,7 @@ class CommandRouter:
     ) -> CommandResponse:
         if not args:
             return CommandResponse(
-                text="Usage: /run <template_id> [key=value ...] [--approval]"
+                text="Usage: /run <template_id> [prompt text] [key=value ...] [--approval]"
             )
 
         # Parse flags
@@ -195,11 +235,37 @@ class CommandRouter:
             return CommandResponse(text="Usage: /run <template_id> ...")
 
         template_id = clean_args[0]
-        inputs = {}
+        inputs: Dict[str, str] = {}
+        free_text_parts: List[str] = []
         for arg in clean_args[1:]:
             if "=" in arg:
                 k, v = arg.split("=", 1)
                 inputs[k.strip()] = v.strip()
+            else:
+                free_text_parts.append(arg)
+
+        # If user provided free text without key=value, treat it as the prompt.
+        # We map it to a best-effort prompt key (prefers template metadata if available).
+        if free_text_parts:
+            prompt_key = await self._resolve_prompt_key(template_id)
+            if prompt_key not in inputs:
+                inputs[prompt_key] = " ".join(free_text_parts).strip()
+            elif self.config.debug:
+                logger.info(
+                    "DEBUG /run free-text ignored (prompt key already set): %s",
+                    prompt_key,
+                )
+
+        # NOTE: Debug-only payload logging for troubleshooting prompt mismatches.
+        # Enable with OPENCLAW_CONNECTOR_DEBUG=1 to log template_id + inputs.
+        if self.config.debug:
+            logger.info(
+                "DEBUG /run payload: template=%s inputs=%s approval_flag=%s trusted=%s",
+                template_id,
+                inputs,
+                explicit_approval,
+                self._is_trusted(req),
+            )
 
         trusted = self._is_trusted(req)
         require_approval = explicit_approval or (not trusted)
@@ -228,6 +294,42 @@ class CommandRouter:
         else:
             err = res.get("error", "Unknown error")
             return CommandResponse(text=f"[Submission Failed] Reason: {err}")
+
+    async def _resolve_prompt_key(self, template_id: str) -> str:
+        """
+        Best-effort prompt key resolution.
+        Prefer template metadata (allowed_inputs), then fall back to common names.
+        """
+        meta = await self._get_template_meta(template_id)
+        allowed = meta.get("allowed_inputs") or []
+
+        # If template explicitly declares a single input, use it.
+        if isinstance(allowed, list) and len(allowed) == 1:
+            return str(allowed[0])
+
+        preferred = ("positive_prompt", "prompt", "text", "positive", "caption")
+        if isinstance(allowed, list):
+            for key in preferred:
+                if key in allowed:
+                    return key
+
+        # Default fallback
+        return "positive_prompt"
+
+    async def _get_template_meta(self, template_id: str) -> Dict[str, Any]:
+        if template_id in self._template_meta_cache:
+            return self._template_meta_cache[template_id]
+        try:
+            res = await self.client.get_templates()
+            if res.get("ok"):
+                for item in res.get("templates", []) or []:
+                    if item.get("id") == template_id:
+                        self._template_meta_cache[template_id] = item
+                        return item
+        except Exception as e:
+            if self.config.debug:
+                logger.info(f"DEBUG template meta fetch failed: {e}")
+        return {}
 
     async def _handle_interrupt(
         self, req: CommandRequest, args: List[str]
@@ -361,7 +463,7 @@ class CommandRouter:
             text=(
                 "OpenClaw Connector\n"
                 "/status - Check system health and queue\n"
-                "/run <template> [k=v] - Run a generation (trusted users auto-exec; others require approval)\n"
+                "/run <template> [prompt] [k=v] - Run a generation (trusted users auto-exec; others require approval)\n"
                 "/stop - Global Interrupt (Admin)\n"
                 "/history <id> - Job details\n"
                 "/jobs - Queue summary\n"
@@ -534,4 +636,3 @@ Keep it minimal."""
 
         response = await llm.chat(system_prompt, user_prompt)
         return CommandResponse(text=response)
-

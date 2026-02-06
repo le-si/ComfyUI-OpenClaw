@@ -24,6 +24,33 @@ logging.basicConfig(
 logger = logging.getLogger("connector")
 
 
+def _print_security_banner(config):
+    """
+    F32 WP1: Print security warning when allowlists are empty.
+    Fail-closed: empty allowlists = all users treated as untrusted.
+    """
+    has_trusted_users = bool(
+        config.telegram_allowed_users or
+        config.telegram_allowed_chats or
+        config.discord_allowed_users or
+        config.discord_allowed_channels or
+        config.line_allowed_users or
+        config.line_allowed_groups
+    )
+    has_admins = bool(config.admin_users)
+
+    if not has_trusted_users:
+        logger.warning("=" * 60)
+        logger.warning("⚠️  SECURITY: No trusted users configured.")
+        logger.warning("⚠️  All /run commands will require approval.")
+        logger.warning("⚠️  Set OPENCLAW_CONNECTOR_*_ALLOWED_USERS to enable auto-exec.")
+        logger.warning("=" * 60)
+
+    if not has_admins:
+        logger.warning("⚠️  No admin users configured (OPENCLAW_CONNECTOR_ADMIN_USERS).")
+        logger.warning("⚠️  Admin commands (/approve, /reject, etc.) will be unavailable.")
+
+
 async def main():
     logger.info("Initializing OpenClaw Connector (Phase 5)...")
 
@@ -38,6 +65,9 @@ async def main():
         logger.setLevel(logging.DEBUG)
         logging.getLogger("connector").setLevel(logging.DEBUG)
         logger.debug("Debug mode enabled")
+
+    # F32 WP1: Security warning banner when no trusted users configured
+    _print_security_banner(config)
 
     # 2. Components
     client = OpenClawClient(config)
