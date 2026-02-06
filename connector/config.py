@@ -43,6 +43,12 @@ class ConnectorConfig:
     # Privileged Access (ID match across platforms; Telegram Int vs Discord Str handled by router)
     admin_users: List[str] = field(default_factory=list)
 
+    # Media Host (F33)
+    public_base_url: Optional[str] = None
+    media_path: str = "/media"
+    media_ttl_sec: int = 300
+    media_max_mb: int = 8
+
     # Security (F32)
     rate_limit_user_rpm: int = 10  # Requests per minute per user
     rate_limit_channel_rpm: int = 30  # Requests per minute per channel
@@ -130,5 +136,15 @@ def load_config() -> ConnectorConfig:
     if max_len := os.environ.get("OPENCLAW_CONNECTOR_MAX_COMMAND_LENGTH"):
         if max_len.isdigit():
             cfg.max_command_length = int(max_len)
+
+    # Media Host (F33)
+    cfg.public_base_url = os.environ.get("OPENCLAW_CONNECTOR_PUBLIC_BASE_URL")
+    cfg.media_path = os.environ.get("OPENCLAW_CONNECTOR_MEDIA_PATH", "/media")
+    if ttl := os.environ.get("OPENCLAW_CONNECTOR_MEDIA_TTL_SEC"):
+        if ttl.isdigit():
+            cfg.media_ttl_sec = int(ttl)
+    if mb := os.environ.get("OPENCLAW_CONNECTOR_MEDIA_MAX_MB"):
+        if mb.isdigit():
+            cfg.media_max_mb = int(mb)
 
     return cfg

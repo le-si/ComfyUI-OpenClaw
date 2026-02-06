@@ -47,6 +47,10 @@ class LINEWebhookServer:
         self.session = None
         # F32 WP2: LRU nonce cache (event_id -> timestamp)
         self._nonce_cache: dict = {}
+        # F33 Media Store
+        from ..media_store import MediaStore
+
+        self.media_store = MediaStore(config)
 
     async def start(self):
         """Start the webhook server."""
@@ -71,6 +75,9 @@ class LINEWebhookServer:
 
         self.app = web.Application()
         self.app.router.add_post(self.config.line_webhook_path, self.handle_webhook)
+        # F33 Media Route
+        media_route = f"{self.config.media_path}/{{token}}"
+        self.app.router.add_get(media_route, self._handle_media_request)
 
         self.runner = web.AppRunner(self.app)
         await self.runner.setup()
@@ -122,6 +129,17 @@ class LINEWebhookServer:
                 await self._process_event(event)
 
         return web.Response(text="OK")
+
+    async def _handle_media_request(self, request):
+        """Serve media files for verified tokens."""
+        aiohttp, web = _import_aiohttp_web()
+        token = request.match_info.get("token")
+        path = self.media_store.get_image_path(token)
+
+        if not path:
+            return web.Response(status=404, text="Media Not Found or Expired")
+
+        return web.FileResponse(path)
 
     def _verify_signature(self, body: bytes, signature: str) -> bool:
         """Verify X-Line-Signature using HMAC-SHA256."""
@@ -272,6 +290,7 @@ class LINEWebhookServer:
         except Exception as e:
             logger.error(f"LINE reply exception: {e}")
 
+
     async def send_image(
         self,
         channel_id: str,
@@ -280,14 +299,59 @@ class LINEWebhookServer:
         caption: Optional[str] = None,
     ):
         """
-        Send image via LINE.
-        NOTE: LINE requires a public HTTPS URL for images.
-        Raw bytes upload is not supported in the standard Push API the same way.
-        This stub logs a warning until we implement a public hosting shim or use Imgur/S3.
+        Send image via LINE using public URL.
         """
-        logger.warning(
-            "LINE send_image not implemented (requires public URL). Skipping."
-        )
+        if not self.config.public_base_url:
+            logger.warning("LINE send_image: No public_base_url configured.")
+            text = (
+                "[OpenClaw] Image ready but cannot be delivered.\n"
+                "⚠️ Admin: Set OPENCLAW_CONNECTOR_PUBLIC_BASE_URL to enable image delivery."
+            )
+            await self.send_message(channel_id, text)
+            return
+
+        try:
+            ext = "." + filename.split(".")[-1] if "." in filename else ".png"
+            token = self.media_store.store_image(image_data, ext, channel_id)
+
+            # Construct URL
+            base = self.config.public_base_url.rstrip("/")
+            path = self.config.media_path.strip("/")
+            image_url = f"{base}/{path}/{token}"
+
+            await self._send_line_image_payload(channel_id, image_url)
+
+        except Exception as e:
+            logger.error(f"Failed to send LINE image: {e}")
+            await self.send_message(channel_id, "[OpenClaw] Error delivering image.")
+
+    async def _send_line_image_payload(self, channel_id: str, url: str):
+        """Low-level push image."""
+        aiohttp, _ = _import_aiohttp_web()
+        if not self.session:
+            return
+
+        api_url = "https://api.line.me/v2/bot/message/push"
+        headers = {
+            "Content-Type": "application/json",
+            "Authorization": f"Bearer {self.config.line_channel_access_token}",
+        }
+
+        body = {
+            "to": channel_id,
+            "messages": [
+                {
+                    "type": "image",
+                    "originalContentUrl": url,
+                    "previewImageUrl": url,  # Use same URL for preview
+                }
+            ],
+        }
+
+        async with self.session.post(api_url, headers=headers, json=body) as resp:
+            if resp.status != 200:
+                err = await resp.text()
+                logger.error(f"LINE image push failed: {resp.status} {err}")
 
     async def send_message(self, channel_id: str, text: str):
         """Send push message."""

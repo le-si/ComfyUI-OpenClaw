@@ -69,6 +69,18 @@ Set the following environment variables (or put them in a `.env` file if you use
 - `OPENCLAW_CONNECTOR_LINE_PORT`: Port (default `8099`).
 - `OPENCLAW_CONNECTOR_LINE_PATH`: Webhook path (default `/line/webhook`).
 
+**Image Delivery (F33):**
+
+- `OPENCLAW_CONNECTOR_PUBLIC_BASE_URL`: Public HTTPS URL of your connector (e.g. `https://your-tunnel.example.com`). Required for sending images.
+- `OPENCLAW_CONNECTOR_MEDIA_PATH`: URL path for serving temporary media (default `/media`).
+- `OPENCLAW_CONNECTOR_MEDIA_TTL_SEC`: Image expiry in seconds (default `300`).
+- `OPENCLAW_CONNECTOR_MEDIA_TTL_SEC`: Image expiry in seconds (default `300`).
+- `OPENCLAW_CONNECTOR_MEDIA_MAX_MB`: Max image size in MB (default `8`).
+
+> **Note:** Media URLs are signed with a secret derived from `OPENCLAW_CONNECTOR_ADMIN_TOKEN` or a random key.
+> To ensure URLs remain valid after connector restarts, **you must set `OPENCLAW_CONNECTOR_ADMIN_TOKEN`**.
+> LINE also **requires** `public_base_url` to be HTTPS.
+
 ### 3. Usage
 
 #### Running the Connector

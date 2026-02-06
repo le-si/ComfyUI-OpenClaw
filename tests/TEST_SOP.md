@@ -3,27 +3,34 @@
 This document defines the **mandatory test workflow** for this repo. Run it **before every push** (unless you explicitly document why you’re skipping).
 
 ## Prerequisites
+
 - Python 3.10+ (CI uses 3.10/3.11)
 - Node.js 18+ (CI uses 20)
 - `pre-commit` installed: `python -m pip install pre-commit`
 - Frontend deps installed: `npm install`
 
 ## Required Pre-Push Workflow (Must Run)
+
 1) Detect Secrets (baseline-based)
+
 ```bash
 pre-commit run detect-secrets --all-files
 ```
 
-2) Run all pre-commit hooks
+1) Run all pre-commit hooks
+
 ```bash
 pre-commit run --all-files --show-diff-on-failure
 ```
+
 **IMPORTANT (must read): pre-commit “modified files” is a failure until committed**
+
 - Some hooks (e.g. `end-of-file-fixer`, `trailing-whitespace`) intentionally **exit non-zero** when they auto-fix files.
 - CI will fail if those fixes are not committed.
 - Rule: keep re-running step (2) until it reports **no modified files**, and `git status --porcelain` is empty.
 
 Typical loop:
+
 ```bash
 pre-commit run --all-files --show-diff-on-failure
 git status --porcelain
@@ -33,12 +40,14 @@ git commit -m "Apply pre-commit autofixes"
 pre-commit run --all-files --show-diff-on-failure
 ```
 
-3) Backend unit tests (recommended; CI enforces)
+1) Backend unit tests (recommended; CI enforces)
+
 ```bash
 MOLTBOT_STATE_DIR="$(pwd)/moltbot_state/_local_unit" python -m unittest discover -s tests -p "test_*.py" -v
 ```
 
-4) Frontend E2E (Playwright; CI enforces)
+1) Frontend E2E (Playwright; CI enforces)
+
 ```bash
 # Ensure you are using Node.js 18+ (CI uses 20).
 node -v
@@ -67,16 +76,19 @@ The chat connector runs as a **separate process** and talks to your local ComfyU
 ### Prereq: use the correct Python interpreter
 
 The connector requires `aiohttp`. A common failure mode on Windows is:
+
 - `pip show aiohttp` succeeds (installed in your conda env)
 - but `python3 -m connector` uses a different Python (e.g. system Python) and crashes with `ModuleNotFoundError: aiohttp`
 
 Sanity check:
+
 ```powershell
 python -c "import sys; print(sys.executable)"
 python -c "import aiohttp; print(aiohttp.__version__)"
 ```
 
 Run the connector with **the same** interpreter:
+
 ```powershell
 python -m connector
 ```
@@ -90,6 +102,7 @@ python -m connector
 ### 1) Telegram (recommended first: no webhook/HTTPS required)
 
 Minimum:
+
 ```powershell
 $env:OPENCLAW_CONNECTOR_TELEGRAM_TOKEN="123456:ABC..."
 $env:OPENCLAW_CONNECTOR_TELEGRAM_ALLOWED_USERS="123456789"   # your Telegram user_id
@@ -98,6 +111,7 @@ python -m connector
 ```
 
 Test commands (in Telegram chat with the bot):
+
 - `/help`
 - `/status`
 - `/jobs`
@@ -110,6 +124,7 @@ Test commands (in Telegram chat with the bot):
 In Discord Developer Portal, enable **Message Content Intent** for your bot, otherwise the connector can connect but won’t receive message text.
 
 Minimum:
+
 ```powershell
 $env:OPENCLAW_CONNECTOR_DISCORD_TOKEN="discord_bot_token"
 $env:OPENCLAW_CONNECTOR_DISCORD_ALLOWED_USERS="your_discord_user_id"
@@ -118,6 +133,7 @@ python -m connector
 ```
 
 Optional allowlist by channel instead:
+
 ```powershell
 $env:OPENCLAW_CONNECTOR_DISCORD_ALLOWED_CHANNELS="your_channel_id"
 ```
@@ -128,6 +144,7 @@ LINE is webhook-based: LINE servers must be able to `POST` into your connector.
 Localhost (`127.0.0.1`) is not reachable from LINE, so you typically need **Cloudflare Tunnel** or **ngrok**.
 
 Minimum:
+
 ```powershell
 $env:OPENCLAW_CONNECTOR_LINE_CHANNEL_SECRET="line_channel_secret"
 $env:OPENCLAW_CONNECTOR_LINE_CHANNEL_ACCESS_TOKEN="line_channel_access_token"
@@ -137,16 +154,25 @@ python -m connector
 ```
 
 Optional bind/port/path:
+
 ```powershell
 $env:OPENCLAW_CONNECTOR_LINE_BIND="127.0.0.1"
 $env:OPENCLAW_CONNECTOR_LINE_PORT="8099"
 $env:OPENCLAW_CONNECTOR_LINE_PATH="/line/webhook"
+$env:OPENCLAW_CONNECTOR_PUBLIC_BASE_URL="https://<public-host>" # Required for images
 ```
 
 After starting the connector, expose it via tunnel and set the LINE webhook URL to:
 `https://<public-host>/line/webhook`
 
 If messages are ignored, enable debug and check allowlist logs (user/group/room IDs).
+
+#### LINE Image Delivery (F33) — Quick Test
+1) Ensure `OPENCLAW_CONNECTOR_PUBLIC_BASE_URL` is set to a **public HTTPS** URL.
+2) Send `/run <template_id> <prompt> --approval` and approve if required.
+3) On completion, the bot should push an image message to LINE.
+
+If you receive a text fallback warning, the public URL is missing, not HTTPS, or unreachable from LINE.
 
 ## Templates + `/run` — Authoring & Validation SOP
 
@@ -155,33 +181,38 @@ If messages are ignored, enable debug and check allowlist logs (user/group/room 
 ### Where templates live
 
 In this repo (and in your ComfyUI install), templates are loaded from:
+
 - `data/templates/*.json` (the exported ComfyUI workflow in API format)
 - `data/templates/manifest.json` (optional metadata: defaults, etc)
 
 ### Step-by-step: create a new template
 
 1) Export a workflow JSON from ComfyUI (API format)
+
 - Build your workflow in ComfyUI
 - Export the workflow JSON (API format) to a file, e.g. `z.json`
 
-2) Copy the exported file into the template directory
+1) Copy the exported file into the template directory
+
 - Place it at: `data/templates/z.json`
 
-3) Replace input values with placeholders
+1) Replace input values with placeholders
 
 The renderer performs **strict placeholder substitution**:
+
 - ✅ supported: a JSON string value exactly equal to `{{key}}`
   - Example: `"text": "{{positive_prompt}}"`
 - ❌ not supported: partial substitutions
   - Example: `"text": "Prompt: {{positive_prompt}}"` (will not be replaced)
 
 So for each field you want to make configurable via chat/webhook, replace the value with a placeholder:
+
 - `{{positive_prompt}}`
 - `{{negative_prompt}}`
 - `{{seed}}`
 - etc.
 
-4) Add an entry to `manifest.json`
+1) Add an entry to `manifest.json`
 
 This step is **optional**. If you want defaults/metadata, add a new entry under `templates` in `data/templates/manifest.json`:
 
@@ -194,30 +225,34 @@ This step is **optional**. If you want defaults/metadata, add a new entry under 
 ```
 
 Rules:
+
 - `your_template_id` becomes the identifier used by `/run your_template_id ...` (typically match the file name, e.g. `z`)
 - `allowed_inputs` is **metadata only** (not enforced); it can be used by UIs/tools for hints
 - `defaults` is optional but recommended (use `{}` if none)
 - JSON cannot contain trailing commas
 
-5) Restart ComfyUI
+1) Restart ComfyUI
 
 Not strictly required (the backend hot-reloads `manifest.json`), but restarting ComfyUI is still recommended after significant template changes.
 
 ### Validate templates are visible
 
 Use the template quick-list endpoint:
+
 - `GET /openclaw/templates`
 - `GET /api/openclaw/templates` (browser-friendly)
 - Diagnostics (when a template is unexpectedly missing):
   - `GET /api/openclaw/templates?debug=1` (shows which `manifest.json` path was actually loaded)
 
 Expected response:
+
 - `ok: true`
 - `templates: [{ id, allowed_inputs, defaults }, ...]`
 
 ### Use `/run` from chat
 
 **Free-text prompt support (no `key=value` needed):**
+
 - `/run <template_id> <free text> seed=-1`
 - Connector maps free-text to a prompt key:
   - If `manifest.json` `allowed_inputs` has exactly one key → it uses that.
@@ -226,6 +261,7 @@ Expected response:
 - Ensure the template uses the same placeholder (e.g., `"text": "{{positive_prompt}}"`).
 
 Once the template appears in `/openclaw/templates`, you can run it via chat:
+
 - Run immediately:
   - `/run your_template_id positive_prompt="a cat" seed=123`
 - Request approval:
@@ -239,15 +275,19 @@ Unused keys have no effect unless the workflow contains a matching `{{key}}` pla
 The UI can **use** an Admin Token for authenticated requests, but **cannot set or persist** the server token.
 
 ### Recommended setup (local only)
+
 1) **Set server token (env)**
+
 ```powershell
 $env:OPENCLAW_ADMIN_TOKEN="your_admin_token_here"
 ```
+
 2) **Restart ComfyUI**
-3) **Enter the same token in the Settings UI**
+2) **Enter the same token in the Settings UI**
    - This only stores it in the browser session for API calls.
 
 ### Windows CMD (per-session)
+
 ```cmd
 set OPENCLAW_ADMIN_TOKEN=your_admin_token_here
 set OPENCLAW_LLM_API_KEY=your_api_key_here
@@ -255,6 +295,7 @@ set OPENCLAW_LLM_PROVIDER=gemini
 ```
 
 ### Windows CMD (persistent, user-level)
+
 ```cmd
 setx OPENCLAW_ADMIN_TOKEN "your_admin_token_here"
 setx OPENCLAW_LLM_API_KEY "your_api_key_here"
@@ -264,22 +305,29 @@ setx OPENCLAW_LLM_PROVIDER "gemini"
 > After `setx`, open a **new** terminal session before launching ComfyUI.
 
 ### Security Notes
+
 - Do **not** expose ComfyUI to the internet with UI-only tokens.
 - Admin token must remain server-side and protected by OS/environment.
 
 ## WSL / Restricted Environments
+
 If `pre-commit` fails due to cache permissions, run with a writable cache directory:
+
 ```bash
 PRE_COMMIT_HOME=/tmp/pre-commit-cache pre-commit run --all-files --show-diff-on-failure
 ```
 
 ## Troubleshooting Quick Fixes
+
 **Detect-secrets fails**
+
 - Update `.secrets.baseline` (or mark known false positives) and avoid real-looking secrets in docs/tests.
 
 **Playwright fails (missing browsers)**
+
 - Install browsers: `npx playwright install chromium`
 
 **E2E fails with “test harness failed to load”**
+
 - Check the console error (module import/exports mismatch is the most common cause).
 - Verify all referenced JS modules exist and export expected names.
