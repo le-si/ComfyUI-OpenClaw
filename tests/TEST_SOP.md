@@ -18,7 +18,20 @@ pre-commit run detect-secrets --all-files
 ```bash
 pre-commit run --all-files --show-diff-on-failure
 ```
-If any hook reports “files were modified”, stage + commit those changes and re-run until this step is clean.
+**IMPORTANT (must read): pre-commit “modified files” is a failure until committed**
+- Some hooks (e.g. `end-of-file-fixer`, `trailing-whitespace`) intentionally **exit non-zero** when they auto-fix files.
+- CI will fail if those fixes are not committed.
+- Rule: keep re-running step (2) until it reports **no modified files**, and `git status --porcelain` is empty.
+
+Typical loop:
+```bash
+pre-commit run --all-files --show-diff-on-failure
+git status --porcelain
+git diff
+git add -A
+git commit -m "Apply pre-commit autofixes"
+pre-commit run --all-files --show-diff-on-failure
+```
 
 3) Backend unit tests (recommended; CI enforces)
 ```bash
@@ -27,6 +40,18 @@ MOLTBOT_STATE_DIR="$(pwd)/moltbot_state/_local_unit" python -m unittest discover
 
 4) Frontend E2E (Playwright; CI enforces)
 ```bash
+# Ensure you are using Node.js 18+ (CI uses 20).
+node -v
+
+# If you're on WSL and `node -v` is < 18, your shell may be picking up the distro Node
+# (e.g. `/usr/bin/node`) instead of your user-installed Node. If you use `nvm`, do:
+#   source ~/.nvm/nvm.sh
+#   nvm use 18.20.8
+# Then re-check:
+#   node -v
+#
+# IMPORTANT: run `npm install` with the same Node version you use for `npm test`.
+
 # One-time browser install (recommended)
 npx playwright install chromium
 

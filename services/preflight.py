@@ -9,6 +9,23 @@ import logging
 import time
 from typing import Any, Dict, List, Set, Tuple
 
+logger = logging.getLogger("ComfyUI-OpenClaw.services.preflight")
+
+# IMPORTANT (ComfyUI runtime wiring):
+# This module is imported both:
+# - inside a real ComfyUI runtime (where `nodes` and `folder_paths` exist), and
+# - in unit tests / tooling contexts (where they may not).
+# Keep these imports optional and keep references guarded.
+try:  # pragma: no cover (best-effort ComfyUI imports)
+    import nodes  # type: ignore
+except Exception:  # pragma: no cover
+    nodes = None  # type: ignore
+
+try:  # pragma: no cover (best-effort ComfyUI imports)
+    import folder_paths  # type: ignore
+except Exception:  # pragma: no cover
+    folder_paths = None  # type: ignore
+
 _CACHE = {}
 _CACHE_TTL = 60  # seconds
 

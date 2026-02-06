@@ -305,6 +305,17 @@ python3 -m unittest discover -s tests -p "test_*.py"
 - Git install: `git pull` inside `custom_nodes/comfyui-openclaw/`, then restart ComfyUI.
 - ComfyUI-Manager install: update from Manager UI, then restart ComfyUI.
 
+## 🎮 Remote Control (Connector)
+
+OpenClaw includes a standalone **Connector** process that allows you to control your local instance securely via **Telegram** or **Discord** without exposing it to the public internet.
+
+- **Status & Queue**: Check job progress remotely.
+- **Run Jobs**: Submit templates via chat commands.
+- **Approvals**: Approve/Reject paused workflows from your phone.
+- **Secure**: Outbound-only connection; no inbound ports required.
+
+[👉 **See Setup Guide (docs/connector.md)**](docs/connector.md)
+
 ## Security
 
 Read `SECURITY.md` before exposing any endpoint beyond localhost. The project is designed to be secure-by-default (deny-by-default auth, SSRF protections, redaction, bounded outputs), but unsafe deployment can still create risk.

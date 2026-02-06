@@ -9,7 +9,17 @@ export const settingsTab = {
     id: "settings",
     title: "Settings",
     render: async (container) => {
-        container.innerHTML = "<div>Loading...</div>";
+        // IMPORTANT (UI layout): `.moltbot-content` has `overflow: hidden`.
+        // This tab MUST render its own scroll container (`.moltbot-scroll-area`),
+        // otherwise lower sections (e.g. UI Key Store) will be clipped with no way to scroll.
+        container.innerHTML = `
+            <div class="moltbot-panel">
+                <div class="moltbot-scroll-area" id="openclaw-settings-scroll">
+                    <div>Loading...</div>
+                </div>
+            </div>
+        `;
+        const scroll = container.querySelector("#openclaw-settings-scroll");
 
         const [healthRes, logRes, configRes] = await Promise.all([
             moltbotApi.getHealth(),
@@ -17,7 +27,7 @@ export const settingsTab = {
             moltbotApi.getConfig(),
         ]);
 
-        container.innerHTML = "";
+        scroll.innerHTML = "";
 
         // If everything is 404, backend routes not registered
 
@@ -43,7 +53,7 @@ export const settingsTab = {
                 </ul>
             `;
             warn.appendChild(hint);
-            container.appendChild(warn);
+            scroll.appendChild(warn);
         }
 
         // -- System Health & Diagnostics --
@@ -113,7 +123,7 @@ export const settingsTab = {
                 addRow(healthSec, "Detail", detail);
             }
         }
-        container.appendChild(healthSec);
+        scroll.appendChild(healthSec);
 
         // -- LLM Settings Section --
         const llmSec = createSection("LLM Settings");
@@ -358,7 +368,7 @@ export const settingsTab = {
             ].filter(Boolean).join(" — ");
             addRow(llmSec, "Error", detail);
         }
-        container.appendChild(llmSec);
+        scroll.appendChild(llmSec);
 
         // --- S26: Collapsible Secrets Section (always visible) ---
         if (configRes.ok) {
@@ -529,7 +539,7 @@ export const settingsTab = {
 
             secretsContent.appendChild(secretsBtnRow);
 
-            container.appendChild(secretsSec.container);
+            scroll.appendChild(secretsSec.container);
         }
 
         // -- Logs Section --
@@ -549,7 +559,7 @@ export const settingsTab = {
         }
 
         logsSec.appendChild(logView);
-        container.appendChild(logsSec);
+        scroll.appendChild(logsSec);
     },
 };
 
