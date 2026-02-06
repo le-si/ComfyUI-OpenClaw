@@ -387,3 +387,34 @@ OpenClaw includes a standalone **Connector** process that allows you to control 
 ## Security
 
 Read `SECURITY.md` before exposing any endpoint beyond localhost. The project is designed to be secure-by-default (deny-by-default auth, SSRF protections, redaction, bounded outputs), but unsafe deployment can still create risk.
+
+---
+
+## Disclaimer (Security & Liability)
+
+This project is provided **“as‑is”** without warranty of any kind. You are solely responsible for:
+
+- **API keys / Admin tokens**: creation, storage, rotation, and revocation
+- **Runtime configuration**: environment variables, config files, UI settings
+- **Network exposure**: tunnels, reverse proxies, public endpoints
+- **Data handling**: logs, prompts, outputs, and any content generated or transmitted
+
+### Key Handling Guidance (all environments)
+- **Prefer environment variables** for API keys and admin tokens.
+- **UI key storage (if enabled)** is for local, single‑user setups only.
+- **Never commit secrets** or embed them in versioned files.
+- **Rotate tokens** regularly and after any suspected exposure.
+
+### Common Deployment Contexts (you must secure each)
+- **Local / single‑user**: treat keys as secrets; avoid long‑term browser storage.
+- **LAN / shared machines**: require admin tokens, restrict IPs, disable unsafe endpoints.
+- **Public / tunneled / reverse‑proxy**: enforce strict allowlists, HTTPS, least‑privilege access.
+- **Desktop / portable / scripts**: ensure secrets are not logged or persisted by launchers.
+
+### No Liability
+The maintainers and contributors **accept no responsibility** for:
+- Unauthorized access or misuse of your instance
+- Loss of data, keys, or generated content
+- Any direct or indirect damages resulting from use of this software
+
+By using this project, you acknowledge and accept these terms.
