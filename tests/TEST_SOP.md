@@ -18,6 +18,7 @@ pre-commit run detect-secrets --all-files
 ```bash
 pre-commit run --all-files --show-diff-on-failure
 ```
+If any hook reports “files were modified”, stage + commit those changes and re-run until this step is clean.
 
 3) Backend unit tests (recommended; CI enforces)
 ```bash
