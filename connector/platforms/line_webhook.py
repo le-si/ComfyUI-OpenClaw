@@ -290,7 +290,6 @@ class LINEWebhookServer:
         except Exception as e:
             logger.error(f"LINE reply exception: {e}")
 
-
     async def send_image(
         self,
         channel_id: str,

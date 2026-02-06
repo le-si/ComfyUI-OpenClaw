@@ -48,7 +48,7 @@ class TestMediaStore(unittest.TestCase):
         filename = "test.png"
         expiry = int(time.time()) - 10
         token = self.store._generate_token(filename, "ch1", expiry)
-        
+
         # Ensure file exists so checks pass up to logical expiry
         (Path(self.tmp_dir) / filename).touch()
 
@@ -88,10 +88,10 @@ class TestLINESendImage(unittest.IsolatedAsyncioTestCase):
         self.config = ConnectorConfig()
         self.config.line_channel_secret = "secret"
         self.config.line_channel_access_token = "token"
-        
+
         self.router = MagicMock(spec=CommandRouter)
         self.server = LINEWebhookServer(self.config, self.router)
-        
+
         # Mock MediaStore to be independent of FS
         self.server.media_store = MagicMock()
         self.server.media_store.store_image.return_value = "mock_token.sig"
@@ -122,9 +122,9 @@ class TestLINESendImage(unittest.IsolatedAsyncioTestCase):
 
         self.server.media_store.store_image.assert_called_once()
         self.server._send_line_image_payload.assert_called_once()
-        
+
         url = self.server._send_line_image_payload.call_args[0][1]
-        
+
         # URL = public_base_url / media_path / token
         # defaults: media_path="/media"
         self.assertEqual(url, "https://example.com/media/mock_token.sig")
