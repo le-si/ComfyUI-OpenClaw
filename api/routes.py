@@ -41,9 +41,9 @@ if web is not None:
         from ..api.config import (
             config_get_handler,
             config_put_handler,
+            llm_chat_handler,
             llm_models_handler,
             llm_test_handler,
-            llm_chat_handler,
         )
         from ..api.preflight_handler import inventory_handler, preflight_handler
         from ..api.secrets import (
@@ -83,9 +83,9 @@ if web is not None:
         from api.config import (
             config_get_handler,
             config_put_handler,
+            llm_chat_handler,
             llm_models_handler,
             llm_test_handler,
-            llm_chat_handler,
         )
         from api.preflight_handler import inventory_handler, preflight_handler
         from api.secrets import (

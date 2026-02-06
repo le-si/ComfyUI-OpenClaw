@@ -28,6 +28,7 @@ else:  # pragma: no cover (test-only import mode)
 
 logger = logging.getLogger("ComfyUI-OpenClaw.api.templates")
 
+
 def _ensure_templates_api_deps_ready() -> tuple[bool, str | None]:
     """
     Defensive guard against a recurring regression class:

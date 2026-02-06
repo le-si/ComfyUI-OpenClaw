@@ -54,7 +54,10 @@ async def submit_prompt(
     try:
         from .execution_budgets import check_render_size, get_limiter
     except ImportError:
-        from services.execution_budgets import check_render_size, get_limiter  # type: ignore
+        from services.execution_budgets import (  # type: ignore
+            check_render_size,
+            get_limiter,
+        )
 
     # R33: Check render size budget
     check_render_size(prompt_workflow, trace_id=trace_id)

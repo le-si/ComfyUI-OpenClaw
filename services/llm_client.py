@@ -496,6 +496,14 @@ class LLMClient:
 
         eff_config, _ = get_effective_config()
         max_failover_candidates = eff_config.get("max_failover_candidates", 3)
+        # NOTE: Keep at least 1 candidate; zero yields empty attempts and opaque errors.
+        # CRITICAL: Do not remove this guard. It prevents "All 0 failover candidates exhausted".
+        try:
+            max_failover_candidates = int(max_failover_candidates)
+        except (TypeError, ValueError):
+            max_failover_candidates = 3
+        if max_failover_candidates < 1:
+            max_failover_candidates = 1
 
         # Get failover config
         self.fallback_models = eff_config.get(
@@ -552,8 +560,14 @@ class LLMClient:
             ):
                 # Skip if in cooldown
                 if failover_state.is_cooling_down(provider, model):
-                    logger.info(f"Skipping candidate {provider}/{model} (in cooldown)")
-                    continue
+                    if candidate_idx < (len(candidates_to_try) - 1):
+                        logger.info(
+                            f"Skipping candidate {provider}/{model} (in cooldown)"
+                        )
+                        continue
+                    logger.warning(
+                        f"Candidate {provider}/{model} is in cooldown, but no alternatives remain; attempting anyway."
+                    )
 
                 # SSRF validation for custom base URLs
                 if not self._validate_candidate_url(provider, base_url):

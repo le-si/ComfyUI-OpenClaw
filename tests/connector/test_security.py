@@ -100,6 +100,19 @@ class TestRouterSecurityChecks(unittest.IsolatedAsyncioTestCase):
         # Last response should be rate limit
         self.assertIn("rate limit", resp.text.lower())
 
+    async def test_apostrophes_do_not_break_parsing(self):
+        """Natural language apostrophes (e.g. She's) must not trigger shlex quote errors."""
+        client = MagicMock()
+        client.submit_job = AsyncMock(return_value={"ok": False, "error": "test"})
+        router = CommandRouter(self.config, client)
+
+        req = make_request(
+            "user1",
+            "/run z She's wearing an oversized tee seed=-1",
+        )
+        resp = await router.handle(req)
+        self.assertNotIn("unbalanced quotes", resp.text.lower())
+
 
 class TestLineReplayProtection(unittest.TestCase):
     """Test LINE webhook replay protection."""
@@ -139,7 +152,9 @@ class TestLineReplayProtection(unittest.TestCase):
         server = LINEWebhookServer(config, MagicMock())
 
         recent_ts = int((time.time() - 10) * 1000)
-        body = f'{{"events": [{{"timestamp": {recent_ts}, "webhookEventId": "dup_evt"}}]}}'
+        body = (
+            f'{{"events": [{{"timestamp": {recent_ts}, "webhookEventId": "dup_evt"}}]}}'
+        )
 
         # First request accepted
         self.assertTrue(server._check_replay_protection(body))

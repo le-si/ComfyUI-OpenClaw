@@ -24,7 +24,9 @@ class ResultsPoller:
         self.config = config
         self.client = client
         self.platforms = platforms  # map "telegram" -> TelegramPolling, etc.
-        self.queue = asyncio.Queue()  # (prompt_id, platform_name, channel_id, sender_id)
+        self.queue = (
+            asyncio.Queue()
+        )  # (prompt_id, platform_name, channel_id, sender_id)
         self.active_polls = {}  # prompt_id -> task
         self.active_polls = {}  # prompt_id -> task
 
@@ -40,7 +42,9 @@ class ResultsPoller:
                     self._poll_job(prompt_id, platform_name, channel_id, sender_id)
                 )
                 self.active_polls[prompt_id] = task
-                task.add_done_callback(lambda t, pid=prompt_id: self.active_polls.pop(pid, None))
+                task.add_done_callback(
+                    lambda t, pid=prompt_id: self.active_polls.pop(pid, None)
+                )
             finally:
                 self.queue.task_done()
 
@@ -49,16 +53,18 @@ class ResultsPoller:
         logger.info("ResultsPoller stopping...")
         for task in self.active_polls.values():
             task.cancel()
-        
+
         if self.active_polls:
             await asyncio.gather(*self.active_polls.values(), return_exceptions=True)
         logger.info("ResultsPoller stopped.")
 
-    def track_job(self, prompt_id: str, platform_name: str, channel_id: str, sender_id: str):
+    def track_job(
+        self, prompt_id: str, platform_name: str, channel_id: str, sender_id: str
+    ):
         """Enqueue a job for result monitoring."""
         if not prompt_id:
             return
-        
+
         logger.info(f"Tracking job {prompt_id} for {platform_name} in {channel_id}")
         self.queue.put_nowait((prompt_id, platform_name, channel_id, sender_id))
 
@@ -68,7 +74,7 @@ class ResultsPoller:
         """Poll history with backoff until complete or timeout."""
         start_time = time.time()
         delay = 1.0
-        
+
         while (time.time() - start_time) < self.config.delivery_timeout_sec:
             # Check history
             try:
@@ -84,7 +90,7 @@ class ResultsPoller:
                         return
             except Exception as e:
                 logger.debug(f"Poll check failed for {prompt_id}: {e}")
-            
+
             # Backoff
             try:
                 await asyncio.sleep(delay)
@@ -93,7 +99,11 @@ class ResultsPoller:
             delay = min(delay * 2, 15)  # Cap at 15s
 
         logger.warning(f"Job {prompt_id} timed out waiting for results.")
-        await self._send_text(platform_name, channel_id, f"⚠️ Job {prompt_id} timed out waiting for results.")
+        await self._send_text(
+            platform_name,
+            channel_id,
+            f"⚠️ Job {prompt_id} timed out waiting for results.",
+        )
 
     async def _deliver_results(
         self, prompt_id: str, job_data: dict, platform_name: str, channel_id: str
@@ -102,23 +112,29 @@ class ResultsPoller:
         outputs = job_data.get("outputs", {})
         if not outputs:
             logger.info(f"Job {prompt_id} has no outputs.")
-            await self._send_text(platform_name, channel_id, f"✅ Job {prompt_id} finished (No output images).")
+            await self._send_text(
+                platform_name,
+                channel_id,
+                f"✅ Job {prompt_id} finished (No output images).",
+            )
             return
 
         images_to_send = []
-        
+
         # Flatten outputs
         for node_id, node_output in outputs.items():
             if "images" in node_output:
                 images_to_send.extend(node_output["images"])
-        
+
         # Check if actual images were found (filter non-outputs)
-        
+
         if not images_to_send:
-             logger.info(f"Job {prompt_id} finished but no images found.")
-             await self._send_text(platform_name, channel_id, f"✅ Job {prompt_id} finished (No images).")
-             return
-             
+            logger.info(f"Job {prompt_id} finished but no images found.")
+            await self._send_text(
+                platform_name, channel_id, f"✅ Job {prompt_id} finished (No images)."
+            )
+            return
+
         images_to_send = images_to_send[: self.config.delivery_max_images]
         logger.info(f"Delivering {len(images_to_send)} images for {prompt_id}")
 
@@ -131,17 +147,23 @@ class ResultsPoller:
             filename = img_info.get("filename")
             subfolder = img_info.get("subfolder", "")
             img_type = img_info.get("type", "output")
-            
+
             # Download content
             content = await self.client.get_view(filename, subfolder, img_type)
             if not content:
                 logger.warning(f"Failed to download {filename}")
                 continue
-                
+
             # Check size
             if len(content) > self.config.delivery_max_bytes:
-                logger.warning(f"Image {filename} too large ({len(content)} bytes). Skipping.")
-                await self._send_text(platform_name, channel_id, f"⚠️ Image {filename} skipped (too large).")
+                logger.warning(
+                    f"Image {filename} too large ({len(content)} bytes). Skipping."
+                )
+                await self._send_text(
+                    platform_name,
+                    channel_id,
+                    f"⚠️ Image {filename} skipped (too large).",
+                )
                 continue
 
             # Send with error handling
@@ -150,7 +172,9 @@ class ResultsPoller:
             except Exception as e:
                 logger.error(f"Failed to deliver image to {platform_name}: {e}")
                 # Fallback text
-                await self._send_text(platform_name, channel_id, f"⚠️ Failed to send image: {filename}")
+                await self._send_text(
+                    platform_name, channel_id, f"⚠️ Failed to send image: {filename}"
+                )
 
     async def _send_text(self, platform_name: str, channel_id: str, text: str):
         platform = self.platforms.get(platform_name)

@@ -180,9 +180,7 @@ class LINEWebhookServer:
 
         now = time.time() * 1000
         cutoff = now - (self.REPLAY_WINDOW_SEC * 1000)
-        self._nonce_cache = {
-            k: v for k, v in self._nonce_cache.items() if v > cutoff
-        }
+        self._nonce_cache = {k: v for k, v in self._nonce_cache.items() if v > cutoff}
 
     async def _process_event(self, event: dict):
         """Convert LINE event to CommandRequest and route."""
@@ -274,14 +272,22 @@ class LINEWebhookServer:
         except Exception as e:
             logger.error(f"LINE reply exception: {e}")
 
-    async def send_image(self, channel_id: str, image_data: bytes, filename: str = "image.png", caption: Optional[str] = None):
+    async def send_image(
+        self,
+        channel_id: str,
+        image_data: bytes,
+        filename: str = "image.png",
+        caption: Optional[str] = None,
+    ):
         """
         Send image via LINE.
-        NOTE: LINE requires a public HTTPS URL for images. 
+        NOTE: LINE requires a public HTTPS URL for images.
         Raw bytes upload is not supported in the standard Push API the same way.
         This stub logs a warning until we implement a public hosting shim or use Imgur/S3.
         """
-        logger.warning("LINE send_image not implemented (requires public URL). Skipping.")
+        logger.warning(
+            "LINE send_image not implemented (requires public URL). Skipping."
+        )
 
     async def send_message(self, channel_id: str, text: str):
         """Send push message."""
@@ -294,10 +300,10 @@ class LINEWebhookServer:
             "Content-Type": "application/json",
             "Authorization": f"Bearer {self.config.line_channel_access_token}",
         }
-        
+
         body = {
             "to": channel_id,
-            "messages": [{"type": "text", "text": text[:2000]}] # LINE limit handling
+            "messages": [{"type": "text", "text": text[:2000]}],  # LINE limit handling
         }
 
         try:
@@ -307,4 +313,3 @@ class LINEWebhookServer:
                     logger.error(f"LINE send_message failed: {resp.status} {err}")
         except Exception as e:
             logger.error(f"LINE send_message error: {e}")
-

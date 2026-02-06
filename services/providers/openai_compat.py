@@ -109,8 +109,14 @@ def make_request(
     except urllib.error.HTTPError as e:
         # R14/R37: Parse retry-after from headers/body
         try:
-            from services.provider_errors import ProviderHTTPError
-            from services.retry_after import get_retry_after_seconds
+            # IMPORTANT: ComfyUI runtime requires package-relative imports.
+            # CRITICAL: Do not collapse this to top-level imports; it breaks in custom_nodes.
+            try:
+                from ..provider_errors import ProviderHTTPError
+                from ..retry_after import get_retry_after_seconds
+            except ImportError:
+                from services.provider_errors import ProviderHTTPError
+                from services.retry_after import get_retry_after_seconds
 
             # Get response headers and body
             headers = dict(e.headers) if hasattr(e, "headers") else {}

@@ -14,7 +14,7 @@ class ConnectorConfig:
     # OpenClaw Connection
     openclaw_url: str = "http://127.0.0.1:8188"
     admin_token: Optional[str] = None  # To call admin endpoints
-    
+
     # Results Delivery
     delivery_enabled: bool = True
     delivery_max_images: int = 4
@@ -66,9 +66,15 @@ def load_config() -> ConnectorConfig:
     cfg.state_path = os.environ.get("OPENCLAW_CONNECTOR_STATE_PATH")
 
     # Delivery
-    cfg.delivery_max_images = int(os.environ.get("OPENCLAW_CONNECTOR_DELIVERY_MAX_IMAGES", "4"))
-    cfg.delivery_max_bytes = int(os.environ.get("OPENCLAW_CONNECTOR_DELIVERY_MAX_BYTES", str(10 * 1024 * 1024)))
-    cfg.delivery_timeout_sec = int(os.environ.get("OPENCLAW_CONNECTOR_DELIVERY_TIMEOUT_SEC", "600"))
+    cfg.delivery_max_images = int(
+        os.environ.get("OPENCLAW_CONNECTOR_DELIVERY_MAX_IMAGES", "4")
+    )
+    cfg.delivery_max_bytes = int(
+        os.environ.get("OPENCLAW_CONNECTOR_DELIVERY_MAX_BYTES", str(10 * 1024 * 1024))
+    )
+    cfg.delivery_timeout_sec = int(
+        os.environ.get("OPENCLAW_CONNECTOR_DELIVERY_TIMEOUT_SEC", "600")
+    )
 
     # Telegram
     cfg.telegram_bot_token = os.environ.get("OPENCLAW_CONNECTOR_TELEGRAM_TOKEN")

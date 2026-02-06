@@ -89,9 +89,7 @@ class OpenClawClient:
 
                 return result
         except Exception as e:
-            logger.error(
-                f"Request failed {method} {path}: {type(e).__name__}: {e}"
-            )
+            logger.error(f"Request failed {method} {path}: {type(e).__name__}: {e}")
             return {"ok": False, "error": str(e)}
         finally:
             if local_session:
@@ -123,9 +121,7 @@ class OpenClawClient:
             "max_tokens": max_tokens,
         }
         # NOTE: LLM calls can exceed the default 10s HTTP timeout.
-        return await self._request(
-            "POST", "/openclaw/llm/chat", payload, timeout=120
-        )
+        return await self._request("POST", "/openclaw/llm/chat", payload, timeout=120)
 
     async def get_health(self) -> dict:
         res = await self._request("GET", "/openclaw/health")
@@ -174,17 +170,19 @@ class OpenClawClient:
         # Remediation: Cancel -> Interrupt (Global)
         return await self._request("POST", "/api/interrupt", {})
 
-    async def get_view(self, filename: str, subfolder: str = "", type: str = "output") -> Optional[bytes]:
+    async def get_view(
+        self, filename: str, subfolder: str = "", type: str = "output"
+    ) -> Optional[bytes]:
         """Download image/file from ComfyUI /view endpoint."""
         params = {"filename": filename, "subfolder": subfolder, "type": type}
         url = f"{self.base_url}/view"
-        
+
         session = self.session
         local_session = False
         if not session:
             session = _create_session()
             local_session = True
-            
+
         try:
             async with session.get(url, params=params, headers=self.headers) as resp:
                 if resp.status == 200:

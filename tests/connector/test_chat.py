@@ -36,7 +36,9 @@ class MockOpenClawClient:
         return {"ok": True, "data": {"exec_info": {"queue_remaining": 3}}}
 
 
-def make_request(sender_id: str, text: str, platform: str = "telegram") -> CommandRequest:
+def make_request(
+    sender_id: str, text: str, platform: str = "telegram"
+) -> CommandRequest:
     """Helper to create CommandRequest with all required fields."""
     return CommandRequest(
         platform=platform,
@@ -89,7 +91,9 @@ class TestChatCommand(unittest.IsolatedAsyncioTestCase):
         """Should suggest /run with --approval for untrusted users."""
         mock_llm = MagicMock()
         mock_llm.is_configured = AsyncMock(return_value=True)
-        mock_llm.chat = AsyncMock(return_value="```\n/run txt2img --input prompt='cat' --approval\n```")
+        mock_llm.chat = AsyncMock(
+            return_value="```\n/run txt2img --input prompt='cat' --approval\n```"
+        )
         mock_llm_cls.return_value = mock_llm
 
         client = MockOpenClawClient()
@@ -104,7 +108,9 @@ class TestChatCommand(unittest.IsolatedAsyncioTestCase):
         """Should suggest /run without --approval for trusted users."""
         mock_llm = MagicMock()
         mock_llm.is_configured = AsyncMock(return_value=True)
-        mock_llm.chat = AsyncMock(return_value="```\n/run txt2img --input prompt='cat'\n```")
+        mock_llm.chat = AsyncMock(
+            return_value="```\n/run txt2img --input prompt='cat'\n```"
+        )
         mock_llm_cls.return_value = mock_llm
 
         self.config.telegram_allowed_users = [123]
@@ -122,7 +128,9 @@ class TestChatCommand(unittest.IsolatedAsyncioTestCase):
         """Should summarize status."""
         mock_llm = MagicMock()
         mock_llm.is_configured = AsyncMock(return_value=True)
-        mock_llm.chat = AsyncMock(return_value="System healthy. 1 running, 2 pending jobs.")
+        mock_llm.chat = AsyncMock(
+            return_value="System healthy. 1 running, 2 pending jobs."
+        )
         mock_llm_cls.return_value = mock_llm
 
         client = MockOpenClawClient()
@@ -149,7 +157,9 @@ class TestChatCommand(unittest.IsolatedAsyncioTestCase):
     async def test_config_retrieval_failure(self):
         """Should handle OpenClaw config retrieval failure gracefully."""
         client = MagicMock()
-        client.get_openclaw_config = AsyncMock(return_value={"ok": False, "error": "unreachable"})
+        client.get_openclaw_config = AsyncMock(
+            return_value={"ok": False, "error": "unreachable"}
+        )
         client.get_health = AsyncMock(return_value={"ok": False})
         client.get_jobs = AsyncMock(return_value={"ok": False})
         client.get_prompt_queue = AsyncMock(return_value={"ok": False})
@@ -171,9 +181,14 @@ class TestLLMClient(unittest.IsolatedAsyncioTestCase):
 
         client = MagicMock()
         client.get_openclaw_config = AsyncMock(
-            return_value={"ok": True, "data": {"config": {"provider": "openai", "model": "gpt-4o"}}}
+            return_value={
+                "ok": True,
+                "data": {"config": {"provider": "openai", "model": "gpt-4o"}},
+            }
         )
-        client.chat_llm = AsyncMock(return_value={"ok": False, "error": "llm_request_failed"})
+        client.chat_llm = AsyncMock(
+            return_value={"ok": False, "error": "llm_request_failed"}
+        )
 
         llm = LLMClient(client)
         result = await llm.chat("system", "user message")
@@ -190,7 +205,7 @@ class TestLLMClient(unittest.IsolatedAsyncioTestCase):
         client.chat_llm = AsyncMock(return_value={"ok": True, "text": "response"})
 
         llm = LLMClient(client)
-        
+
         # Verify the LLM client docstring mentions no prompt logging
         # This is a design verification, not a runtime check
         self.assertIn("Never logs user prompt content", LLMClient.__doc__ or "")

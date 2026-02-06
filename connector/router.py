@@ -16,14 +16,19 @@ if False:  # Type hinting only
     from .results_poller import ResultsPoller
 
 from .llm_client import LLMClient
-from .prompts import CHAT_SYSTEM_PROMPT, CHAT_STATUS_PROMPT
+from .prompts import CHAT_STATUS_PROMPT, CHAT_SYSTEM_PROMPT
 from .rate_limiter import RateLimiter
 
 logger = logging.getLogger(__name__)
 
 
 class CommandRouter:
-    def __init__(self, config: ConnectorConfig, client: OpenClawClient, poller: "ResultsPoller" = None):
+    def __init__(
+        self,
+        config: ConnectorConfig,
+        client: OpenClawClient,
+        poller: "ResultsPoller" = None,
+    ):
         self.config = config
         self.client = client
         self.poller = poller
@@ -62,7 +67,18 @@ class CommandRouter:
             )
 
         try:
-            parts = shlex.split(text)
+            # IMPORTANT (recurring usability bug):
+            # Do not use `shlex.split()` directly for ChatOps commands that may include natural
+            # language. In POSIX mode, `shlex` treats apostrophes (`'`) as quote delimiters, so
+            # common contractions like "She's" trigger "unbalanced quotes" failures.
+            #
+            # We therefore only treat *double quotes* (`"`) as quoting characters, so users can
+            # still do: positive_prompt="a prompt with spaces" while apostrophes remain safe.
+            lexer = shlex.shlex(text, posix=True)
+            lexer.whitespace_split = True
+            lexer.commenters = ""
+            lexer.quotes = '"'
+            parts = list(lexer)
         except ValueError:
             return CommandResponse(
                 text="[Error] Parsing command arguments failed (unbalanced quotes?)."
@@ -77,7 +93,11 @@ class CommandRouter:
         # Telegram group commands often include the bot username suffix, e.g. `/help@mybot`.
         # If we don't strip it, the command won't match our dispatch table and appears "dead"
         # even though polling is working.
-        if (req.platform or "").lower() == "telegram" and cmd.startswith("/") and "@" in cmd:
+        if (
+            (req.platform or "").lower() == "telegram"
+            and cmd.startswith("/")
+            and "@" in cmd
+        ):
             cmd = cmd.split("@", 1)[0]
 
         # Some users type `@bot /help` in group chats. Treat that as a command too.
@@ -286,7 +306,9 @@ class CommandRouter:
             else:
                 prompt_id = data.get("prompt_id", "unknown")
                 if self.poller:
-                    self.poller.track_job(prompt_id, req.platform, req.channel_id, req.sender_id)
+                    self.poller.track_job(
+                        prompt_id, req.platform, req.channel_id, req.sender_id
+                    )
 
                 return CommandResponse(
                     text=f"[Job Submitted]\nID: {prompt_id}\nTemplate: {template_id}\nTrace: {trace_id}"
@@ -393,10 +415,10 @@ class CommandRouter:
 
         # Phase 4: Show execution result
         if "prompt_id" in data:
-            pid = data['prompt_id']
+            pid = data["prompt_id"]
             msg += f"\nExecuted: {pid}"
             if self.poller:
-                # Approval request might have come from different flow, but usually user invoking /approve 
+                # Approval request might have come from different flow, but usually user invoking /approve
                 # wants the result. Using current req context is safest assumption for "ChatOps".
                 self.poller.track_job(pid, req.platform, req.channel_id, req.sender_id)
         elif data.get("executed") is False:
@@ -534,7 +556,7 @@ class CommandRouter:
         /chat [subcommand] <message>
         Subcommands: run, template, status
         Default: general chat
-        
+
         Security: Never auto-executes commands. Only suggests command text.
         """
         llm = LLMClient(self.client)
@@ -579,7 +601,9 @@ class CommandRouter:
     ) -> CommandResponse:
         """Suggest a /run command based on user request."""
         if not request:
-            return CommandResponse(text="Usage: /chat run <description of what you want>")
+            return CommandResponse(
+                text="Usage: /chat run <description of what you want>"
+            )
 
         # Get available templates (simplified - could fetch from API)
         templates = "txt2img, img2img, upscale (examples)"
@@ -597,9 +621,7 @@ Output only the command in a code block."""
         response = await llm.chat(system_prompt, user_prompt)
         return CommandResponse(text=response)
 
-    async def _chat_template(
-        self, llm: LLMClient, request: str
-    ) -> CommandResponse:
+    async def _chat_template(self, llm: LLMClient, request: str) -> CommandResponse:
         """Generate a template JSON suggestion."""
         if not request:
             return CommandResponse(text="Usage: /chat template <description>")

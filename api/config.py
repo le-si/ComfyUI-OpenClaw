@@ -502,6 +502,12 @@ async def llm_test_handler(request: web.Request) -> web.Response:
         from ..services.async_utils import run_in_thread
     except ImportError:
         from services.async_utils import run_in_thread
+    try:
+        # IMPORTANT: use package-relative import in ComfyUI runtime.
+        # CRITICAL: Missing this import causes NameError in provider error handling.
+        from ..services.provider_errors import ProviderHTTPError
+    except ImportError:
+        from services.provider_errors import ProviderHTTPError  # type: ignore
 
     # S26+: CSRF protection for convenience mode
     admin_token_configured = bool(get_admin_token())
@@ -648,6 +654,12 @@ async def llm_chat_handler(request: web.Request) -> web.Response:
         from ..services.async_utils import run_in_thread
     except ImportError:
         from services.async_utils import run_in_thread
+    try:
+        # IMPORTANT: use package-relative import in ComfyUI runtime.
+        # CRITICAL: Missing this import causes NameError in provider error handling.
+        from ..services.provider_errors import ProviderHTTPError
+    except ImportError:
+        from services.provider_errors import ProviderHTTPError  # type: ignore
 
     # S17: Rate Limit
     if not check_rate_limit(request, "admin"):
@@ -685,8 +697,14 @@ async def llm_chat_handler(request: web.Request) -> web.Response:
         if isinstance(body.get("user_message"), str)
         else body.get("message") if isinstance(body.get("message"), str) else ""
     )
-    temperature = body.get("temperature") if isinstance(body.get("temperature"), (int, float)) else 0.7
-    max_tokens = body.get("max_tokens") if isinstance(body.get("max_tokens"), int) else 1024
+    temperature = (
+        body.get("temperature")
+        if isinstance(body.get("temperature"), (int, float))
+        else 0.7
+    )
+    max_tokens = (
+        body.get("max_tokens") if isinstance(body.get("max_tokens"), int) else 1024
+    )
 
     if not user_message:
         return web.json_response(
@@ -716,8 +734,23 @@ async def llm_chat_handler(request: web.Request) -> web.Response:
             {"ok": False, "error": str(e)},
             status=400,
         )
+    except ProviderHTTPError as e:
+        # IMPORTANT (recurring support issue):
+        # Do not swallow provider errors into a generic "llm_request_failed" without context.
+        # The connector can safely surface *redacted* provider messages (no prompt content)
+        # so users can fix misconfiguration (401/403/429, SSRF allowlist, etc.) quickly.
+        payload = {
+            "ok": False,
+            "error": f"{e.provider} HTTP {e.status_code}: {e.message}",
+            "provider": e.provider,
+            "status_code": e.status_code,
+        }
+        if getattr(e, "retry_after", None):
+            payload["retry_after"] = e.retry_after
+        return web.json_response(payload, status=e.status_code)
     except Exception as e:
-        logger.error(f"LLM chat request failed: {type(e).__name__}")
+        # Log type + message (never log prompt content).
+        logger.error(f"LLM chat request failed: {type(e).__name__}: {e}")
         return web.json_response(
             {"ok": False, "error": "llm_request_failed"},
             status=500,

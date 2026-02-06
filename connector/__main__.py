@@ -30,12 +30,12 @@ def _print_security_banner(config):
     Fail-closed: empty allowlists = all users treated as untrusted.
     """
     has_trusted_users = bool(
-        config.telegram_allowed_users or
-        config.telegram_allowed_chats or
-        config.discord_allowed_users or
-        config.discord_allowed_channels or
-        config.line_allowed_users or
-        config.line_allowed_groups
+        config.telegram_allowed_users
+        or config.telegram_allowed_chats
+        or config.discord_allowed_users
+        or config.discord_allowed_channels
+        or config.line_allowed_users
+        or config.line_allowed_groups
     )
     has_admins = bool(config.admin_users)
 
@@ -48,7 +48,9 @@ def _print_security_banner(config):
 
     if not has_admins:
         logger.warning("⚠️  No admin users configured (OPENCLAW_CONNECTOR_ADMIN_USERS).")
-        logger.warning("⚠️  Admin commands (/approve, /reject, etc.) will be unavailable.")
+        logger.warning(
+            "⚠️  Admin commands (/approve, /reject, etc.) will be unavailable."
+        )
 
 
 async def main():
@@ -75,10 +77,10 @@ async def main():
 
     # Shared Platforms Registry
     platforms = {}
-    
+
     # Initialize Poller
     poller = ResultsPoller(config, client, platforms)
-    
+
     # Initialize Router with Poller
     router = CommandRouter(config, client, poller=poller)
 

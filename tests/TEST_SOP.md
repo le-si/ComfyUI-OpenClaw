@@ -235,7 +235,7 @@ Unused keys have no effect unless the workflow contains a matching `{{key}}` pla
 
 ## Admin Token & UI Usage (SOP)
 
-**Key rule:** `OPENCLAW_ADMIN_TOKEN` is a **server-side environment variable**.  
+**Key rule:** `OPENCLAW_ADMIN_TOKEN` is a **server-side environment variable**.
 The UI can **use** an Admin Token for authenticated requests, but **cannot set or persist** the server token.
 
 ### Recommended setup (local only)

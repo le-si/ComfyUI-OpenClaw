@@ -17,7 +17,7 @@ logger = logging.getLogger(__name__)
 class LLMClient:
     """
     LLM client that fetches settings from OpenClaw backend.
-    
+
     Security:
     - No conversation memory (stateless).
     - Never logs user prompt content.
@@ -27,7 +27,7 @@ class LLMClient:
     def __init__(self, openclaw_client):
         """
         Initialize with OpenClawClient to fetch settings from backend.
-        
+
         Args:
             openclaw_client: Instance of OpenClawClient for API calls.
         """
@@ -39,7 +39,7 @@ class LLMClient:
         """Fetch LLM config from OpenClaw backend."""
         if self._config_cache is not None:
             return self._config_cache
-        
+
         res = await self._client.get_openclaw_config()
         if res.get("ok"):
             data = res.get("data", {})
@@ -57,15 +57,15 @@ class LLMClient:
         """Check if LLM is properly configured in OpenClaw settings."""
         if self._configured is not None:
             return self._configured
-        
+
         config = await self._fetch_config()
         provider = config.get("provider")
-        
+
         # Ollama doesn't require API key
         if provider == "ollama":
             self._configured = True
             return True
-        
+
         # If backend includes an explicit flag, honor it.
         if "api_key_configured" in config:
             self._configured = bool(config.get("api_key_configured"))
@@ -84,7 +84,7 @@ class LLMClient:
     ) -> str:
         """
         Send a chat request and return the assistant response.
-        
+
         Stateless: single system + user message per call.
         No logging of user prompts for privacy.
         """
@@ -137,9 +137,10 @@ class LLMClient:
         provider = config.get("provider", "openai")
         model = config.get("model", "gpt-4o-mini")
         base_url = config.get("base_url") or self._get_default_base_url(provider)
-        
+
         # Try to get API key from environment (fallback only)
         import os
+
         api_key = os.environ.get(f"OPENCLAW_{provider.upper()}_API_KEY")
 
         endpoint = f"{base_url.rstrip('/')}/chat/completions"

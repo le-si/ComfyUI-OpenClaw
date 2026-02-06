@@ -355,7 +355,7 @@ Set webhook auth env vars (see “Quick Start”) and restart ComfyUI.
 
 ### Admin Token: server-side vs UI
 
-`OPENCLAW_ADMIN_TOKEN` is a **server-side environment variable**.  
+`OPENCLAW_ADMIN_TOKEN` is a **server-side environment variable**.
 The Settings UI can **use** an Admin Token for authenticated requests, but **cannot set or persist** the server token.
 
 Full setup steps: see `tests/TEST_SOP.md`.

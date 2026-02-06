@@ -176,7 +176,13 @@ class TelegramPolling:
         except Exception as e:
             logger.error(f"Telegram send exception: {e}")
 
-    async def send_image(self, channel_id: str, image_data: bytes, filename: str = "image.png", caption: Optional[str] = None):
+    async def send_image(
+        self,
+        channel_id: str,
+        image_data: bytes,
+        filename: str = "image.png",
+        caption: Optional[str] = None,
+    ):
         """Send photo via Telegram sendPhoto."""
         if not self.session:
             return
@@ -188,9 +194,9 @@ class TelegramPolling:
         data.add_field("chat_id", channel_id)
         if caption:
             data.add_field("caption", caption)
-        
+
         data.add_field("photo", image_data, filename=filename, content_type="image/png")
-        
+
         try:
             async with self.session.post(url, data=data) as resp:
                 if resp.status != 200:
@@ -203,7 +209,7 @@ class TelegramPolling:
         """Send text message."""
         if not self.session:
             return
-        
+
         # Reuse internal logic logic but public
         # Using simplified direct call
         url = f"{self.base_url}/sendMessage"

@@ -11,6 +11,7 @@ from typing import Dict
 @dataclass
 class TokenBucket:
     """Simple token bucket for rate limiting."""
+
     capacity: float  # Max tokens
     refill_rate: float  # Tokens per second
     tokens: float = field(default=0.0)
@@ -34,7 +35,7 @@ class TokenBucket:
 class RateLimiter:
     """
     Per-user and per-channel rate limiter.
-    
+
     Default: 10 req/min per user, 30 req/min per channel.
     """
 
