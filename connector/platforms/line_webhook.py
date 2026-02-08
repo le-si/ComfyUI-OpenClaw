@@ -318,13 +318,25 @@ class LINEWebhookServer:
             path = self.config.media_path.strip("/")
             image_url = f"{base}/{path}/{token}"
 
-            await self._send_line_image_payload(channel_id, image_url)
+            preview_url = image_url
+            # NOTE: LINE thumbnails rely on previewImageUrl; we generate a JPEG preview
+            # when Pillow is available to improve in-chat rendering.
+            preview_bytes = self.media_store.build_preview(image_data)
+            if preview_bytes:
+                preview_token = self.media_store.store_image(
+                    preview_bytes, ".jpg", channel_id
+                )
+                preview_url = f"{base}/{path}/{preview_token}"
+
+            await self._send_line_image_payload(channel_id, image_url, preview_url)
 
         except Exception as e:
             logger.error(f"Failed to send LINE image: {e}")
             await self.send_message(channel_id, "[OpenClaw] Error delivering image.")
 
-    async def _send_line_image_payload(self, channel_id: str, url: str):
+    async def _send_line_image_payload(
+        self, channel_id: str, url: str, preview_url: Optional[str] = None
+    ):
         """Low-level push image."""
         aiohttp, _ = _import_aiohttp_web()
         if not self.session:
@@ -342,7 +354,7 @@ class LINEWebhookServer:
                 {
                     "type": "image",
                     "originalContentUrl": url,
-                    "previewImageUrl": url,  # Use same URL for preview
+                    "previewImageUrl": preview_url or url,
                 }
             ],
         }

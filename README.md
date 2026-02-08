@@ -1,13 +1,20 @@
 # ComfyUI-OpenClaw
 
-ComfyUI-OpenClaw is a **ComfyUI custom node pack** that adds:
+ComfyUI-OpenClaw is a ComfyUI custom node pack that adds:
 
-- LLM-assisted nodes (planner/refiner/vision/batch variants)
-- A built-in extension UI (`OpenClaw` panel)
-- A secure-by-default HTTP API for automation (webhooks, triggers, schedules, approvals, presets)
+- **LLM-assisted nodes** (planner/refiner/vision/batch variants)
+- **A built-in extension UI** (`OpenClaw` panel)
+- **A secure-by-default HTTP API** for automation (webhooks, triggers, schedules, approvals, presets)
 - And more exciting features being added continuously
 
 ![OpenClaw /run command example](assets/run.png)
+
+- **openclaw**: a broad assistant platform with skills, channels, gateway control plane, etc.
+
+- **ComfyUI-OpenClaw**: a ComfyUI-first automation layer that uses LLMs as helpers, with an API surface designed to be safe and manageable.
+
+If you want a “personal assistant OS,” openclaw makes a lot of sense.
+If you want **“ComfyUI as a reliable automation target,”** ComfyUI-OpenClaw feels more direct.
 
 ---
 
@@ -400,19 +407,23 @@ This project is provided **“as‑is”** without warranty of any kind. You are
 - **Data handling**: logs, prompts, outputs, and any content generated or transmitted
 
 ### Key Handling Guidance (all environments)
+
 - **Prefer environment variables** for API keys and admin tokens.
 - **UI key storage (if enabled)** is for local, single‑user setups only.
 - **Never commit secrets** or embed them in versioned files.
 - **Rotate tokens** regularly and after any suspected exposure.
 
 ### Common Deployment Contexts (you must secure each)
+
 - **Local / single‑user**: treat keys as secrets; avoid long‑term browser storage.
 - **LAN / shared machines**: require admin tokens, restrict IPs, disable unsafe endpoints.
 - **Public / tunneled / reverse‑proxy**: enforce strict allowlists, HTTPS, least‑privilege access.
 - **Desktop / portable / scripts**: ensure secrets are not logged or persisted by launchers.
 
 ### No Liability
+
 The maintainers and contributors **accept no responsibility** for:
+
 - Unauthorized access or misuse of your instance
 - Loss of data, keys, or generated content
 - Any direct or indirect damages resulting from use of this software

@@ -5,6 +5,7 @@ Handles temporary storage of images and signed URL generation.
 
 import hashlib
 import hmac
+import io
 import logging
 import secrets
 import time
@@ -64,6 +65,32 @@ class MediaStore:
         expiry = int(time.time() + self.config.media_ttl_sec)
         token = self._generate_token(filename, channel_id, expiry)
         return token
+
+    def build_preview(
+        self, image_bytes: bytes, max_px: int = 240, max_bytes: int = 900 * 1024
+    ) -> Optional[bytes]:
+        try:
+            from PIL import Image
+        except Exception:
+            return None
+
+        try:
+            img = Image.open(io.BytesIO(image_bytes))
+            img = img.convert("RGB")
+            img.thumbnail((max_px, max_px))
+        except Exception:
+            return None
+
+        for quality in (80, 70, 60, 50, 40):
+            buf = io.BytesIO()
+            try:
+                img.save(buf, format="JPEG", quality=quality, optimize=True)
+            except Exception:
+                return None
+            data = buf.getvalue()
+            if len(data) <= max_bytes:
+                return data
+        return data
 
     def get_image_path(self, token: str) -> Optional[Path]:
         """

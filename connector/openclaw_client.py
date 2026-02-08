@@ -214,6 +214,14 @@ class OpenClawClient:
                 }
         return res
 
+    async def get_approval(self, approval_id: str) -> dict:
+        res = await self._request("GET", f"/openclaw/approvals/{approval_id}")
+        if res.get("ok"):
+            data = res.get("data", {})
+            if "approval" in data:
+                return {"ok": True, "approval": data.get("approval")}
+        return res
+
     async def approve_request(
         self, approval_id: str, auto_execute: bool = True
     ) -> dict:

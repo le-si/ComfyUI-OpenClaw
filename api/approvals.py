@@ -152,6 +152,22 @@ class ApprovalHandlers:
                     result["prompt_id"] = exec_result.get("prompt_id")
                     result["trace_id"] = exec_result.get("trace_id")
 
+                    if result.get("prompt_id"):
+                        # NOTE: Persist executed_prompt_id so connector can deliver results
+                        # after UI approvals. Do not remove without updating connector.
+                        try:
+                            self._service.record_execution(
+                                approval_id,
+                                prompt_id=result.get("prompt_id"),
+                                trace_id=result.get("trace_id"),
+                                actor=actor,
+                            )
+                        except Exception as record_error:
+                            logger.error(
+                                "Failed to record approval execution metadata: "
+                                f"{record_error}"
+                            )
+
                     logger.info(
                         f"Executed approved trigger: {approval_id} -> {result.get('prompt_id')}"
                     )

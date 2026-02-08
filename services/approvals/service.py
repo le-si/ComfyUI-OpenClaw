@@ -198,6 +198,41 @@ class ApprovalService:
         logger.info(f"Rejected request: {approval_id} (by={actor})")
         return request
 
+    def record_execution(
+        self,
+        approval_id: str,
+        prompt_id: str,
+        trace_id: Optional[str] = None,
+        actor: Optional[str] = None,
+    ) -> ApprovalRequest:
+        """
+        Record execution metadata after an approval is executed.
+
+        NOTE: The chat connector relies on executed_prompt_id to deliver images
+        when approvals are done in the UI. Do not remove without updating connector.
+        """
+        request = self._store.get(approval_id)
+
+        if not request:
+            raise ValueError(f"Approval request not found: {approval_id}")
+
+        metadata = request.metadata or {}
+        metadata["executed_prompt_id"] = prompt_id
+        if trace_id:
+            metadata["executed_trace_id"] = trace_id
+        metadata["executed_at"] = datetime.now(timezone.utc).isoformat()
+        if actor:
+            metadata["executed_by"] = actor
+        request.metadata = metadata
+
+        if not self._store.update(request):
+            raise ValueError(f"Failed to update approval request: {approval_id}")
+
+        logger.info(
+            f"Recorded execution for approval {approval_id} (prompt_id={prompt_id})"
+        )
+        return request
+
     def count_pending(self) -> int:
         """Count pending approval requests."""
         self._store.expire_due()

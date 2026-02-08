@@ -27,35 +27,31 @@ class ResultsPoller:
         self.queue = (
             asyncio.Queue()
         )  # (prompt_id, platform_name, channel_id, sender_id)
+        self.approval_queue = (
+            asyncio.Queue()
+        )  # (approval_id, platform_name, channel_id, sender_id)
         self.active_polls = {}  # prompt_id -> task
-        self.active_polls = {}  # prompt_id -> task
+        self.active_approval_polls = {}  # approval_id -> task
 
     async def start(self):
         """Start the main queue consumer."""
         logger.info("ResultsPoller started.")
-        while True:
-            item = await self.queue.get()
-            try:
-                prompt_id, platform_name, channel_id, sender_id = item
-                # Spawn a background poll for this job
-                task = asyncio.create_task(
-                    self._poll_job(prompt_id, platform_name, channel_id, sender_id)
-                )
-                self.active_polls[prompt_id] = task
-                task.add_done_callback(
-                    lambda t, pid=prompt_id: self.active_polls.pop(pid, None)
-                )
-            finally:
-                self.queue.task_done()
+        await asyncio.gather(self._job_consumer(), self._approval_consumer())
 
     async def stop(self):
         """Graceful shutdown."""
         logger.info("ResultsPoller stopping...")
         for task in self.active_polls.values():
             task.cancel()
+        for task in self.active_approval_polls.values():
+            task.cancel()
 
         if self.active_polls:
             await asyncio.gather(*self.active_polls.values(), return_exceptions=True)
+        if self.active_approval_polls:
+            await asyncio.gather(
+                *self.active_approval_polls.values(), return_exceptions=True
+            )
         logger.info("ResultsPoller stopped.")
 
     def track_job(
@@ -67,6 +63,110 @@ class ResultsPoller:
 
         logger.info(f"Tracking job {prompt_id} for {platform_name} in {channel_id}")
         self.queue.put_nowait((prompt_id, platform_name, channel_id, sender_id))
+
+    def track_approval(
+        self, approval_id: str, platform_name: str, channel_id: str, sender_id: str
+    ):
+        if not approval_id:
+            return
+        if not self.config.admin_token:
+            logger.warning(
+                "Approval tracking requires OPENCLAW_CONNECTOR_ADMIN_TOKEN. Skipping."
+            )
+            asyncio.create_task(
+                self._send_text(
+                    platform_name,
+                    channel_id,
+                    "⚠️ Approval tracking requires OPENCLAW_CONNECTOR_ADMIN_TOKEN.",
+                )
+            )
+            return
+        logger.info(
+            f"Tracking approval {approval_id} for {platform_name} in {channel_id}"
+        )
+        self.approval_queue.put_nowait(
+            (approval_id, platform_name, channel_id, sender_id)
+        )
+
+    async def _job_consumer(self):
+        while True:
+            item = await self.queue.get()
+            try:
+                prompt_id, platform_name, channel_id, sender_id = item
+                task = asyncio.create_task(
+                    self._poll_job(prompt_id, platform_name, channel_id, sender_id)
+                )
+                self.active_polls[prompt_id] = task
+                task.add_done_callback(
+                    lambda t, pid=prompt_id: self.active_polls.pop(pid, None)
+                )
+            finally:
+                self.queue.task_done()
+
+    async def _approval_consumer(self):
+        while True:
+            item = await self.approval_queue.get()
+            try:
+                approval_id, platform_name, channel_id, sender_id = item
+                task = asyncio.create_task(
+                    self._poll_approval(
+                        approval_id, platform_name, channel_id, sender_id
+                    )
+                )
+                self.active_approval_polls[approval_id] = task
+                task.add_done_callback(
+                    lambda t, aid=approval_id: self.active_approval_polls.pop(aid, None)
+                )
+            finally:
+                self.approval_queue.task_done()
+
+    async def _poll_approval(
+        self, approval_id: str, platform_name: str, channel_id: str, sender_id: str
+    ):
+        start_time = time.time()
+        delay = 2.0
+
+        while (time.time() - start_time) < self.config.delivery_timeout_sec:
+            try:
+                res = await self.client.get_approval(approval_id)
+                if res.get("ok"):
+                    approval = res.get("approval") or {}
+                    status = approval.get("status")
+                    if status in ("rejected", "expired"):
+                        await self._send_text(
+                            platform_name,
+                            channel_id,
+                            f"❌ Approval {approval_id} {status}.",
+                        )
+                        return
+                    if status == "approved":
+                        metadata = approval.get("metadata") or {}
+                        # NOTE: executed_prompt_id is written by the server after UI approval.
+                        # Keep this key stable; connector relies on it to auto-deliver images.
+                        prompt_id = (
+                            metadata.get("executed_prompt_id")
+                            or metadata.get("prompt_id")
+                            or approval.get("prompt_id")
+                        )
+                        if prompt_id:
+                            self.track_job(
+                                prompt_id, platform_name, channel_id, sender_id
+                            )
+                            return
+            except Exception as e:
+                logger.debug(f"Approval poll failed for {approval_id}: {e}")
+
+            try:
+                await asyncio.sleep(delay)
+            except asyncio.CancelledError:
+                raise
+            delay = min(delay * 2, 15)
+
+        await self._send_text(
+            platform_name,
+            channel_id,
+            f"⚠️ Approval {approval_id} timed out waiting for execution.",
+        )
 
     async def _poll_job(
         self, prompt_id: str, platform_name: str, channel_id: str, sender_id: str

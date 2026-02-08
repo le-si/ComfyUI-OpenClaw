@@ -3,6 +3,7 @@ Unit tests for F33 LINE Image Delivery.
 Tests MediaStore logic and LINE Adapter image sending.
 """
 
+import os
 import shutil
 import tempfile
 import time
@@ -80,9 +81,6 @@ class TestMediaStore(unittest.TestCase):
             self.store.store_image(b"123", ".png", "ch1")
 
 
-import os
-
-
 class TestLINESendImage(unittest.IsolatedAsyncioTestCase):
     def setUp(self):
         self.config = ConnectorConfig()
@@ -95,6 +93,7 @@ class TestLINESendImage(unittest.IsolatedAsyncioTestCase):
         # Mock MediaStore to be independent of FS
         self.server.media_store = MagicMock()
         self.server.media_store.store_image.return_value = "mock_token.sig"
+        self.server.media_store.build_preview.return_value = None
 
         self.server.session = MagicMock()
         self.server.session.post.return_value.__aenter__.return_value.status = 200
