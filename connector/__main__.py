@@ -52,6 +52,12 @@ def _print_security_banner(config):
             "⚠️  Admin commands (/approve, /reject, etc.) will be unavailable."
         )
 
+    if not config.admin_token:
+        logger.warning("⚠️  No admin token configured (OPENCLAW_CONNECTOR_ADMIN_TOKEN).")
+        logger.warning(
+            "⚠️  Admin commands will fail if OpenClaw Server requires authentication."
+        )
+
 
 async def main():
     logger.info("Initializing OpenClaw Connector (Phase 5)...")

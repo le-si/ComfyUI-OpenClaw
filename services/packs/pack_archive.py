@@ -14,6 +14,8 @@ from .pack_manifest import (
 )
 from .pack_types import PackMetadata
 
+MAX_COMPRESSION_RATIO = 100
+
 
 class PackArchive:
     @staticmethod
@@ -49,12 +51,20 @@ class PackArchive:
             if total_size > MAX_FILE_SIZE_MB * 1024 * 1024:
                 raise PackError(f"Archive content too large ({total_size} bytes)")
 
+            # Check compression ratio
+            compressed_size = sum(i.compress_size for i in infos)
+            if compressed_size > 0:
+                ratio = total_size / compressed_size
+                if ratio > MAX_COMPRESSION_RATIO:
+                    raise PackError(f"Compression ratio too high ({ratio:.1f} > {MAX_COMPRESSION_RATIO})")
+
             # 2. Safety Check
             for info in infos:
                 if (
                     info.filename.startswith("/")
                     or ".." in info.filename
                     or "\\" in info.filename
+                    or any(c < ' ' for c in info.filename) # Control chars
                 ):
                     raise PackError(f"Unsafe filename: {info.filename}")
 
@@ -118,8 +128,32 @@ class PackArchive:
             raise PackError("Source directory does not exist")
 
         with zipfile.ZipFile(output_zip, "w", zipfile.ZIP_DEFLATED) as zf:
+            files_to_add = []
             for root, _, files in os.walk(source_dir):
                 for file in files:
                     full_path = os.path.join(root, file)
                     rel_path = os.path.relpath(full_path, source_dir)
-                    zf.write(full_path, rel_path)
+                    files_to_add.append((full_path, rel_path))
+            
+            # Deterministic order
+            files_to_add.sort(key=lambda x: x[1])
+
+            for full_path, rel_path in files_to_add:
+                 # Deterministic metadata (timestamp)
+                 # ZipInfo requires a tuple (year, month, day, hour, min, sec)
+                 # We use a fixed epoch for reproducibility, or file mtime? 
+                 # Plan says "regenerate manifest deterministically". 
+                 # If we use file mtime, it changes if we touch files.
+                 # Using fixed timestamp ensures identical binary hash for identical content.
+                 # But standard zip tools use mtime.
+                 # Let's use 1980-01-01 00:00:00 (DOS epoch)
+                 zinfo = zipfile.ZipInfo(rel_path)
+                 zinfo.date_time = (1980, 1, 1, 0, 0, 0)
+                 zinfo.compress_type = zipfile.ZIP_DEFLATED
+                 
+                 # Set regular file permissions (0o644)
+                 # External attr: (0o100644 << 16) = 0x81A40000
+                 zinfo.external_attr = 0x81A40000
+                 
+                 with open(full_path, "rb") as f:
+                     zf.writestr(zinfo, f.read())

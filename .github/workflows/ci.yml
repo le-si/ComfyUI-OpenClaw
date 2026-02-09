@@ -71,9 +71,12 @@ jobs:
           python -m pip install --upgrade pip
           python -m pip install numpy pillow
       - name: Run unit tests
+
         env:
           MOLTBOT_STATE_DIR: ${{ github.workspace }}/moltbot_state/_ci_unit
         run: |
+          python -m unittest discover -s tests -p "test_*.py" -v
+
   security-audit:
     name: Security Audit (S23)
     runs-on: ubuntu-latest
@@ -85,9 +88,7 @@ jobs:
       - name: Frontend Audit (npm)
         run: |
           # Audit only production dependencies, ignore dev
-          npm audit --production || true
-          # Note: || true because audit often fails on harmless things.
-          # In strict mode, remove || true or configure exceptions.
+          npm audit --production
 
       - uses: actions/setup-python@v5
         with:
@@ -95,8 +96,4 @@ jobs:
       - name: Install pip-audit
         run: pip install pip-audit
       - name: Backend Audit (pip)
-        run: |
-          pip install -r requirements.txt || true
-          # Scan environment
-          pip-audit || true
-          # Again, allowing failure for now to avoid blocking CI on minor findings.
+        run: pip-audit
