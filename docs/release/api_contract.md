@@ -1,0 +1,162 @@
+# OpenClaw API Contract (v1)
+
+> **Status**: normative
+> **Version**: 1.0.0
+> **Date**: 2026-02-09
+
+This document defines the public API contract for OpenClaw. It serves as the authoritative baseline for client compatibility and breaking change policies.
+
+## 1. Route Inventory
+
+All new integrations should use the `/openclaw/` prefix. Use of `/moltbot/` is deprecated.
+
+### 1.1 Core Observability & System
+
+**Base Path**: `/openclaw/`
+
+| Method | Path | Legacy Path | Auth | Description |
+| :--- | :--- | :--- | :--- | :--- |
+| `GET` | `/health` | `/moltbot/health` | None | System status, uptime, and dependencies. |
+| `GET` | `/capabilities` | `/moltbot/capabilities` | None | Feature flags and supported extensions. |
+| `GET` | `/logs/tail` | `/moltbot/logs/tail` | Observability | Tail recent log lines (rate-limited). |
+| `GET` | `/trace/{prompt_id}` | `/moltbot/trace/{id}` | Observability | Get execution trace by prompt ID. |
+| `GET` | `/config` | `/moltbot/config` | Observability | Read-only view of sanitized provider config. |
+| `PUT` | `/config` | `/moltbot/config` | Admin | Update system configuration. |
+| `GET` | `/jobs` | `/moltbot/jobs` | Observability | List recent jobs (Stub/Not Implemented). |
+
+### 1.2 Webhooks & Triggers
+
+**Auth**: Requires configured webhook secret or Admin Token.
+
+| Method | Path | Legacy Path | Auth | Description |
+| :--- | :--- | :--- | :--- | :--- |
+| `POST` | `/webhook` | `/moltbot/webhook` | Webhook Secret | Receive external alerts (schema validation only). |
+| `POST` | `/webhook/submit` | `/moltbot/webhook/submit` | Webhook Secret | Validate and submit job from webhook payload. |
+| `POST` | `/webhook/validate` | `/moltbot/webhook/validate` | Webhook Secret | Dry-run validation of webhook payload. |
+| `POST` | `/triggers/fire` | `/moltbot/triggers/fire` | Admin | Fire an ad-hoc workflow trigger from external system. |
+
+### 1.3 LLM & Chat
+
+**Base Path**: `/openclaw/llm/`
+
+| Method | Path | Legacy Path | Auth | Description |
+| :--- | :--- | :--- | :--- | :--- |
+| `POST` | `/chat` | `/moltbot/llm/chat` | Admin/Local | Unified chat interface for assistant interactions. |
+| `POST` | `/test` | `/moltbot/llm/test` | Admin | Test LLM connectivity and configuration. |
+| `GET` | `/models` | `/moltbot/llm/models` | Admin | List available models from configured provider. |
+
+### 1.4 Templates & Assets
+
+**Base Path**: `/openclaw/`
+
+| Method | Path | Legacy Path | Auth | Description |
+| :--- | :--- | :--- | :--- | :--- |
+| `GET` | `/templates` | `/moltbot/templates` | Observability | List discovered template IDs and metadata. |
+| `GET` | `/presets` | `/moltbot/presets` | Public/Admin* | List local presets (*depends on `OPENCLAW_PRESETS_PUBLIC_READ`). |
+| `POST` | `/presets` | `/moltbot/presets` | Admin | Create a new preset. |
+| `PUT` | `/presets/{id}` | `/moltbot/presets/{id}` | Admin | Update an existing preset. |
+| `DELETE` | `/presets/{id}` | `/moltbot/presets/{id}` | Admin | Delete a preset. |
+| `GET` | `/checkpoints` | `/moltbot/checkpoints` | Observability | List model checkpoints. |
+| `POST` | `/checkpoints` | `/moltbot/checkpoints` | Admin | Create/copy a checkpoint. |
+| `GET` | `/packs` | `/moltbot/packs` | Admin | List installed asset packs. |
+| `POST` | `/packs/import` | `/moltbot/packs/import` | Admin | Import an asset pack (.zip). |
+| `GET` | `/packs/export/...` | `/moltbot/packs/export...` | Admin | Download an asset pack. |
+
+### 1.5 Schedules & Approvals
+
+**Base Path**: `/openclaw/`
+**Auth**: Admin Token Required
+
+| Method | Path | Description |
+| :--- | :--- | :--- |
+| `GET` | `/schedules` | List all schedules. |
+| `POST` | `/schedules` | Create a new schedule. |
+| `GET` | `/schedules/{id}` | Get schedule details. |
+| `PUT` | `/schedules/{id}` | Update a schedule. |
+| `DELETE` | `/schedules/{id}` | Delete a schedule. |
+| `POST` | `/schedules/{id}/run` | Manually trigger a schedule. |
+| `GET` | `/schedules/{id}/runs` | Get run history for a schedule. |
+| `GET` | `/approvals` | List pending approvals. |
+| `POST` | `/approvals/{id}/approve` | Approve a pending request. |
+| `POST` | `/approvals/{id}/reject` | Reject a pending request. |
+
+### 1.6 Bridge (Sidecar)
+
+**Base Path**: `/bridge/`
+**Auth**: Bridge Auth (Device Check)
+
+| Method | Path | Description |
+| :--- | :--- | :--- |
+| `GET` | `/health` | Bridge status and connectivity check. |
+| `POST` | `/submit` | Submit job from sidecar to core. |
+| `POST` | `/deliver` | Outbound delivery from core to sidecar (via callback). |
+
+---
+
+## 2. Status & Error Semantics
+
+API responses MUST adhere to the following status codes and envelope format.
+
+### 2.1 Standard Envelope
+
+All JSON responses (success or error) share a common structure:
+
+```json
+{
+  "ok": boolean,
+  "error": "string (optional)",
+  "detail": "string (optional)",
+  "trace_id": "string (optional)",
+  "data": { ... } // Success payload
+}
+```
+
+### 2.2 Status Codes
+
+| Code | Meaning | Usage |
+| :--- | :--- | :--- |
+| `200` | OK | Successful synchronous request. |
+| `201` | Created | Resource created (schedules, presets). |
+| `202` | Accepted | Async job submitted (pending execution or approval). |
+| `400` | Bad Request | Schema validation failure, missing required fields. |
+| `401` | Unauthorized | Missing or invalid authentication token. |
+| `403` | Forbidden | Authenticated but permission denied (e.g., admin-only). |
+| `404` | Not Found | Resource or route does not exist. |
+| `409` | Conflict | Idempotency collision or state conflict. |
+| `413` | Payload Too Large | Input size exceeds `OPENCLAW_MAX_RENDERED_WORKFLOW_BYTES` or similar limits. |
+| `429` | Too Many Requests | Rate limit or Execution Budget exceeded. |
+| `500` | Internal Error | Unhandled server exception. |
+| `503` | Unavailable | Feature disabled or service not wired. |
+
+---
+
+## 3. Limits & Budgets
+
+These limits are contractual and strictly enforced. Clients MUST handle `413` and `429` responses.
+
+| Limit | Metric | Default | Configuration Key |
+| :--- | :--- | :--- | :--- |
+| **Concurrency (Global)** | In-flight jobs | 2 | `OPENCLAW_MAX_INFLIGHT_SUBMITS_TOTAL` |
+| **Concurrency (Webhook)** | In-flight jobs | 1 | `OPENCLAW_MAX_INFLIGHT_SUBMITS_WEBHOOK` |
+| **Concurrency (Bridge)** | In-flight jobs | 1 | `OPENCLAW_MAX_INFLIGHT_SUBMITS_BRIDGE` |
+| **Payload Size** | Rendered workflow | 512KB | `OPENCLAW_MAX_RENDERED_WORKFLOW_BYTES` |
+| **Webhook Body** | Raw JSON body | 10MB | `MAX_BODY_SIZE` (internal constant) |
+| **Trigger Inputs** | Input variables | 32KB | Hardcoded in `api/triggers.py` |
+| **Log Tail** | Max lines | 500 | Hardcoded in `api/routes.py` |
+
+---
+
+## 4. Deprecation Policy
+
+### 4.1 Legacy Routes (`/moltbot/`)
+
+- **Status**: Deprecated.
+- **Policy**: Maintained for backward compatibility in v1.x.
+- **Removal**: Scheduled for removal in v2.0.
+- **Action**: Clients should migrate to `/openclaw/` prefixes immediately.
+
+### 4.2 Legacy Config Keys
+
+- **Status**: Deprecated.
+- **Policy**: Read-only fallback. `OPENCLAW_*` keys take precedence.
+- **Action**: Operators should rename `MOLTBOT_*` keys to `OPENCLAW_*`.

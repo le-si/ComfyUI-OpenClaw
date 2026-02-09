@@ -20,6 +20,7 @@ If the deployment enables remote control or bridge features, it must also pass *
 - [ ] **Observability**: `/openclaw/logs/tail` and `/openclaw/config` require `OPENCLAW_OBSERVABILITY_TOKEN` (legacy: `MOLTBOT_OBSERVABILITY_TOKEN`) if accessed remotely, or are loopback-only.
 - [ ] **SSRF**: LLM `base_url` defaults to known providers. Custom URLs require `OPENCLAW_ALLOW_ANY_PUBLIC_LLM_HOST=1` or explicit allowlist.
 - [ ] **Budgets**: `OPENCLAW_MAX_INFLIGHT_SUBMITS_TOTAL` (concurrency) and `OPENCLAW_MAX_RENDERED_WORKFLOW_BYTES` (payloads) are enforced.
+- [ ] **Contracts**: API endpoints match `docs/release/api_contract.md`; Configuration follows `docs/release/config_secrets_contract.md`.
 
 ### 2. Documentation & Recipes
 
