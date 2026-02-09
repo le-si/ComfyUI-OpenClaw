@@ -1,8 +1,10 @@
-
-import unittest
 import asyncio
-from unittest.mock import patch, MagicMock
+import json
+import unittest
+from unittest.mock import MagicMock, patch
+
 from api.config import config_put_handler
+
 
 class TestR53ApplyFeedbackRepro(unittest.TestCase):
     def setUp(self):
@@ -17,15 +19,17 @@ class TestR53ApplyFeedbackRepro(unittest.TestCase):
     @patch("api.config.require_admin_token")
     @patch("api.config.check_rate_limit")
     @patch("api.config.require_same_origin_if_no_token")
-    def test_put_returns_apply_metadata(self, mock_csrf, mock_rate, mock_auth, mock_get_config, mock_update):
+    def test_put_returns_apply_metadata(
+        self, mock_csrf, mock_rate, mock_auth, mock_get_config, mock_update
+    ):
         # Setup mocks
         mock_csrf.return_value = None
         mock_rate.return_value = True
         mock_auth.return_value = (True, None)
-        
+
         # update_config succeeds
         mock_update.return_value = (True, [])
-        
+
         # get_effective_config returns the new state
         mock_get_config.return_value = ({"provider": "openai"}, {"provider": "file"})
 
@@ -42,6 +46,6 @@ class TestR53ApplyFeedbackRepro(unittest.TestCase):
         # Assertion: R53 requires an 'apply' field in the PUT /config response.
         self.assertIn("apply", body, "R53 Failure: Response missing 'apply' metadata")
 
-import json
+
 if __name__ == "__main__":
     unittest.main()

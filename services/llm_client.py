@@ -144,6 +144,31 @@ class LLMClient:
 
             self.model = DEFAULT_MODEL_BY_PROVIDER.get(self.provider, "default")
 
+        # R23 (plugin wiring) + R57 (precedence compatibility):
+        # CRITICAL: keep model alias resolution in __init__.
+        # Some callers instantiate LLMClient and execute immediately without calling Settings save flow,
+        # and tests assert that "model.resolve" runs during initialization.
+        # Removing this block regresses alias behavior (e.g., gpt4 -> gpt-4) and breaks unit tests.
+        # CI guard: tests/test_llm_client_plugins.py::test_model_alias_resolution_on_init.
+        if PLUGINS_AVAILABLE and self.model:
+            try:
+                from .plugins.async_bridge import run_async_in_sync_context
+
+                resolve_ctx = RequestContext(
+                    provider=self.provider,
+                    model=str(self.model),
+                    trace_id="init",
+                )
+                resolved_model = run_async_in_sync_context(
+                    plugin_manager.execute_first(
+                        "model.resolve", resolve_ctx, str(self.model)
+                    )
+                )
+                if isinstance(resolved_model, str) and resolved_model.strip():
+                    self.model = resolved_model.strip()
+            except Exception as e:
+                logger.warning(f"Model alias resolution failed (non-fatal): {e}")
+
         self.timeout = (
             timeout if timeout is not None else eff_config.get("timeout_sec", 120)
         )

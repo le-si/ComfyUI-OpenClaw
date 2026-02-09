@@ -11,6 +11,20 @@ This document defines the **mandatory test workflow** for this repo. Run it **be
 
 ## Required Pre-Push Workflow (Must Run)
 
+### Optional automation (recommended)
+
+Enable the repository-managed Git pre-push hook once:
+
+```bash
+git config core.hooksPath .githooks
+```
+
+Then every `git push` will run:
+
+```bash
+bash scripts/pre_push_checks.sh
+```
+
 1) Detect Secrets (baseline-based)
 
 ```bash
