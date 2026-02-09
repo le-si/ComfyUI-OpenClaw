@@ -25,10 +25,26 @@ def _read_pyproject_version() -> Optional[str]:
         with open(pyproject_path, "r", encoding="utf-8") as f:
             text = f.read()
 
+        # Prefer stdlib TOML parser if available (Python 3.11+), then fallback to regex.
+        try:
+            from tomllib import loads as _toml_loads  # type: ignore
+        except Exception:
+            _toml_loads = None
+
+        if _toml_loads:
+            try:
+                data = _toml_loads(text)
+                ver = data.get("project", {}).get("version")
+                if ver:
+                    return str(ver).strip() or None
+            except Exception:
+                pass
+
         # Find the [project] section and parse `version = "..."` within it.
+        # IMPORTANT: tolerate BOM/CRLF so the UI version does not silently fall back to 0.1.0.
         # This is intentionally conservative to avoid false matches in other sections.
         m = re.search(
-            r"(?ms)^\\[project\\]\\s*(?:[^\\[]*?)^version\\s*=\\s*\"([^\"]+)\"\\s*$",
+            r"(?ms)^\ufeff?\\[project\\]\\s*(?:[^\\[]*?)^version\\s*=\\s*[\"']([^\"']+)[\"']\\s*$",
             text,
         )
         if not m:
