@@ -5,7 +5,7 @@ Dispatches parsed commands to handlers with AST argument parsing.
 
 import logging
 import shlex
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 from .config import ConnectorConfig
 from .contract import CommandRequest, CommandResponse
@@ -234,6 +234,17 @@ class CommandRouter:
             + "\n".join(f"- {d}" for d in details)
         )
 
+    def _require_admin_token_configured(self) -> Optional[CommandResponse]:
+        """
+        F32 WP3: Check if admin token is configured before running admin commands.
+        Fail-fast with clear error message instead of 403/500 later.
+        """
+        if not self.config.admin_token:
+            return CommandResponse(
+                text="[Error] Admin token not configured. Set OPENCLAW_CONNECTOR_ADMIN_TOKEN and restart connector."
+            )
+        return None
+
     async def _handle_run(
         self, req: CommandRequest, args: List[str]
     ) -> CommandResponse:
@@ -302,6 +313,14 @@ class CommandRouter:
                 msg = f"[Approval Requested]\nID: {approval_id}\nTrace: {trace_id}"
                 if "expires_at" in data:
                     msg += f"\nExpires: {data['expires_at']}"
+                if self.poller:
+                    # IMPORTANT:
+                    # For untrusted users, approvals are done in the OpenClaw UI.
+                    # We must start tracking the approval_id so we can map
+                    # approval_id -> executed_prompt_id later and auto-deliver images.
+                    self.poller.track_approval(
+                        approval_id, req.platform, req.channel_id, req.sender_id
+                    )
                 return CommandResponse(text=msg)
             else:
                 prompt_id = data.get("prompt_id", "unknown")
@@ -356,6 +375,10 @@ class CommandRouter:
     async def _handle_interrupt(
         self, req: CommandRequest, args: List[str]
     ) -> CommandResponse:
+        # F32 WP3: Guard
+        if err := self._require_admin_token_configured():
+            return err
+
         # Remediation: Global Interrupt
         res = await self.client.interrupt_output()
         if res.get("ok"):
@@ -366,6 +389,10 @@ class CommandRouter:
     async def _handle_approvals_list(
         self, req: CommandRequest, args: List[str]
     ) -> CommandResponse:
+        # F32 WP3: Guard
+        if err := self._require_admin_token_configured():
+            return err
+
         res = await self.client.get_approvals()
         if not res.get("ok"):
             return CommandResponse(
@@ -405,6 +432,10 @@ class CommandRouter:
         if not args:
             return CommandResponse(text="Usage: /approve <id>")
 
+        # F32 WP3: Guard
+        if err := self._require_admin_token_configured():
+            return err
+
         # Assuming auto_execute=True by default for chat logic
         res = await self.client.approve_request(args[0], auto_execute=True)
         if not res.get("ok"):
@@ -434,6 +465,10 @@ class CommandRouter:
         if not args:
             return CommandResponse(text="Usage: /reject <id> [reason]")
 
+        # F32 WP3: Guard
+        if err := self._require_admin_token_configured():
+            return err
+
         reason = " ".join(args[1:]) if len(args) > 1 else "Rejected via chat"
         res = await self.client.reject_request(args[0], reason)
         if not res.get("ok"):
@@ -444,6 +479,10 @@ class CommandRouter:
     async def _handle_schedules_list(
         self, req: CommandRequest, args: List[str]
     ) -> CommandResponse:
+        # F32 WP3: Guard
+        if err := self._require_admin_token_configured():
+            return err
+
         res = await self.client.get_schedules()
         if not res.get("ok"):
             return CommandResponse(text=f"[Error] {res.get('error')}")
@@ -466,6 +505,10 @@ class CommandRouter:
     ) -> CommandResponse:
         if len(args) < 2:
             return CommandResponse(text="Usage: /schedule <run|toggle> <id>")
+
+        # F32 WP3: Guard
+        if err := self._require_admin_token_configured():
+            return err
 
         sub = args[0].lower()
         sid = args[1]
@@ -519,6 +562,11 @@ class CommandRouter:
     ) -> CommandResponse:
         if not args:
             return CommandResponse(text="Usage: /trace <prompt_id>")
+
+        # F32 WP3: Guard
+        if err := self._require_admin_token_configured():
+            return err
+
         res = await self.client.get_trace(args[0])
         if not res.get("ok"):
             return CommandResponse(text=f"[Error] {res.get('error')}")

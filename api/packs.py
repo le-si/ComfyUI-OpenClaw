@@ -1,11 +1,66 @@
+from typing import Optional
+
+try:
+    from aiohttp import web
+except ImportError:
+    # NOTE:
+    # - ComfyUI runtime always has `aiohttp` available.
+    # - Unit tests may run in a minimal Python environment without `aiohttp`.
+    #   We still want this module to be importable, but any HTTP handlers must
+    #   fail fast if invoked without real `aiohttp.web`.
+    class MockWeb:
+        _IS_MOCKWEB = True
+
+        class Request:
+            pass
+
+        class Response:
+            pass
+
+        class FileResponse:
+            def __init__(self, path: str, headers: Optional[dict] = None):
+                self._path = path
+                self.headers = headers or {}
+
+            async def prepare(self, request):  # pragma: no cover
+                return None
+
+        @staticmethod
+        def json_response(*args, **kwargs):  # pragma: no cover
+            raise RuntimeError("aiohttp not available")
+
+    web = MockWeb()
+
 import os
+import shutil
 import tempfile
 
-from aiohttp import web
+# OpenClaw imports
+if __package__ and "." in __package__:
+    from ..services.access_control import require_admin_token
+    from ..services.packs.pack_archive import PackArchive, PackError
+    from ..services.packs.pack_registry import PackRegistry
+else:
+    from services.access_control import require_admin_token
+    from services.packs.pack_archive import PackArchive, PackError
+    from services.packs.pack_registry import PackRegistry
 
-from ..services.access_control import require_admin_token
-from ..services.packs.pack_archive import PackArchive, PackError
-from ..services.packs.pack_registry import PackRegistry
+
+if web:
+    class CleanupFileResponse(web.FileResponse):
+        """FileResponse that deletes the file after sending."""
+        async def prepare(self, request):
+            try:
+                return await super().prepare(request)
+            finally:
+                path = self._path
+                if os.path.exists(path):
+                    try:
+                        os.remove(path)
+                    except Exception:
+                        pass
+else:
+    CleanupFileResponse = None
 
 
 class PacksHandlers:
@@ -13,30 +68,50 @@ class PacksHandlers:
         self.registry = PackRegistry(state_dir)
 
     async def list_packs_handler(self, request: web.Request) -> web.Response:
-        """GET /moltbot/packs"""
-        allowed, error = require_admin_token(request)
-        if not allowed:
-            return web.json_response({"ok": False, "error": error}, status=403)
+        """GET /packs - List installed packs."""
+        if getattr(web, "_IS_MOCKWEB", False) is True:
+            raise RuntimeError("aiohttp not available")
+        
+        # S8: Public read or authenticated?
+        # Usually list is fine to be public-read if not strictly protected, 
+        # but admin token check is safer for system info.
+        # Plan says "Integrity (Local)", implies authenticated management.
+        # list_packs might be needed for UI.
+        # Let's verify admin token for consistency with other sensitive endpoints.
+        # Actually, let's keep list public-ish for UI discovery? 
+        # No, "require_admin_token" for everything per F32 is safer.
+        # But for now, let's just implement listing.
+        
+        # NOTE: S8/F11 implies rigorous management.
+        if not await self._check_auth(request):
+            return web.json_response({"ok": False, "error": "Unauthorized"}, status=401)
 
-        packs = self.registry.list_packs()
-        return web.json_response({"ok": True, "packs": packs})
+        try:
+            packs = self.registry.list_packs()
+            return web.json_response({"ok": True, "packs": packs})
+        except Exception as e:
+            return web.json_response({"ok": False, "error": str(e)}, status=500)
 
     async def import_pack_handler(self, request: web.Request) -> web.Response:
-        """POST /moltbot/packs/import (multipart/form-data)"""
-        allowed, error = require_admin_token(request)
-        if not allowed:
-            return web.json_response({"ok": False, "error": error}, status=403)
+        """POST /packs/import - Install pack from zip upload."""
+        if getattr(web, "_IS_MOCKWEB", False) is True:
+            raise RuntimeError("aiohttp not available")
 
+        if not await self._check_auth(request):
+            return web.json_response({"ok": False, "error": "Unauthorized"}, status=401)
+
+        # Multipart reader
         reader = await request.multipart()
         field = await reader.next()
-
         if not field or field.name != "file":
-            return web.json_response({"ok": False, "error": "missing_file"}, status=400)
-
-        # Write upload to temp file
+             return web.json_response({"ok": False, "error": "Missing file field"}, status=400)
+        
+        filename = field.filename or "pack.zip"
+        
+        # Save to temp file
         fd, temp_path = tempfile.mkstemp(suffix=".zip")
         os.close(fd)
-
+        
         try:
             with open(temp_path, "wb") as f:
                 while True:
@@ -44,75 +119,94 @@ class PacksHandlers:
                     if not chunk:
                         break
                     f.write(chunk)
-
-            # Install
-            overwrite = request.query.get("overwrite", "").lower() == "true"
-            meta = self.registry.install_pack(temp_path, overwrite=overwrite)
-
-            return web.json_response({"ok": True, "pack": meta})
-
-        except PackError as e:
-            return web.json_response({"ok": False, "error": str(e)}, status=400)
+            
+            overwrite = request.query.get("overwrite", "false").lower() == "true"
+            
+            try:
+                meta = self.registry.install_pack(temp_path, overwrite=overwrite)
+                return web.json_response({"ok": True, "pack": meta})
+            except PackError as e:
+                return web.json_response({"ok": False, "error": str(e)}, status=400)
+                
         except Exception as e:
-            return web.json_response(
-                {"ok": False, "error": f"Internal error: {str(e)}"}, status=500
-            )
+             return web.json_response({"ok": False, "error": str(e)}, status=500)
         finally:
             if os.path.exists(temp_path):
                 os.remove(temp_path)
 
-    async def export_pack_handler(self, request: web.Request) -> web.Response:
-        """GET /moltbot/packs/export/{name}/{version}"""
-        allowed, error = require_admin_token(request)
-        if not allowed:
-            return web.json_response({"ok": False, "error": error}, status=403)
+    async def delete_pack_handler(self, request: web.Request) -> web.Response:
+        """DELETE /packs/{name}/{version} - Uninstall pack."""
+        if getattr(web, "_IS_MOCKWEB", False) is True:
+            raise RuntimeError("aiohttp not available")
+
+        if not await self._check_auth(request):
+            return web.json_response({"ok": False, "error": "Unauthorized"}, status=401)
 
         name = request.match_info.get("name")
         version = request.match_info.get("version")
-
-        pack_dir = self.registry.get_pack_path(name, version)
-        if not pack_dir:
-            return web.json_response(
-                {"ok": False, "error": "pack_not_found"}, status=404
-            )
-
-        # Create temp zip
-        fd, temp_path = tempfile.mkstemp(suffix=f"-{name}-{version}.zip")
-        os.close(fd)
-
+        
+        if not name or not version:
+             return web.json_response({"ok": False, "error": "Missing name/version"}, status=400)
+            
         try:
-            PackArchive.create_pack_archive(pack_dir, temp_path)
-
-            # Serve file
-            return web.FileResponse(
-                temp_path,
-                headers={
-                    "Content-Disposition": f'attachment; filename="{name}-{version}.moltpack"'
-                },
-            )
-            # Note: FileResponse might not clean up temp file automatically.
-            # In a real system, we'd want a cleanup mechanism (e.g. background task).
-            # For now, we rely on OS temp cleanup or add a cleanup callback if aiohttp supports it.
-            # A safer way allows a streaming response that deletes after.
-            # But standard ComfyUI extensions often simple-serve.
+            success = self.registry.uninstall_pack(name, version)
+            if success:
+                return web.json_response({"ok": True})
+            else:
+                 return web.json_response({"ok": False, "error": "Not found"}, status=404)
         except Exception as e:
-            if os.path.exists(temp_path):
-                os.remove(temp_path)
             return web.json_response({"ok": False, "error": str(e)}, status=500)
 
-    async def delete_pack_handler(self, request: web.Request) -> web.Response:
-        """DELETE /moltbot/packs/{name}/{version}"""
-        allowed, error = require_admin_token(request)
-        if not allowed:
-            return web.json_response({"ok": False, "error": error}, status=403)
+    async def export_pack_handler(self, request: web.Request) -> web.Response:
+         """GET /packs/export/{name}/{version} - Download pack zip."""
+         if getattr(web, "_IS_MOCKWEB", False) is True:
+             raise RuntimeError("aiohttp not available")
+             
+         if not await self._check_auth(request):
+            return web.json_response({"ok": False, "error": "Unauthorized"}, status=401)
+            
+         name = request.match_info.get("name")
+         version = request.match_info.get("version")
+         
+         if not name or not version:
+              return web.json_response({"ok": False, "error": "Missing name/version"}, status=400)
+              
+         pack_path = self.registry.get_pack_path(name, version)
+         if not pack_path:
+              return web.json_response({"ok": False, "error": "Pack not found"}, status=404)
+              
+         # Create temp zip
+         fd, temp_zip = tempfile.mkstemp(suffix=".zip")
+         os.close(fd)
+         
+         try:
+             # Ensure manifest exists (it should for installed packs)
+             if not os.path.exists(os.path.join(pack_path, "manifest.json")):
+                  return web.json_response({"ok": False, "error": "Pack manifest missing/corrupt"}, status=500)
+             
+             # Create deterministic zip
+             PackArchive.create_pack_archive(pack_path, temp_zip)
+             
+             # Stream response
+             return CleanupFileResponse(
+                 temp_zip,
+                 headers={
+                     "Content-Disposition": f'attachment; filename="{name}-{version}.zip"',
+                     "Content-Type": "application/zip",
+                 }
+             )
+         except Exception as e:
+             if os.path.exists(temp_zip):
+                 os.remove(temp_zip)
+             return web.json_response({"ok": False, "error": str(e)}, status=500)
 
-        name = request.match_info.get("name")
-        version = request.match_info.get("version")
-
-        success = self.registry.uninstall_pack(name, version)
-        if success:
-            return web.json_response({"ok": True})
-        else:
-            return web.json_response(
-                {"ok": False, "error": "pack_not_found"}, status=404
-            )
+    async def _check_auth(self, request: web.Request) -> bool:
+        # Re-use require_admin_token logic from access_control?
+        # require_admin_token(request) returns (allowed, error_msg)
+        # Wait, require_admin_token in access_control might depend on config.
+        # Let's import it.
+        try:
+            allowed, _ = require_admin_token(request)
+            return allowed
+        except Exception:
+            return False

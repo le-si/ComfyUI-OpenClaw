@@ -9,6 +9,7 @@ Privacy:
 """
 
 import logging
+import time
 from typing import Dict, List, Optional
 
 logger = logging.getLogger(__name__)
@@ -24,6 +25,8 @@ class LLMClient:
     - Never auto-executes commands.
     """
 
+    CONFIG_TTL = 60  # seconds
+
     def __init__(self, openclaw_client):
         """
         Initialize with OpenClawClient to fetch settings from backend.
@@ -33,11 +36,13 @@ class LLMClient:
         """
         self._client = openclaw_client
         self._config_cache = None
+        self._last_fetch = 0
         self._configured = None
 
     async def _fetch_config(self) -> dict:
-        """Fetch LLM config from OpenClaw backend."""
-        if self._config_cache is not None:
+        """Fetch LLM config from OpenClaw backend (with TTL)."""
+        now = time.time()
+        if self._config_cache is not None and (now - self._last_fetch < self.CONFIG_TTL):
             return self._config_cache
 
         res = await self._client.get_openclaw_config()
@@ -49,14 +54,25 @@ class LLMClient:
                 self._config_cache = data.get("config", {})
             else:
                 self._config_cache = data if isinstance(data, dict) else {}
+            self._last_fetch = now
+            # Reset configured state to force re-evaluation
+            self._configured = None
         else:
-            self._config_cache = {}
+            # On failure, keep old cache if available (resilience)
+            if self._config_cache is None:
+                self._config_cache = {}
+            
         return self._config_cache
 
     async def is_configured(self) -> bool:
         """Check if LLM is properly configured in OpenClaw settings."""
         if self._configured is not None:
-            return self._configured
+            # Re-check TTL on is_configured access too?
+            # _fetch_config handles it.
+            # But if config didn't change, _configured is valid.
+            # If TTL expired, we need to re-fetch and re-evaluate.
+            if time.time() - self._last_fetch < self.CONFIG_TTL:
+                return self._configured
 
         config = await self._fetch_config()
         provider = config.get("provider")
@@ -103,11 +119,22 @@ class LLMClient:
             if res.get("ok"):
                 data = res.get("text") or res.get("data", {}).get("text")
                 return data or "[No response]"
-            return f"[LLM Error] {res.get('error', 'Request failed')}"
+            
+            error_msg = res.get('error', 'Request failed')
+            
+            # Harden error messages for user
+            if "401" in error_msg or "unauthorized" in error_msg.lower():
+                return "[LLM Error] API Key Invalid or Missing. Please check Settings."
+            if "429" in error_msg or "quota" in error_msg.lower():
+                return "[LLM Error] Rate Limit / Quota Exceeded. Please try again later."
+            if "503" in error_msg or "overloaded" in error_msg.lower():
+                 return "[LLM Error] Service Overloaded. Please try again later."
+                 
+            return f"[LLM Error] {error_msg}"
         except Exception:
             # Log error without user content
-            logger.error("LLM request failed")
-            return "[LLM Error] Request failed. Please try again."
+            logger.error("LLM request failed", exc_info=True)
+            return "[LLM Error] Request failed. Please check logs."
 
     def _get_default_base_url(self, provider: str) -> str:
         """Get default base URL for provider (matches OpenClaw catalog)."""

@@ -60,6 +60,12 @@ ALLOWED_LLM_KEYS = {
     "max_failover_candidates",
 }
 
+ALLOWED_SCHEDULER_KEYS = {
+    "startup_jitter_sec",
+    "max_runs_per_tick",
+    "skip_missed_intervals",
+}
+
 # Default values
 DEFAULTS = {
     "llm": {
@@ -72,7 +78,12 @@ DEFAULTS = {
         "fallback_models": [],
         "fallback_providers": [],
         "max_failover_candidates": 3,
-    }
+    },
+    "scheduler": {
+        "startup_jitter_sec": 30,
+        "max_runs_per_tick": 5,
+        "skip_missed_intervals": False,
+    },
 }
 
 # Value constraints
@@ -80,6 +91,11 @@ CONSTRAINTS = {
     "timeout_sec": (5, 300),
     "max_retries": (0, 10),
     "max_failover_candidates": (1, 5),  # R14: Limit total candidates
+}
+
+SCHEDULER_CONSTRAINTS = {
+    "startup_jitter_sec": (0, 300),
+    "max_runs_per_tick": (1, 100),
 }
 
 # Environment variable mappings (new, legacy)
@@ -92,10 +108,17 @@ ENV_MAPPINGS = {
     # R14: Failover env vars
     "fallback_models": ("OPENCLAW_FALLBACK_MODELS", "MOLTBOT_FALLBACK_MODELS"),
     "fallback_providers": ("OPENCLAW_FALLBACK_PROVIDERS", "MOLTBOT_FALLBACK_PROVIDERS"),
+
     "max_failover_candidates": (
         "OPENCLAW_MAX_FAILOVER_CANDIDATES",
         "MOLTBOT_MAX_FAILOVER_CANDIDATES",
     ),
+}
+
+SCHEDULER_ENV_MAPPINGS = {
+    "startup_jitter_sec": ("OPENCLAW_SCHEDULER_STARTUP_JITTER_SEC", ""),
+    "max_runs_per_tick": ("OPENCLAW_SCHEDULER_MAX_RUNS_PER_TICK", ""),
+    "skip_missed_intervals": ("OPENCLAW_SCHEDULER_SKIP_MISSED", ""),
 }
 
 
@@ -170,6 +193,41 @@ def _env_flag(primary: str, legacy: str, default: bool = False) -> bool:
     else:
         return default
     return str(v).strip().lower() in ("1", "true", "yes", "on")
+
+
+def get_scheduler_config() -> Dict[str, Any]:
+    """
+    Get effective Scheduler config (Env > Defaults).
+    Note: Scheduler config is currently not persisted to file (Env only).
+    """
+    effective = {}
+    defaults = DEFAULTS["scheduler"]
+
+    for key in ALLOWED_SCHEDULER_KEYS:
+        # Check ENV
+        env_vars = SCHEDULER_ENV_MAPPINGS.get(key)
+        if env_vars:
+            primary, _ = env_vars
+            val = os.environ.get(primary)
+            
+            if val is not None:
+                # Parse
+                if key == "skip_missed_intervals":
+                     effective[key] = str(val).strip().lower() in ("1", "true", "yes", "on")
+                elif key in SCHEDULER_CONSTRAINTS:
+                    try:
+                        val_int = int(val)
+                        effective[key] = _clamp(val_int, *SCHEDULER_CONSTRAINTS[key])
+                    except ValueError:
+                         effective[key] = defaults[key]
+                else:
+                    effective[key] = val
+                continue
+        
+        # Use default
+        effective[key] = defaults.get(key)
+    
+    return effective
 
 
 def get_effective_config() -> Tuple[Dict[str, Any], Dict[str, str]]:

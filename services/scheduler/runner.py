@@ -8,9 +8,11 @@ import hashlib
 import logging
 import threading
 import time
+import random
 from datetime import datetime, timezone
 from typing import Awaitable, Callable, Optional
 
+from ..runtime_config import get_scheduler_config
 from .history import RunRecord, get_run_history
 from .models import Schedule, TriggerType
 from .storage import get_schedule_store
@@ -172,6 +174,29 @@ class SchedulerRunner:
         """Main scheduler loop (runs in thread)."""
         logger.debug("Scheduler loop started")
 
+        # R34: Read config once at startup for jitter/skip behavior
+        config = get_scheduler_config()
+        
+        # 1. Startup Jitter
+        jitter_sec = config.get("startup_jitter_sec", 0)
+        if jitter_sec > 0:
+            # Clamp to safe range just in case
+            jitter_sec = min(300, max(0, jitter_sec))
+            delay = random.uniform(0, jitter_sec)
+            logger.info(f"Startup jitter enabled: sleeping {delay:.2f}s")
+            # Wait with stop_event check to be interruptible
+            if self._stop_event.wait(timeout=delay):
+                logger.debug("Scheduler stopped during jitter wait")
+                return
+
+        # 2. Skip Missed Intervals
+        if config.get("skip_missed_intervals"):
+            logger.info("Skip Missed Intervals enabled: advancing cursors...")
+            try:
+                self._skip_missed_ticks()
+            except Exception as e:
+                logger.error(f"Failed to skip missed ticks: {e}")
+
         while not self._stop_event.is_set():
             try:
                 self._tick()
@@ -183,10 +208,46 @@ class SchedulerRunner:
 
         logger.debug("Scheduler loop exited")
 
+    def _skip_missed_ticks(self) -> None:
+        """
+        Advance all due schedules to now without executing them.
+        Prevents backlog burst after downtime.
+        """
+        now = datetime.now(timezone.utc)
+        now_ts = now.timestamp()
+        schedules = self._store.list_all()
+        
+        skipped_count = 0
+        for schedule in schedules:
+            if not schedule.enabled:
+                continue
+            
+            is_due = False
+            if schedule.trigger_type == TriggerType.CRON:
+                is_due = is_cron_due(schedule.cron_expr, schedule.last_tick_ts, now)
+            elif schedule.trigger_type == TriggerType.INTERVAL:
+                is_due = is_interval_due(
+                    schedule.interval_sec, schedule.last_tick_ts, now_ts
+                )
+            
+            if is_due:
+                # Update cursor without running
+                # Use a special run_id to indicate skip
+                schedule.update_cursor(now_ts, "skipped_startup")
+                self._store.update(schedule)
+                skipped_count += 1
+        
+        if skipped_count > 0:
+            logger.info(f"Skipped {skipped_count} missed schedules due to startup policy.")
+
     def _tick(self) -> None:
         """Process one scheduler tick."""
         now = datetime.now(timezone.utc)
         now_ts = now.timestamp()
+        
+        # R34: Dynamic config read for runtime tuning
+        config = get_scheduler_config()
+        max_runs = config.get("max_runs_per_tick", 5)
 
         schedules = self._store.list_all()
         due_schedules = []
@@ -209,6 +270,17 @@ class SchedulerRunner:
 
         if due_schedules:
             logger.debug(f"Found {len(due_schedules)} due schedules")
+            
+            # R34: Cap max runs per tick
+            if len(due_schedules) > max_runs:
+                logger.warning(
+                    f"Throttling scheduler: {len(due_schedules)} due, "
+                    f"capping to {max_runs} (max_runs_per_tick)."
+                )
+                # Sort by last_tick_ts to prioritize oldest starved schedules
+                # If last_tick_ts is None, treat as 0 (very old)
+                due_schedules.sort(key=lambda s: s.last_tick_ts or 0)
+                due_schedules = due_schedules[:max_runs]
 
         for schedule in due_schedules:
             self._execute_schedule(schedule, now_ts)

@@ -1,20 +1,24 @@
 # ComfyUI-OpenClaw
 
-ComfyUI-OpenClaw is a ComfyUI custom node pack that adds:
+![OpenClaw /run command example](assets/run.png)
+
+ComfyUI-OpenClaw is a **security-first** ComfyUI custom node pack that adds:
 
 - **LLM-assisted nodes** (planner/refiner/vision/batch variants)
 - **A built-in extension UI** (`OpenClaw` panel)
 - **A secure-by-default HTTP API** for automation (webhooks, triggers, schedules, approvals, presets)
 - And more exciting features being added continuously
 
-![OpenClaw /run command example](assets/run.png)
+This project is intentionally **not** a general-purpose “assistant platform” with broad remote execution surfaces.
+It is designed to make **ComfyUI a reliable automation target** with an explicit admin boundary and hardened defaults.
 
-- **openclaw**: a broad assistant platform with skills, channels, gateway control plane, etc.
+**Security stance (how this project differs from convenience-first automation packs):**
 
-- **ComfyUI-OpenClaw**: a ComfyUI-first automation layer that uses LLMs as helpers, with an API surface designed to be safe and manageable.
-
-If you want a “personal assistant OS,” openclaw makes a lot of sense.
-If you want **“ComfyUI as a reliable automation target,”** ComfyUI-OpenClaw feels more direct.
+- Localhost-first defaults; remote access is opt-in
+- Explicit **Admin Token** boundary for write actions
+- Webhooks are **deny-by-default** until auth is configured
+- Strict outbound SSRF policy (callbacks + custom LLM base URLs)
+- Secrets are never stored in browser storage (optional server-side key store is local-only convenience)
 
 ---
 
@@ -237,6 +241,16 @@ Admin boundary:
 - `POST /openclaw/packs/import` (multipart upload)
 - `GET /openclaw/packs/export/{name}/{version}`
 - `DELETE /openclaw/packs/{name}/{version}`
+
+Packs are **versioned zip bundles** (templates/presets/profiles) with an integrity manifest (file hashes).
+Import/export is designed to be **reproducible** and hardened against common archive attacks (path traversal, zip bombs).
+
+Operational notes:
+
+- Packs are **local-only by default** (no auto-download).
+- Packs management requires the Admin Token boundary (or localhost-only convenience mode).
+- UI: `OpenClaw` panel → `Packs` tab.
+- Verification: `python -m unittest tests.test_packs_integrity -v`
 
 ### Bridge (sidecar; optional)
 

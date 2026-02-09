@@ -17,6 +17,7 @@ import { RefinerTab } from "./tabs/refiner_tab.js";
 import { LibraryTab } from "./tabs/library_tab.js";
 import { ApprovalsTab } from "./tabs/approvals_tab.js";
 import { ExplorerTab } from "./tabs/explorer_tab.js";
+import { PacksTab } from "./tabs/packs_tab.js";
 
 
 
@@ -106,6 +107,7 @@ async function registerSupportedTabs() {
     if (fallbackShowAll || features.explorer || features.preflight || features.checkpoints) {
         tabManager.registerTab(ExplorerTab); // Explorer: inventory + preflight + snapshots
     }
+    if (fallbackShowAll || features.packs) tabManager.registerTab(PacksTab);
 
     console.log("[OpenClaw] Tabs registered based on capabilities:", Object.keys(tabManager.tabs).length);
 }
