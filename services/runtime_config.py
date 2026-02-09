@@ -108,7 +108,6 @@ ENV_MAPPINGS = {
     # R14: Failover env vars
     "fallback_models": ("OPENCLAW_FALLBACK_MODELS", "MOLTBOT_FALLBACK_MODELS"),
     "fallback_providers": ("OPENCLAW_FALLBACK_PROVIDERS", "MOLTBOT_FALLBACK_PROVIDERS"),
-
     "max_failover_candidates": (
         "OPENCLAW_MAX_FAILOVER_CANDIDATES",
         "MOLTBOT_MAX_FAILOVER_CANDIDATES",
@@ -209,24 +208,29 @@ def get_scheduler_config() -> Dict[str, Any]:
         if env_vars:
             primary, _ = env_vars
             val = os.environ.get(primary)
-            
+
             if val is not None:
                 # Parse
                 if key == "skip_missed_intervals":
-                     effective[key] = str(val).strip().lower() in ("1", "true", "yes", "on")
+                    effective[key] = str(val).strip().lower() in (
+                        "1",
+                        "true",
+                        "yes",
+                        "on",
+                    )
                 elif key in SCHEDULER_CONSTRAINTS:
                     try:
                         val_int = int(val)
                         effective[key] = _clamp(val_int, *SCHEDULER_CONSTRAINTS[key])
                     except ValueError:
-                         effective[key] = defaults[key]
+                        effective[key] = defaults[key]
                 else:
                     effective[key] = val
                 continue
-        
+
         # Use default
         effective[key] = defaults.get(key)
-    
+
     return effective
 
 

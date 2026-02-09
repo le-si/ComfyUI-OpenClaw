@@ -1,0 +1,21 @@
+[Unit]
+Description=ComfyUI with OpenClaw
+After=network.target
+
+[Service]
+Type=simple
+User=comfyuser
+Group=comfyuser
+WorkingDirectory=/opt/ComfyUI
+EnvironmentFile=/etc/default/openclaw.env
+ExecStart=/opt/ComfyUI/venv/bin/python main.py
+Restart=always
+RestartSec=5
+
+# Hardening
+ProtectSystem=full
+PrivateTmp=true
+NoNewPrivileges=true
+
+[Install]
+WantedBy=multi-user.target

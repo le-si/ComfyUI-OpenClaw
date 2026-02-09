@@ -47,8 +47,10 @@ else:
 
 
 if web:
+
     class CleanupFileResponse(web.FileResponse):
         """FileResponse that deletes the file after sending."""
+
         async def prepare(self, request):
             try:
                 return await super().prepare(request)
@@ -59,6 +61,7 @@ if web:
                         os.remove(path)
                     except Exception:
                         pass
+
 else:
     CleanupFileResponse = None
 
@@ -71,17 +74,17 @@ class PacksHandlers:
         """GET /packs - List installed packs."""
         if getattr(web, "_IS_MOCKWEB", False) is True:
             raise RuntimeError("aiohttp not available")
-        
+
         # S8: Public read or authenticated?
-        # Usually list is fine to be public-read if not strictly protected, 
+        # Usually list is fine to be public-read if not strictly protected,
         # but admin token check is safer for system info.
         # Plan says "Integrity (Local)", implies authenticated management.
         # list_packs might be needed for UI.
         # Let's verify admin token for consistency with other sensitive endpoints.
-        # Actually, let's keep list public-ish for UI discovery? 
+        # Actually, let's keep list public-ish for UI discovery?
         # No, "require_admin_token" for everything per F32 is safer.
         # But for now, let's just implement listing.
-        
+
         # NOTE: S8/F11 implies rigorous management.
         if not await self._check_auth(request):
             return web.json_response({"ok": False, "error": "Unauthorized"}, status=401)
@@ -104,14 +107,16 @@ class PacksHandlers:
         reader = await request.multipart()
         field = await reader.next()
         if not field or field.name != "file":
-             return web.json_response({"ok": False, "error": "Missing file field"}, status=400)
-        
+            return web.json_response(
+                {"ok": False, "error": "Missing file field"}, status=400
+            )
+
         filename = field.filename or "pack.zip"
-        
+
         # Save to temp file
         fd, temp_path = tempfile.mkstemp(suffix=".zip")
         os.close(fd)
-        
+
         try:
             with open(temp_path, "wb") as f:
                 while True:
@@ -119,17 +124,17 @@ class PacksHandlers:
                     if not chunk:
                         break
                     f.write(chunk)
-            
+
             overwrite = request.query.get("overwrite", "false").lower() == "true"
-            
+
             try:
                 meta = self.registry.install_pack(temp_path, overwrite=overwrite)
                 return web.json_response({"ok": True, "pack": meta})
             except PackError as e:
                 return web.json_response({"ok": False, "error": str(e)}, status=400)
-                
+
         except Exception as e:
-             return web.json_response({"ok": False, "error": str(e)}, status=500)
+            return web.json_response({"ok": False, "error": str(e)}, status=500)
         finally:
             if os.path.exists(temp_path):
                 os.remove(temp_path)
@@ -144,61 +149,71 @@ class PacksHandlers:
 
         name = request.match_info.get("name")
         version = request.match_info.get("version")
-        
+
         if not name or not version:
-             return web.json_response({"ok": False, "error": "Missing name/version"}, status=400)
-            
+            return web.json_response(
+                {"ok": False, "error": "Missing name/version"}, status=400
+            )
+
         try:
             success = self.registry.uninstall_pack(name, version)
             if success:
                 return web.json_response({"ok": True})
             else:
-                 return web.json_response({"ok": False, "error": "Not found"}, status=404)
+                return web.json_response(
+                    {"ok": False, "error": "Not found"}, status=404
+                )
         except Exception as e:
             return web.json_response({"ok": False, "error": str(e)}, status=500)
 
     async def export_pack_handler(self, request: web.Request) -> web.Response:
-         """GET /packs/export/{name}/{version} - Download pack zip."""
-         if getattr(web, "_IS_MOCKWEB", False) is True:
-             raise RuntimeError("aiohttp not available")
-             
-         if not await self._check_auth(request):
+        """GET /packs/export/{name}/{version} - Download pack zip."""
+        if getattr(web, "_IS_MOCKWEB", False) is True:
+            raise RuntimeError("aiohttp not available")
+
+        if not await self._check_auth(request):
             return web.json_response({"ok": False, "error": "Unauthorized"}, status=401)
-            
-         name = request.match_info.get("name")
-         version = request.match_info.get("version")
-         
-         if not name or not version:
-              return web.json_response({"ok": False, "error": "Missing name/version"}, status=400)
-              
-         pack_path = self.registry.get_pack_path(name, version)
-         if not pack_path:
-              return web.json_response({"ok": False, "error": "Pack not found"}, status=404)
-              
-         # Create temp zip
-         fd, temp_zip = tempfile.mkstemp(suffix=".zip")
-         os.close(fd)
-         
-         try:
-             # Ensure manifest exists (it should for installed packs)
-             if not os.path.exists(os.path.join(pack_path, "manifest.json")):
-                  return web.json_response({"ok": False, "error": "Pack manifest missing/corrupt"}, status=500)
-             
-             # Create deterministic zip
-             PackArchive.create_pack_archive(pack_path, temp_zip)
-             
-             # Stream response
-             return CleanupFileResponse(
-                 temp_zip,
-                 headers={
-                     "Content-Disposition": f'attachment; filename="{name}-{version}.zip"',
-                     "Content-Type": "application/zip",
-                 }
-             )
-         except Exception as e:
-             if os.path.exists(temp_zip):
-                 os.remove(temp_zip)
-             return web.json_response({"ok": False, "error": str(e)}, status=500)
+
+        name = request.match_info.get("name")
+        version = request.match_info.get("version")
+
+        if not name or not version:
+            return web.json_response(
+                {"ok": False, "error": "Missing name/version"}, status=400
+            )
+
+        pack_path = self.registry.get_pack_path(name, version)
+        if not pack_path:
+            return web.json_response(
+                {"ok": False, "error": "Pack not found"}, status=404
+            )
+
+        # Create temp zip
+        fd, temp_zip = tempfile.mkstemp(suffix=".zip")
+        os.close(fd)
+
+        try:
+            # Ensure manifest exists (it should for installed packs)
+            if not os.path.exists(os.path.join(pack_path, "manifest.json")):
+                return web.json_response(
+                    {"ok": False, "error": "Pack manifest missing/corrupt"}, status=500
+                )
+
+            # Create deterministic zip
+            PackArchive.create_pack_archive(pack_path, temp_zip)
+
+            # Stream response
+            return CleanupFileResponse(
+                temp_zip,
+                headers={
+                    "Content-Disposition": f'attachment; filename="{name}-{version}.zip"',
+                    "Content-Type": "application/zip",
+                },
+            )
+        except Exception as e:
+            if os.path.exists(temp_zip):
+                os.remove(temp_zip)
+            return web.json_response({"ok": False, "error": str(e)}, status=500)
 
     async def _check_auth(self, request: web.Request) -> bool:
         # Re-use require_admin_token logic from access_control?

@@ -55,7 +55,6 @@ def _register_routes_once():
         """Register all Moltbot routes including Bridge and Scheduler."""
         from .api.approvals import register_approval_routes
         from .api.bridge import BridgeHandlers
-
         from .api.presets import register_preset_routes
         from .api.routes import register_routes
         from .api.schedules import register_schedule_routes

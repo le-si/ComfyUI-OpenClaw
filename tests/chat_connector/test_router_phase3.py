@@ -15,6 +15,10 @@ class TestCommandRouterPhase3(unittest.TestCase):
     def setUp(self):
         self.config = ConnectorConfig()
         self.config.admin_users = ["999"]
+        # IMPORTANT (F32 WP3):
+        # Admin-only connector commands (e.g., /trace) require the connector admin token
+        # to be configured. Otherwise the router will fail fast with a config error.
+        self.config.admin_token = "test-admin-token"
         self.client = MagicMock()
         self.client.get_health = AsyncMock(return_value={"ok": True})
         self.client.get_prompt_queue = AsyncMock(

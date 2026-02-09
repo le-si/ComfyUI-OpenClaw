@@ -6,9 +6,9 @@ Background tick loop for executing due schedules.
 import asyncio
 import hashlib
 import logging
+import random
 import threading
 import time
-import random
 from datetime import datetime, timezone
 from typing import Awaitable, Callable, Optional
 
@@ -176,7 +176,7 @@ class SchedulerRunner:
 
         # R34: Read config once at startup for jitter/skip behavior
         config = get_scheduler_config()
-        
+
         # 1. Startup Jitter
         jitter_sec = config.get("startup_jitter_sec", 0)
         if jitter_sec > 0:
@@ -216,12 +216,12 @@ class SchedulerRunner:
         now = datetime.now(timezone.utc)
         now_ts = now.timestamp()
         schedules = self._store.list_all()
-        
+
         skipped_count = 0
         for schedule in schedules:
             if not schedule.enabled:
                 continue
-            
+
             is_due = False
             if schedule.trigger_type == TriggerType.CRON:
                 is_due = is_cron_due(schedule.cron_expr, schedule.last_tick_ts, now)
@@ -229,22 +229,24 @@ class SchedulerRunner:
                 is_due = is_interval_due(
                     schedule.interval_sec, schedule.last_tick_ts, now_ts
                 )
-            
+
             if is_due:
                 # Update cursor without running
                 # Use a special run_id to indicate skip
                 schedule.update_cursor(now_ts, "skipped_startup")
                 self._store.update(schedule)
                 skipped_count += 1
-        
+
         if skipped_count > 0:
-            logger.info(f"Skipped {skipped_count} missed schedules due to startup policy.")
+            logger.info(
+                f"Skipped {skipped_count} missed schedules due to startup policy."
+            )
 
     def _tick(self) -> None:
         """Process one scheduler tick."""
         now = datetime.now(timezone.utc)
         now_ts = now.timestamp()
-        
+
         # R34: Dynamic config read for runtime tuning
         config = get_scheduler_config()
         max_runs = config.get("max_runs_per_tick", 5)
@@ -270,7 +272,7 @@ class SchedulerRunner:
 
         if due_schedules:
             logger.debug(f"Found {len(due_schedules)} due schedules")
-            
+
             # R34: Cap max runs per tick
             if len(due_schedules) > max_runs:
                 logger.warning(

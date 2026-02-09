@@ -238,6 +238,13 @@ class CommandRouter:
         """
         F32 WP3: Check if admin token is configured before running admin commands.
         Fail-fast with clear error message instead of 403/500 later.
+
+        IMPORTANT (recurring CI failure mode):
+        - Admin-only commands are gated by BOTH:
+          (1) sender is an admin user, AND
+          (2) the connector admin token is configured (OPENCLAW_CONNECTOR_ADMIN_TOKEN).
+        - Unit tests that exercise admin command handlers MUST set `config.admin_token`,
+          otherwise they will correctly receive the config error response.
         """
         if not self.config.admin_token:
             return CommandResponse(

@@ -11,6 +11,7 @@ from api.packs import CleanupFileResponse, PacksHandlers
 from services.packs.pack_archive import PackArchive, PackError
 from services.packs.pack_manifest import create_manifest
 
+
 class MockMultipartReader:
     def __init__(self, field):
         self._field = field
@@ -111,7 +112,12 @@ class TestPacksIntegrity(unittest.TestCase):
         with open(os.path.join(src_dir, "a.txt"), "w") as f:
             f.write("a")
 
-        metadata = {"name": "test", "version": "1.0.0", "type": "template", "author": "me"}
+        metadata = {
+            "name": "test",
+            "version": "1.0.0",
+            "type": "template",
+            "author": "me",
+        }
 
         manifest_path = create_manifest(src_dir, metadata)
 
@@ -146,7 +152,9 @@ class TestPacksApiAsync(unittest.IsolatedAsyncioTestCase):
         # Mock auth
         handlers._check_auth = AsyncMock(return_value=True)
 
-        handlers.registry.install_pack = MagicMock(return_value={"name": "mypack", "version": "1.0.0"})
+        handlers.registry.install_pack = MagicMock(
+            return_value={"name": "mypack", "version": "1.0.0"}
+        )
 
         field = MockField("pack.zip", b"dummy_content")
         request = MockRequest(reader=MockMultipartReader(field))

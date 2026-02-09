@@ -42,7 +42,9 @@ class LLMClient:
     async def _fetch_config(self) -> dict:
         """Fetch LLM config from OpenClaw backend (with TTL)."""
         now = time.time()
-        if self._config_cache is not None and (now - self._last_fetch < self.CONFIG_TTL):
+        if self._config_cache is not None and (
+            now - self._last_fetch < self.CONFIG_TTL
+        ):
             return self._config_cache
 
         res = await self._client.get_openclaw_config()
@@ -61,7 +63,7 @@ class LLMClient:
             # On failure, keep old cache if available (resilience)
             if self._config_cache is None:
                 self._config_cache = {}
-            
+
         return self._config_cache
 
     async def is_configured(self) -> bool:
@@ -119,17 +121,19 @@ class LLMClient:
             if res.get("ok"):
                 data = res.get("text") or res.get("data", {}).get("text")
                 return data or "[No response]"
-            
-            error_msg = res.get('error', 'Request failed')
-            
+
+            error_msg = res.get("error", "Request failed")
+
             # Harden error messages for user
             if "401" in error_msg or "unauthorized" in error_msg.lower():
                 return "[LLM Error] API Key Invalid or Missing. Please check Settings."
             if "429" in error_msg or "quota" in error_msg.lower():
-                return "[LLM Error] Rate Limit / Quota Exceeded. Please try again later."
+                return (
+                    "[LLM Error] Rate Limit / Quota Exceeded. Please try again later."
+                )
             if "503" in error_msg or "overloaded" in error_msg.lower():
-                 return "[LLM Error] Service Overloaded. Please try again later."
-                 
+                return "[LLM Error] Service Overloaded. Please try again later."
+
             return f"[LLM Error] {error_msg}"
         except Exception:
             # Log error without user content

@@ -98,40 +98,40 @@ def create_manifest(base_dir: str, metadata: Dict[str, Any]) -> str:
     Returns the path to the written manifest.
     """
     manifest_path = os.path.join(base_dir, "manifest.json")
-    
+
     # 1. Collect all files and compute hashes
     files_list = []
     for root, _, files in os.walk(base_dir):
         for file in files:
             if file == "manifest.json":
-                continue # Do not include manifest in manifest
-                
+                continue  # Do not include manifest in manifest
+
             full_path = os.path.join(root, file)
-            rel_path = os.path.relpath(full_path, base_dir).replace("\\", "/") # Normalize separators
-            
+            rel_path = os.path.relpath(full_path, base_dir).replace(
+                "\\", "/"
+            )  # Normalize separators
+
             sha = compute_sha256(full_path)
-            
+
             # Use deterministic dictionary structure
-            files_list.append({
-                "path": rel_path,
-                "sha256": sha,
-                "size": os.path.getsize(full_path)
-            })
-            
+            files_list.append(
+                {"path": rel_path, "sha256": sha, "size": os.path.getsize(full_path)}
+            )
+
     # 2. Sort files by path (Important for determinism)
     files_list.sort(key=lambda x: x["path"])
-    
+
     # 3. Create manifest object
     manifest = {
         "version": metadata.get("version", "0.0.0"),
         "files": files_list,
         # Add metadata keys sorted?
-        **{k: v for k, v in sorted(metadata.items()) if k != "version"}
+        **{k: v for k, v in sorted(metadata.items()) if k != "version"},
     }
-    
+
     # 4. Write with sort_keys=True
     with open(manifest_path, "w", encoding="utf-8") as f:
         json.dump(manifest, f, indent=2, sort_keys=True)
-        f.write("\n") # POSIX newline
-        
+        f.write("\n")  # POSIX newline
+
     return manifest_path

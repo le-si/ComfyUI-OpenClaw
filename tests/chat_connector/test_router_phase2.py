@@ -16,6 +16,12 @@ class TestCommandRouterPhase2(unittest.TestCase):
         self.config = ConnectorConfig()
         # Admin setup
         self.config.admin_users = ["999", "admin_user"]
+        # IMPORTANT (F32 WP3):
+        # Admin commands in the connector require the *connector* admin token to be configured,
+        # even if the sender is an admin user. Otherwise the router will fail fast with:
+        #   "[Error] Admin token not configured. Set OPENCLAW_CONNECTOR_ADMIN_TOKEN ..."
+        # These unit tests are meant to exercise the admin command handlers, so we set it here.
+        self.config.admin_token = "test-admin-token"
 
         self.client = MagicMock()
         self.client.get_health = AsyncMock(
