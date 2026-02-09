@@ -8,6 +8,7 @@ import { getAdminErrorMessage } from "../admin_errors.js";
 export const settingsTab = {
     id: "settings",
     title: "Settings",
+    icon: "pi pi-cog",
     render: async (container) => {
         // IMPORTANT (UI layout): `.moltbot-content` has `overflow: hidden`.
         // This tab MUST render its own scroll container (`.moltbot-scroll-area`),
@@ -128,7 +129,14 @@ export const settingsTab = {
         // -- LLM Settings Section --
         const llmSec = createSection("LLM Settings");
         if (configRes.ok) {
-            const { config, sources, providers } = configRes.data;
+            // R54: Null-safe destructuring with defaults
+            const data = configRes.data || {};
+            const config = data.config || {};
+            const sources = data.sources || {};
+            const providers = data.providers || [];
+            // R53: Apply feedback (optional, for debug/toast later)
+            const applyInfo = data.apply || {};
+
 
             // Provider dropdown
             const providerRow = createFormRow("Provider", sources.provider === "env");
@@ -380,9 +388,22 @@ export const settingsTab = {
                 };
 
                 const res = await moltbotApi.putConfig(updates, token);
+                // R53: Hot-Reload Feedback
                 if (res.ok) {
-                    statusDiv.textContent = "✓ Saved! Restart ComfyUI to apply.";
-                    statusDiv.className = "moltbot-status ok";
+                    const apply = res.data?.apply || {};
+                    let msg = "✓ Saved!";
+
+                    if (apply.restart_required?.length > 0) {
+                        msg += " Restart required for: " + apply.restart_required.join(", ");
+                        statusDiv.className = "moltbot-status warning"; // Yellow/Orange
+                    } else if (apply.applied_now?.length > 0) {
+                        msg += " Applied immediately (Hot Reload).";
+                        statusDiv.className = "moltbot-status ok";
+                    } else {
+                        // No changes or unknown
+                        statusDiv.className = "moltbot-status ok";
+                    }
+                    statusDiv.textContent = msg;
                 } else {
                     const errorMsg = getAdminErrorMessage(res.error, res.status);
                     statusDiv.textContent = `✗ ${res.errors?.join(", ") || errorMsg}`;
@@ -396,7 +417,16 @@ export const settingsTab = {
             const testBtn = document.createElement("button");
             testBtn.className = "moltbot-btn moltbot-btn-secondary";
             testBtn.textContent = "Test Connection";
+
+            // R54: Debounced Test Action to prevent spam
+            // We use a separate handler because we need to manage button state (disabled/enabled)
+            // which debounce interferes with if not careful.
+            // Better strategy: Disable button immediately on click, re-enable after completion.
+            // Debounce is less critical here if we disable the button, but good for "auto-test on change" (future).
+            // For now, implementing "Disable while testing" is the better guard than generic debounce for a button click.
             testBtn.onclick = async () => {
+                if (testBtn.disabled) return;
+
                 const token = (tokenInput.value || MoltbotSession.getAdminToken() || "").trim();
                 if (token) MoltbotSession.setAdminToken(token);
 
@@ -408,22 +438,25 @@ export const settingsTab = {
                 // selected in the UI, even if the user hasn't clicked Save yet. Otherwise, the backend
                 // falls back to the effective config (often "openai") and produces confusing errors like:
                 // "API key not configured for provider 'openai'" while the UI is set to Gemini.
-                const res = await moltbotApi.testLLM(token, {
-                    provider: providerSelect.value,
-                    model: modelInput.value,
-                    base_url: baseUrlInput.value,
-                    timeout_sec: parseInt(timeoutInput.value) || 120,
-                    max_retries: parseInt(retriesInput.value) || 3,
-                });
-                if (res.ok) {
-                    statusDiv.textContent = "✓ Success! " + (res.response ? `"${res.response}"` : "");
-                    statusDiv.className = "moltbot-status ok";
-                } else {
-                    const errorMsg = getAdminErrorMessage(res.error, res.status);
-                    statusDiv.textContent = `✗ ${errorMsg}`;
-                    statusDiv.className = "moltbot-status error";
+                try {
+                    const res = await moltbotApi.testLLM(token, {
+                        provider: providerSelect.value,
+                        model: modelInput.value,
+                        base_url: baseUrlInput.value,
+                        timeout_sec: parseInt(timeoutInput.value) || 120,
+                        max_retries: parseInt(retriesInput.value) || 3,
+                    });
+                    if (res.ok) {
+                        statusDiv.textContent = "✓ Success! " + (res.response ? `"${res.response}"` : "");
+                        statusDiv.className = "moltbot-status ok";
+                    } else {
+                        const errorMsg = getAdminErrorMessage(res.error, res.status);
+                        statusDiv.textContent = `✗ ${errorMsg}`;
+                        statusDiv.className = "moltbot-status error";
+                    }
+                } finally {
+                    testBtn.disabled = false;
                 }
-                testBtn.disabled = false;
             };
             btnRow.appendChild(testBtn);
 

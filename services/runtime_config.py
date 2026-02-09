@@ -425,6 +425,42 @@ def validate_config_update(updates: Dict[str, Any]) -> Tuple[Dict[str, Any], lis
     return sanitized, errors
 
 
+def get_apply_semantics(updated_keys: list) -> Dict[str, list]:
+    """
+    R53: Determine apply semantics for updated keys.
+    Returns:
+        {
+            "applied_now": [keys applied immediately],
+            "restart_required": [keys requiring restart],
+            "notes": [explanatory notes]
+        }
+    """
+    applied_now = []
+    restart_required = []
+    notes = []
+
+    for key in updated_keys:
+        if key in ALLOWED_LLM_KEYS:
+            # LLM keys are read from file on every request (via get_effective_config),
+            # so they are effectively "applied now".
+            applied_now.append(key)
+        elif key in ALLOWED_SCHEDULER_KEYS:
+            # Scheduler config is env-only (not file-based) in current implementation,
+            # but if it were updateable via API, it might require restart or re-init.
+            # For now, this path is unused by config_put_handler which targets LLM config.
+            restart_required.append(key)
+            notes.append(f"{key} requires service restart to take effect.")
+        else:
+            # Unknown keys? Assume restart needed for safety if they slipped through validation
+            restart_required.append(key)
+
+    return {
+        "applied_now": sorted(applied_now),
+        "restart_required": sorted(restart_required),
+        "notes": notes,
+    }
+
+
 def update_config(updates: Dict[str, Any]) -> Tuple[bool, list]:
     """
     Update LLM config, persisting to file.

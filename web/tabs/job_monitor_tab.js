@@ -33,6 +33,7 @@ export function addJob(promptId, traceId = null) {
 export const jobMonitorTab = {
     id: "job-monitor",
     title: "Jobs",
+    icon: "pi pi-briefcase",
     render: async (container) => {
         loadJobs();
         container.innerHTML = "";

@@ -119,31 +119,30 @@ class LLMClient:
             if info:
                 self.base_url = info.base_url
 
-        self.model = model or eff_config.get("model")
+        # R57: Strict Precedence (Arg > Config > Default)
+        # CRITICAL: Only inherit config['model'] if the effective provider matches config['provider'].
+        # If user overrides provider (e.g. "openai") but config has ("anthropic", "claude-3"),
+        # we must NOT use "claude-3" for "openai".
 
-        # R23: Model alias resolution via plugins (using async bridge)
-        if PLUGINS_AVAILABLE and self.model:
-            try:
-                from .plugins.async_bridge import run_async_in_sync_context
+        config_provider = eff_config.get("provider")
+        config_model = eff_config.get("model")
 
-                ctx = RequestContext(
-                    provider=self.provider,
-                    model=self.model,
-                    trace_id="init",
-                )
-                # Fix: Use async bridge even in __init__ just in case it's called from an async context
-                resolved = run_async_in_sync_context(
-                    plugin_manager.execute_first("model.resolve", ctx, self.model)
-                )
-                if resolved and resolved != self.model:
-                    logger.info(f"Model alias resolved: {self.model} -> {resolved}")
-                    self.model = resolved
-            except Exception as e:
-                logger.warning(f"Model resolution plugin failed (non-fatal): {e}")
+        if model:
+            # 1. Explicit argument override
+            self.model = model
+        elif self.provider == config_provider:
+            # 2. Config usage (provider matches) -> use config model
+            self.model = config_model
+        else:
+            # 3. Provider mismatch (arg override vs config) -> do NOT use config model
+            # Fallback to default for the *new* provider
+            self.model = None
 
-        # Fallback to catalog default if config model seems mismatched or empty?
-        # For now, trust the config (defaults to gpt-4o-mini).
-        # If user switches provider but not model, it might fail, but that's expected config behavior.
+        # If we still have no model, try to get a default for the provider
+        if not self.model:
+            from .providers.catalog import DEFAULT_MODEL_BY_PROVIDER
+
+            self.model = DEFAULT_MODEL_BY_PROVIDER.get(self.provider, "default")
 
         self.timeout = (
             timeout if timeout is not None else eff_config.get("timeout_sec", 120)

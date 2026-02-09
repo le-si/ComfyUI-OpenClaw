@@ -30,6 +30,7 @@ if __package__ and "." in __package__:
     from ..services.runtime_config import (
         ALLOWED_LLM_KEYS,
         get_admin_token,
+        get_apply_semantics,
         get_effective_config,
         is_loopback_client,
         update_config,
@@ -46,6 +47,7 @@ else:  # pragma: no cover (test-only import mode)
     from services.runtime_config import ALLOWED_LLM_KEYS  # type: ignore
     from services.runtime_config import (
         get_admin_token,
+        get_apply_semantics,
         get_effective_config,
         is_loopback_client,
         update_config,
@@ -482,11 +484,16 @@ async def config_put_handler(request: web.Request) -> web.Response:
 
     # Return updated config
     effective, sources = get_effective_config()
+
+    # R53: Calculate apply semantics
+    apply_info = get_apply_semantics(list(updates.keys()))
+
     return web.json_response(
         {
             "ok": True,
             "config": effective,
             "sources": sources,
+            "apply": apply_info,
         }
     )
 
