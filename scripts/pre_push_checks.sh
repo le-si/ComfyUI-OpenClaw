@@ -1,15 +1,28 @@
 #!/usr/bin/env bash
 set -euo pipefail
+set -o errtrace
+
+trap 'echo "[pre-push] ERROR at line ${LINENO}: ${BASH_COMMAND}" >&2' ERR
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT_DIR"
 
 echo "[pre-push] repo: $ROOT_DIR"
 
-# Force a repo-local pre-commit cache to avoid readonly $HOME cache issues
-# (common on WSL / mixed shell / sandbox setups).
-export PRE_COMMIT_HOME="${PRE_COMMIT_HOME:-$ROOT_DIR/.tmp/pre-commit}"
-mkdir -p "$PRE_COMMIT_HOME"
+# Pre-commit cache strategy:
+# - Linux/WSL/sandbox: use repo-local cache to avoid readonly $HOME issues.
+# - Git for Windows (MINGW/CYGWIN): keep default cache path, otherwise local
+#   hook env bootstrap may fail due path translation quirks.
+UNAME_S="$(uname -s || true)"
+case "$UNAME_S" in
+  MINGW*|MSYS*|CYGWIN*)
+    : "${PRE_COMMIT_HOME:=}"
+    ;;
+  *)
+    export PRE_COMMIT_HOME="${PRE_COMMIT_HOME:-$ROOT_DIR/.tmp/pre-commit}"
+    mkdir -p "$PRE_COMMIT_HOME"
+    ;;
+esac
 
 require_cmd() {
   local cmd="$1"
@@ -34,9 +47,13 @@ fi
 
 if command -v nvm >/dev/null 2>&1; then
   if [ -f ".nvmrc" ]; then
-    nvm use >/dev/null
+    if ! nvm use >/dev/null 2>&1; then
+      echo "[pre-push] WARN: nvm use (.nvmrc) failed; using current node in PATH." >&2
+    fi
   else
-    nvm use 18 >/dev/null
+    if ! nvm use 18 >/dev/null 2>&1; then
+      echo "[pre-push] WARN: nvm use 18 failed; using current node in PATH." >&2
+    fi
   fi
 fi
 
