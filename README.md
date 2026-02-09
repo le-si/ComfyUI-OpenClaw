@@ -128,6 +128,8 @@ See `web/docs/` for node usage notes.
 
 ## Extension UI
 
+![OpenClaw /sidebar ui example](assets/sidebar.png)
+
 The frontend lives in `web/` and is served by ComfyUI as an extension panel. It uses the backend routes below (preferring `/api/openclaw/*`).
 
 ## API Overview
