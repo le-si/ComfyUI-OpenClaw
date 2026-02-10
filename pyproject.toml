@@ -1,7 +1,7 @@
 [project]
 name = "comfyui-openclaw"
 description = "Your own personal AIGC Factory. Any picture. Any reel. The Comfy way.©️"
-version = "0.2.0"
+version = "0.2.1"
 license = {text = "MIT"}
 readme = "README.md"
 requires-python = ">=3.10"
@@ -104,6 +104,7 @@ markers = [
     "slow: marks tests as slow (deselect with '-m \"not slow\"')",
     "integration: marks tests as integration tests",
     "unit: marks tests as unit tests",
+    "asyncio: marks tests as async (pytest-asyncio)",
 ]
 
 [tool.coverage.run]

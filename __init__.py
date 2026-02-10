@@ -6,26 +6,32 @@ _MOLTBOT_ROOT = os.path.dirname(os.path.abspath(__file__))
 if _MOLTBOT_ROOT not in sys.path:
     sys.path.insert(0, _MOLTBOT_ROOT)
 
-from .nodes.batch_variants import MoltbotBatchVariants
-from .nodes.image_to_prompt import MoltbotImageToPrompt
-from .nodes.prompt_planner import MoltbotPromptPlanner
-from .nodes.prompt_refiner import MoltbotPromptRefiner
+if __package__:
+    from .nodes.batch_variants import MoltbotBatchVariants
+    from .nodes.image_to_prompt import MoltbotImageToPrompt
+    from .nodes.prompt_planner import MoltbotPromptPlanner
+    from .nodes.prompt_refiner import MoltbotPromptRefiner
 
-NODE_CLASS_MAPPINGS = {
-    "MoltbotPromptPlanner": MoltbotPromptPlanner,
-    "MoltbotBatchVariants": MoltbotBatchVariants,
-    "MoltbotImageToPrompt": MoltbotImageToPrompt,
-    "MoltbotPromptRefiner": MoltbotPromptRefiner,
-}
+    NODE_CLASS_MAPPINGS = {
+        "MoltbotPromptPlanner": MoltbotPromptPlanner,
+        "MoltbotBatchVariants": MoltbotBatchVariants,
+        "MoltbotImageToPrompt": MoltbotImageToPrompt,
+        "MoltbotPromptRefiner": MoltbotPromptRefiner,
+    }
 
-NODE_DISPLAY_NAME_MAPPINGS = {
-    "MoltbotPromptPlanner": "openclaw: Prompt Planner",
-    "MoltbotBatchVariants": "openclaw: Batch Variants",
-    "MoltbotImageToPrompt": "openclaw: Image to Prompt",
-    "MoltbotPromptRefiner": "openclaw: Prompt Refiner",
-}
+    NODE_DISPLAY_NAME_MAPPINGS = {
+        "MoltbotPromptPlanner": "openclaw: Prompt Planner",
+        "MoltbotBatchVariants": "openclaw: Batch Variants",
+        "MoltbotImageToPrompt": "openclaw: Image to Prompt",
+        "MoltbotPromptRefiner": "openclaw: Prompt Refiner",
+    }
 
-__all__ = ["NODE_CLASS_MAPPINGS", "NODE_DISPLAY_NAME_MAPPINGS", "WEB_DIRECTORY"]
+    __all__ = ["NODE_CLASS_MAPPINGS", "NODE_DISPLAY_NAME_MAPPINGS", "WEB_DIRECTORY"]
+else:
+    # Allow test collection to proceed without crashing on relative imports
+    NODE_CLASS_MAPPINGS = {}
+    NODE_DISPLAY_NAME_MAPPINGS = {}
+    __all__ = ["WEB_DIRECTORY"]
 
 WEB_DIRECTORY = "./web"
 

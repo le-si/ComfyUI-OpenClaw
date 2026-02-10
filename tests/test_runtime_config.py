@@ -33,6 +33,16 @@ class TestRuntimeConfig(unittest.TestCase):
 
     def setUp(self):
         """Clear env overrides before each test."""
+        # Patch CONFIG_FILE to ensure we use specific temp file for each test or shared temp dir
+        # We need to patch where it is used.
+        # services.runtime_config.CONFIG_FILE is imported as global in that module.
+        patcher = patch(
+            "services.runtime_config.CONFIG_FILE",
+            os.path.join(self.temp_dir, "config.json"),
+        )
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
         for key in [
             "MOLTBOT_LLM_PROVIDER",
             "MOLTBOT_LLM_MODEL",

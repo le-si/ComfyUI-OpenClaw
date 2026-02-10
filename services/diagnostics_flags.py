@@ -111,6 +111,14 @@ class ScopedLogger:
         """Always log errors, but respect standard logger."""
         self._logger.error(msg, exc_info=exc_info, **kwargs)
 
+    def warning(self, msg: str, **kwargs):
+        """Pass through standard warning."""
+        self._logger.warning(msg, **kwargs)
+
+    def exception(self, msg: str, **kwargs):
+        """Pass through exception (error with stack trace)."""
+        self._logger.exception(msg, **kwargs)
+
     def info(self, msg: str, **kwargs):
         """Pass through standard info."""
         self._logger.info(msg, **kwargs)

@@ -58,7 +58,12 @@ class TestWebhookValidateContract(AioHTTPTestCase):
 
                         resp = await self.client.post(
                             "/validate",
-                            json={"template_id": "test", "inputs": {}},
+                            json={
+                                "version": 1,
+                                "profile_id": "p1",
+                                "template_id": "test",
+                                "inputs": {},
+                            },
                             headers={
                                 "Authorization": "Bearer token",
                                 "Content-Type": "application/json",
@@ -187,7 +192,12 @@ class TestWebhookValidateContract(AioHTTPTestCase):
 
                         resp = await self.client.post(
                             "/validate",
-                            json={"template_id": "test", "inputs": {}},
+                            json={
+                                "version": 1,
+                                "profile_id": "p1",
+                                "template_id": "test",
+                                "inputs": {},
+                            },
                             headers={
                                 "Authorization": "Bearer token",
                                 "Content-Type": "application/json",
@@ -228,7 +238,9 @@ class TestWebhookValidateContract(AioHTTPTestCase):
                 resp = await self.client.post(
                     "/validate",
                     json={
-                        "template_id": "",  # Invalid: empty template_id
+                        "version": 999,  # Invalid version
+                        "profile_id": "p1",
+                        "template_id": "test",
                         "inputs": {},
                     },
                     headers={
@@ -256,7 +268,12 @@ class TestWebhookValidateContract(AioHTTPTestCase):
 
                     resp = await self.client.post(
                         "/validate",
-                        json={"template_id": "xyz", "inputs": {}},
+                        json={
+                            "version": 1,
+                            "profile_id": "p1",
+                            "template_id": "xyz",
+                            "inputs": {},
+                        },
                         headers={
                             "Authorization": "Bearer token",
                             "Content-Type": "application/json",
@@ -287,7 +304,12 @@ class TestWebhookValidateContract(AioHTTPTestCase):
 
                         resp = await self.client.post(
                             "/validate",
-                            json={"template_id": "test", "inputs": {}},
+                            json={
+                                "version": 1,
+                                "profile_id": "p1",
+                                "template_id": "test",
+                                "inputs": {},
+                            },
                             headers={
                                 "Authorization": "Bearer token",
                                 "Content-Type": "application/json",
@@ -320,7 +342,12 @@ class TestWebhookValidateContract(AioHTTPTestCase):
 
                             await self.client.post(
                                 "/validate",
-                                json={"template_id": "test", "inputs": {}},
+                                json={
+                                    "version": 1,
+                                    "profile_id": "p1",
+                                    "template_id": "test",
+                                    "inputs": {},
+                                },
                                 headers={
                                     "Authorization": "Bearer token",
                                     "Content-Type": "application/json",
@@ -337,7 +364,7 @@ class TestWebhookValidateContract(AioHTTPTestCase):
             with patch("api.webhook_validate.check_rate_limit", return_value=True):
                 with patch("api.webhook_validate.get_template_service") as mock_tmpl:
                     with patch("api.webhook_validate.check_render_size"):
-                        with patch("api.webhook_validate.redact_json") as mock_redact:
+                        with patch("services.redaction.redact_json") as mock_redact:
                             mock_service = MagicMock()
                             mock_service.render_template.return_value = {
                                 "1": {"class_type": "Test"}
@@ -346,15 +373,19 @@ class TestWebhookValidateContract(AioHTTPTestCase):
 
                             # Redact returns sanitized version
                             mock_redact.return_value = {
+                                "version": 1,
+                                "profile_id": "p1",
                                 "template_id": "test",
-                                "inputs": {"api_key": "[REDACTED]"},
+                                "inputs": {"positive_prompt": "[REDACTED]"},
                             }
 
                             resp = await self.client.post(
                                 "/validate",
                                 json={
+                                    "version": 1,
+                                    "profile_id": "p1",
                                     "template_id": "test",
-                                    "inputs": {"api_key": "secret123"},
+                                    "inputs": {"positive_prompt": "secret123"},
                                 },
                                 headers={
                                     "Authorization": "Bearer token",

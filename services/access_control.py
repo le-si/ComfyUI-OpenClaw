@@ -109,6 +109,25 @@ def require_admin_token(request) -> Tuple[bool, Optional[str]]:
 
     # No token configured: allow loopback-only for convenience.
     if is_loopback(remote):
+        # S27: CSRF Hardening for convenience mode
+        # We must ensure this is a same-origin request to prevent browser-based attacks.
+        try:
+            from .csrf_protection import is_same_origin_request
+        except ImportError:
+            try:
+                from services.csrf_protection import is_same_origin_request
+            except ImportError:
+                # Fallback if csrf_protection module missing (should not happen in prod)
+                logger.warning(
+                    "S27: CSRF protection module missing, allowing loopback (unsafe)"
+                )
+                return True, None
+
+        if not is_same_origin_request(request):
+            return (
+                False,
+                "Cross-origin request denied in convenience mode (S27). Set OPENCLAW_ADMIN_TOKEN to use token-based auth.",
+            )
         return True, None
 
     return (

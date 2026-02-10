@@ -51,7 +51,6 @@ class TestAssistAPI(unittest.IsolatedAsyncioTestCase):
 
         with (
             patch("api.assist.require_admin_token", return_value=(True, None)),
-            patch("api.assist.is_config_write_enabled", return_value=True),
             patch("api.assist.run_in_thread") as mock_run_in_thread,
         ):
 
@@ -74,10 +73,7 @@ class TestAssistAPI(unittest.IsolatedAsyncioTestCase):
             }
         )
 
-        with (
-            patch("api.assist.require_admin_token", return_value=(True, None)),
-            patch("api.assist.is_config_write_enabled", return_value=True),
-        ):
+        with patch("api.assist.require_admin_token", return_value=(True, None)):
 
             resp = await self.handler.refiner_handler(request)
             self.assertEqual(resp.status, 400)
@@ -99,7 +95,6 @@ class TestAssistAPI(unittest.IsolatedAsyncioTestCase):
 
         with (
             patch("api.assist.require_admin_token", return_value=(True, None)),
-            patch("api.assist.is_config_write_enabled", return_value=True),
             patch("api.assist.run_in_thread") as mock_run_in_thread,
         ):
 

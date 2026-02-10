@@ -143,6 +143,8 @@ async def webhook_validate_handler(request: web.Request) -> web.Response:
         normalized = job_request.to_normalized()
     except ValueError as e:
         metrics.inc("webhook_denied")
+        # Log validation error for debugging test failures
+        logger.warning(f"Webhook validation failed: {e}")
         return _safe_error_response(400, "validation_error", str(e))
 
     template_id = normalized["template_id"]

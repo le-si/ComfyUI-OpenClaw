@@ -2,6 +2,10 @@
 
 This document defines the **mandatory test workflow** for this repo. Run it **before every push** (unless you explicitly document why you’re skipping).
 
+## Acceptance Rule (SOP)
+
+Every implementation plan must include the **full test validation procedure** in its final stage. A plan is **not accepted** until all tests in this SOP pass **without errors** and the results are recorded (date + environment + command log reference).
+
 ## Prerequisites
 
 - Python 3.10+ (CI uses 3.10/3.11)

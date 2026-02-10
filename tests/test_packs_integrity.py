@@ -173,13 +173,23 @@ class TestPacksApiAsync(unittest.IsolatedAsyncioTestCase):
         fd, path = tempfile.mkstemp()
         os.close(fd)
 
+        # Write something
+        with open(path, "w") as f:
+            f.write("dummy")
+
         resp = CleanupFileResponse(path)
 
-        # Call prepare (MockWeb.FileResponse.prepare is a no-op; cleanup happens in finally)
-        await resp.prepare(MagicMock())
+        # Mock the super().prepare to behave like an async no-op (or return None)
+        # We can't easily mock the super() call directly on the instance,
+        # but we can patch aiohttp.web.FileResponse.prepare
+        with patch(
+            "aiohttp.web.FileResponse.prepare", new_callable=AsyncMock
+        ) as mock_super_prepare:
+            # Call prepare
+            await resp.prepare(MagicMock())
 
-        # Check existence
-        self.assertFalse(os.path.exists(path), "File should be deleted")
+            # Verify file deleted
+            self.assertFalse(os.path.exists(path), "File should be deleted")
 
 
 if __name__ == "__main__":

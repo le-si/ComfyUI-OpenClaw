@@ -15,6 +15,10 @@ htmlcov/
 .coverage.*
 coverage.xml
 *.cover
+REFERENCE/
+AGENT_CONTEXT.md
+ROADMAP.md
+tests_output.txt
 node_modules/
 playwright-report/
 test-results/
@@ -29,6 +33,3 @@ connector_state.json*
 .vscode/
 .idea/
 *.swp
-REFERENCE/
-AGENT_CONTEXT.md
-ROADMAP.md
