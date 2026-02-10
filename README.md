@@ -12,6 +12,8 @@ ComfyUI-OpenClaw is a **security-first** ComfyUI custom node pack that adds:
 This project is intentionally **not** a general-purpose “assistant platform” with broad remote execution surfaces.
 It is designed to make **ComfyUI a reliable automation target** with an explicit admin boundary and hardened defaults.
 
+**Current release**: `v0.2.1`
+
 **Security stance (how this project differs from convenience-first automation packs):**
 
 - Localhost-first defaults; remote access is opt-in
@@ -398,12 +400,12 @@ python3 -m unittest discover -s tests -p "test_*.py"
 
 ## 🎮 Remote Control (Connector)
 
-OpenClaw includes a standalone **Connector** process that allows you to control your local instance securely via **Telegram** or **Discord** without exposing it to the public internet.
+OpenClaw includes a standalone **Connector** process that allows you to control your local instance securely via **Telegram**, **Discord**, **LINE**, or **WhatsApp**.
 
 - **Status & Queue**: Check job progress remotely.
 - **Run Jobs**: Submit templates via chat commands.
 - **Approvals**: Approve/Reject paused workflows from your phone.
-- **Secure**: Outbound-only connection; no inbound ports required.
+- **Secure**: Outbound-only for Telegram/Discord. LINE/WhatsApp require inbound HTTPS (webhook).
 
 [👉 **See Setup Guide (docs/connector.md)**](docs/connector.md)
 

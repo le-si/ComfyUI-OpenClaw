@@ -1,6 +1,6 @@
 # Compatibility Matrix (R51)
 
-This document outlines the validated environments for ComfyUI-OpenClaw M1 Release.
+This document outlines the validated environments for ComfyUI-OpenClaw `v0.2.1` (M1 Release).
 
 ## Core Dependencies
 

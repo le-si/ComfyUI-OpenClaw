@@ -1,14 +1,15 @@
 # OpenClaw Connector
 
-The **OpenClaw Connector** (`connector`) is a standalone process that allows you to control your local ComfyUI instance remotely via chat platforms like **Telegram** and **Discord**, without exposing your ComfyUI to the public internet.
+The **OpenClaw Connector** (`connector`) is a standalone process that allows you to control your local ComfyUI instance remotely via chat platforms like **Telegram**, **Discord**, **LINE**, and **WhatsApp**.
 
 ## How It Works
 
 The connector runs alongside ComfyUI on your machine.
 
 1. It connects outbound to Telegram/Discord (polling/gateway).
-2. It talks to ComfyUI via `localhost`.
-3. It relays commands and status updates securely.
+2. LINE/WhatsApp use inbound webhooks (HTTPS required).
+3. It talks to ComfyUI via `localhost`.
+4. It relays commands and status updates securely.
 
 **Security**:
 
@@ -21,6 +22,8 @@ The connector runs alongside ComfyUI on your machine.
 
 - **Telegram**: Long-polling (instant response).
 - **Discord**: Gateway WebSocket (instant response).
+- **LINE**: Webhook (requires inbound HTTPS).
+- **WhatsApp**: Webhook (requires inbound HTTPS).
 
 ## Setup
 
@@ -69,17 +72,29 @@ Set the following environment variables (or put them in a `.env` file if you use
 - `OPENCLAW_CONNECTOR_LINE_PORT`: Port (default `8099`).
 - `OPENCLAW_CONNECTOR_LINE_PATH`: Webhook path (default `/line/webhook`).
 
+**WhatsApp:**
+
+*(Requires Inbound Connectivity - see below)*
+
+- `OPENCLAW_CONNECTOR_WHATSAPP_ACCESS_TOKEN`: Cloud API access token.
+- `OPENCLAW_CONNECTOR_WHATSAPP_VERIFY_TOKEN`: Webhook verify token (used during setup).
+- `OPENCLAW_CONNECTOR_WHATSAPP_APP_SECRET`: App secret for signature verification (recommended).
+- `OPENCLAW_CONNECTOR_WHATSAPP_PHONE_NUMBER_ID`: Phone number ID used for outbound messages.
+- `OPENCLAW_CONNECTOR_WHATSAPP_ALLOWED_USERS`: Comma-separated sender `wa_id` values (phone numbers).
+- `OPENCLAW_CONNECTOR_WHATSAPP_BIND`: Host to bind (default `127.0.0.1`).
+- `OPENCLAW_CONNECTOR_WHATSAPP_PORT`: Port (default `8098`).
+- `OPENCLAW_CONNECTOR_WHATSAPP_PATH`: Webhook path (default `/whatsapp/webhook`).
+
 **Image Delivery (F33):**
 
 - `OPENCLAW_CONNECTOR_PUBLIC_BASE_URL`: Public HTTPS URL of your connector (e.g. `https://your-tunnel.example.com`). Required for sending images.
 - `OPENCLAW_CONNECTOR_MEDIA_PATH`: URL path for serving temporary media (default `/media`).
 - `OPENCLAW_CONNECTOR_MEDIA_TTL_SEC`: Image expiry in seconds (default `300`).
-- `OPENCLAW_CONNECTOR_MEDIA_TTL_SEC`: Image expiry in seconds (default `300`).
 - `OPENCLAW_CONNECTOR_MEDIA_MAX_MB`: Max image size in MB (default `8`).
 
 > **Note:** Media URLs are signed with a secret derived from `OPENCLAW_CONNECTOR_ADMIN_TOKEN` or a random key.
 > To ensure URLs remain valid after connector restarts, **you must set `OPENCLAW_CONNECTOR_ADMIN_TOKEN`**.
-> LINE also **requires** `public_base_url` to be HTTPS.
+> LINE and WhatsApp also **require** `public_base_url` to be HTTPS.
 
 ### 3. Usage
 
@@ -106,6 +121,19 @@ Since the connector runs on `localhost` (default port 8099), you must expose it 
 **Option B: Reverse Proxy (Nginx/Caddy)**
 
 - Configure your proxy to forward HTTPS traffic to `127.0.0.1:8099`.
+
+#### WhatsApp Webhook Setup
+
+WhatsApp Cloud API delivers webhooks to your connector. You must expose it via HTTPS.
+
+1. Create a Meta app and add the WhatsApp product.
+2. Add a phone number and note its **Phone Number ID**.
+3. Configure the webhook URL: `https://<your-public-host>/whatsapp/webhook`.
+4. Set the webhook **Verify Token** to match `OPENCLAW_CONNECTOR_WHATSAPP_VERIFY_TOKEN`.
+5. Subscribe to `messages` events.
+6. Ensure `OPENCLAW_CONNECTOR_PUBLIC_BASE_URL` is an HTTPS URL so media can be delivered.
+
+If you run locally, use a secure tunnel (Cloudflare Tunnel or ngrok) and point it to `http://127.0.0.1:8098`.
 
 ## Commands
 

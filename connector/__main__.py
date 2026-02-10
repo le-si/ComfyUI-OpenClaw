@@ -12,6 +12,7 @@ from .openclaw_client import OpenClawClient
 from .platforms.discord_gateway import DiscordGateway
 from .platforms.line_webhook import LINEWebhookServer
 from .platforms.telegram_polling import TelegramPolling
+from .platforms.whatsapp_webhook import WhatsAppWebhookServer
 from .results_poller import ResultsPoller
 from .router import CommandRouter
 
@@ -36,6 +37,7 @@ def _print_security_banner(config):
         or config.discord_allowed_channels
         or config.line_allowed_users
         or config.line_allowed_groups
+        or config.whatsapp_allowed_users
     )
     has_admins = bool(config.admin_users)
 
@@ -95,6 +97,7 @@ async def main():
     tasks.append(asyncio.create_task(poller.start()))
 
     line_server = None
+    whatsapp_server = None
 
     # 3. Platforms
     if config.telegram_bot_token:
@@ -129,9 +132,23 @@ async def main():
             "LINE not configured (OPENCLAW_CONNECTOR_LINE_CHANNEL_SECRET missing)"
         )
 
-    if not tasks and not line_server:
+    if config.whatsapp_access_token and config.whatsapp_verify_token:
+        whatsapp_server = WhatsAppWebhookServer(config, router)
+        platforms["whatsapp"] = whatsapp_server
+        await whatsapp_server.start()
+        # If only WhatsApp is active, add sleeper
+        if not tasks:
+            tasks.append(asyncio.create_task(asyncio.sleep(3600 * 24 * 365)))
+    elif config.whatsapp_access_token:
+        logger.warning("WhatsApp configured but Verify Token missing. Skipping.")
+    else:
+        logger.info(
+            "WhatsApp not configured (OPENCLAW_CONNECTOR_WHATSAPP_ACCESS_TOKEN missing)"
+        )
+
+    if not tasks and not line_server and not whatsapp_server:
         logger.error(
-            "No platforms configured! Set TELEGRAM_TOKEN, DISCORD_TOKEN, or LINE_SECRET."
+            "No platforms configured! Set TELEGRAM_TOKEN, DISCORD_TOKEN, LINE_SECRET, or WHATSAPP_ACCESS_TOKEN."
         )
         await client.close()
         return
@@ -152,6 +169,8 @@ async def main():
     finally:
         if line_server:
             await line_server.stop()
+        if whatsapp_server:
+            await whatsapp_server.stop()
         if poller:
             await poller.stop()
         await client.close()

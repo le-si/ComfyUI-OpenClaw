@@ -40,6 +40,16 @@ class ConnectorConfig:
     line_bind_port: int = 8099
     line_webhook_path: str = "/line/webhook"
 
+    # WhatsApp
+    whatsapp_access_token: Optional[str] = None
+    whatsapp_verify_token: Optional[str] = None
+    whatsapp_app_secret: Optional[str] = None  # For signature verification
+    whatsapp_phone_number_id: Optional[str] = None
+    whatsapp_allowed_users: List[str] = field(default_factory=list)
+    whatsapp_bind_host: str = "127.0.0.1"
+    whatsapp_bind_port: int = 8098
+    whatsapp_webhook_path: str = "/whatsapp/webhook"
+
     # Privileged Access (ID match across platforms; Telegram Int vs Discord Str handled by router)
     admin_users: List[str] = field(default_factory=list)
 
@@ -120,6 +130,31 @@ def load_config() -> ConnectorConfig:
             cfg.line_bind_port = int(l_port)
     cfg.line_webhook_path = os.environ.get(
         "OPENCLAW_CONNECTOR_LINE_PATH", "/line/webhook"
+    )
+
+    # WhatsApp
+    cfg.whatsapp_access_token = os.environ.get(
+        "OPENCLAW_CONNECTOR_WHATSAPP_ACCESS_TOKEN"
+    )
+    cfg.whatsapp_verify_token = os.environ.get(
+        "OPENCLAW_CONNECTOR_WHATSAPP_VERIFY_TOKEN"
+    )
+    cfg.whatsapp_app_secret = os.environ.get("OPENCLAW_CONNECTOR_WHATSAPP_APP_SECRET")
+    cfg.whatsapp_phone_number_id = os.environ.get(
+        "OPENCLAW_CONNECTOR_WHATSAPP_PHONE_NUMBER_ID"
+    )
+    if wa_users := os.environ.get("OPENCLAW_CONNECTOR_WHATSAPP_ALLOWED_USERS"):
+        cfg.whatsapp_allowed_users = [
+            u.strip() for u in wa_users.split(",") if u.strip()
+        ]
+    cfg.whatsapp_bind_host = os.environ.get(
+        "OPENCLAW_CONNECTOR_WHATSAPP_BIND", "127.0.0.1"
+    )
+    if wa_port := os.environ.get("OPENCLAW_CONNECTOR_WHATSAPP_PORT"):
+        if wa_port.isdigit():
+            cfg.whatsapp_bind_port = int(wa_port)
+    cfg.whatsapp_webhook_path = os.environ.get(
+        "OPENCLAW_CONNECTOR_WHATSAPP_PATH", "/whatsapp/webhook"
     )
 
     # Admin

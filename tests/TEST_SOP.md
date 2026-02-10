@@ -13,6 +13,15 @@ Every implementation plan must include the **full test validation procedure** in
 - `pre-commit` installed: `python -m pip install pre-commit`
 - Frontend deps installed: `npm install`
 
+## Environment Parity Guardrails (CI Safety)
+
+To avoid local vs CI mismatches:
+
+- **Do not hard-import optional deps in tests** (e.g. `aiohttp`) unless the test explicitly installs them.
+- If a test needs a module that may be missing in CI, **use a stub** (e.g. `sys.modules["services.foo"]=stub`) or patch the **module-level import location** used by the code under test.
+- If a test truly requires an optional dependency, mark it with a **clear skip** when the dep is unavailable.
+- Record the environment in the implementation record (OS, Python, Node, and any extras installed) so mismatches are visible.
+
 ## Required Pre-Push Workflow (Must Run)
 
 ### Optional automation (recommended)
