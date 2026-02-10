@@ -1,4 +1,6 @@
 import os
+import sys
+import types
 import unittest
 from unittest.mock import MagicMock, patch
 
@@ -10,6 +12,17 @@ class TestCsrfLoopback(unittest.TestCase):
         req = MagicMock()
         req.headers = {}
         return req
+
+    def _install_csrf_stub(self, return_value):
+        # NOTE: CI does not install aiohttp. Importing services.csrf_protection
+        # would fail there. Use a stub to keep this test independent of aiohttp.
+        module = types.ModuleType("services.csrf_protection")
+        module.is_same_origin_request = MagicMock(return_value=return_value)
+        sys.modules["services.csrf_protection"] = module
+        return module
+
+    def _remove_csrf_stub(self):
+        sys.modules.pop("services.csrf_protection", None)
 
     def test_admin_token_bypasses_csrf(self):
         """S13: If admin token is valid, CSRF check is skipped."""
@@ -38,14 +51,15 @@ class TestCsrfLoopback(unittest.TestCase):
         req.remote = "127.0.0.1"
         req.headers = {"Origin": "http://localhost:8188"}
 
-        with patch(
-            "services.csrf_protection.is_same_origin_request", return_value=True
-        ) as mock_csrf:
+        module = self._install_csrf_stub(True)
+        try:
             with patch.dict(os.environ, {}, clear=True):
                 allowed, error = require_admin_token(req)
                 self.assertTrue(allowed)
                 self.assertIsNone(error)
-                mock_csrf.assert_called_once()
+                module.is_same_origin_request.assert_called_once()
+        finally:
+            self._remove_csrf_stub()
 
     def test_loopback_convenience_denied_cross_origin(self):
         """S27: Loopback + Cross Origin = Denied."""
@@ -53,14 +67,15 @@ class TestCsrfLoopback(unittest.TestCase):
         req.remote = "127.0.0.1"
         req.headers = {"Origin": "http://evil.com"}
 
-        with patch(
-            "services.csrf_protection.is_same_origin_request", return_value=False
-        ) as mock_csrf:
+        module = self._install_csrf_stub(False)
+        try:
             with patch.dict(os.environ, {}, clear=True):
                 allowed, error = require_admin_token(req)
                 self.assertFalse(allowed)
                 self.assertIn("Cross-origin request denied", error)
-                mock_csrf.assert_called_once()
+                module.is_same_origin_request.assert_called_once()
+        finally:
+            self._remove_csrf_stub()
 
 
 if __name__ == "__main__":

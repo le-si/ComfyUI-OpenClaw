@@ -181,9 +181,10 @@ class TestPacksApiAsync(unittest.IsolatedAsyncioTestCase):
 
         # Mock the super().prepare to behave like an async no-op (or return None)
         # We can't easily mock the super() call directly on the instance,
-        # but we can patch aiohttp.web.FileResponse.prepare
+        # but we can patch the module-level FileResponse used by CleanupFileResponse
+        # NOTE: Patch api.packs.web.* to avoid importing aiohttp in CI.
         with patch(
-            "aiohttp.web.FileResponse.prepare", new_callable=AsyncMock
+            "api.packs.web.FileResponse.prepare", new_callable=AsyncMock
         ) as mock_super_prepare:
             # Call prepare
             await resp.prepare(MagicMock())
