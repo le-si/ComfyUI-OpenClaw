@@ -12,8 +12,6 @@ ComfyUI-OpenClaw is a **security-first** ComfyUI custom node pack that adds:
 This project is intentionally **not** a general-purpose “assistant platform” with broad remote execution surfaces.
 It is designed to make **ComfyUI a reliable automation target** with an explicit admin boundary and hardened defaults.
 
-**Current release**: `v0.2.1`
-
 **Security stance (how this project differs from convenience-first automation packs):**
 
 - Localhost-first defaults; remote access is opt-in
