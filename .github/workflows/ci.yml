@@ -29,7 +29,7 @@ jobs:
         env:
           MOLTBOT_STATE_DIR: ${{ github.workspace }}/moltbot_state/_ci_smoke
         run: |
-          python -m unittest tests.test_comfyui_loader_import -v
+          python scripts/run_unittests.py --module tests.test_comfyui_loader_import
 
 
   frontend-e2e:
@@ -75,7 +75,7 @@ jobs:
         env:
           MOLTBOT_STATE_DIR: ${{ github.workspace }}/moltbot_state/_ci_unit
         run: |
-          python -m unittest discover -s tests -p "test_*.py" -v
+          python scripts/run_unittests.py --start-dir tests --pattern "test_*.py"
 
   contract-tests:
     name: Contract Tests (R52)

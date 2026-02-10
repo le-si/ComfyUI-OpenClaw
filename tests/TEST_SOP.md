@@ -70,7 +70,7 @@ pre-commit run --all-files --show-diff-on-failure
 1) Backend unit tests (recommended; CI enforces)
 
 ```bash
-MOLTBOT_STATE_DIR="$(pwd)/moltbot_state/_local_unit" python -m unittest discover -s tests -p "test_*.py" -v
+MOLTBOT_STATE_DIR="$(pwd)/moltbot_state/_local_unit" python scripts/run_unittests.py --start-dir tests --pattern "test_*.py"
 ```
 
 1) Frontend E2E (Playwright; CI enforces)
