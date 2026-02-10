@@ -79,15 +79,11 @@ class WhatsAppWebhookServer:
             return
 
         if not self.config.whatsapp_access_token:
-            logger.warning(
-                "WhatsApp Access Token missing. Skipping WhatsApp adapter."
-            )
+            logger.warning("WhatsApp Access Token missing. Skipping WhatsApp adapter.")
             return
 
         if not self.config.whatsapp_verify_token:
-            logger.warning(
-                "WhatsApp Verify Token missing. Skipping WhatsApp adapter."
-            )
+            logger.warning("WhatsApp Verify Token missing. Skipping WhatsApp adapter.")
             return
 
         logger.info(
@@ -98,12 +94,8 @@ class WhatsAppWebhookServer:
         self.session = aiohttp.ClientSession()
 
         self.app = web.Application()
-        self.app.router.add_get(
-            self.config.whatsapp_webhook_path, self.handle_verify
-        )
-        self.app.router.add_post(
-            self.config.whatsapp_webhook_path, self.handle_webhook
-        )
+        self.app.router.add_get(self.config.whatsapp_webhook_path, self.handle_verify)
+        self.app.router.add_post(self.config.whatsapp_webhook_path, self.handle_webhook)
         # F33 Media Route
         media_route = f"{self.config.media_path}/{{token}}"
         self.app.router.add_get(media_route, self._handle_media_request)
@@ -263,9 +255,7 @@ class WhatsAppWebhookServer:
     # Message Processing
     # ------------------------------------------------------------------
 
-    async def _process_message(
-        self, msg: dict, contacts: list, metadata: dict
-    ):
+    async def _process_message(self, msg: dict, contacts: list, metadata: dict):
         """Convert WhatsApp message to CommandRequest and route."""
         msg_type = msg.get("type")
         if msg_type != "text":
@@ -335,9 +325,7 @@ class WhatsAppWebhookServer:
         if not self.session:
             return
 
-        url = (
-            f"{GRAPH_API_BASE}/{self.config.whatsapp_phone_number_id}/messages"
-        )
+        url = f"{GRAPH_API_BASE}/{self.config.whatsapp_phone_number_id}/messages"
         headers = {
             "Content-Type": "application/json",
             "Authorization": f"Bearer {self.config.whatsapp_access_token}",
@@ -361,9 +349,7 @@ class WhatsAppWebhookServer:
                     logger.warning("WhatsApp API Rate Limit Hit")
                 elif resp.status not in (200, 201):
                     err = await resp.text()
-                    logger.error(
-                        f"WhatsApp send_message failed: {resp.status} {err}"
-                    )
+                    logger.error(f"WhatsApp send_message failed: {resp.status} {err}")
         except Exception as e:
             logger.error(f"WhatsApp send_message error: {e}")
 
@@ -404,9 +390,7 @@ class WhatsAppWebhookServer:
 
         except Exception as e:
             logger.error(f"Failed to send WhatsApp image: {e}")
-            await self.send_message(
-                channel_id, "[OpenClaw] Error delivering image."
-            )
+            await self.send_message(channel_id, "[OpenClaw] Error delivering image.")
 
     async def _send_whatsapp_image(
         self,
@@ -418,9 +402,7 @@ class WhatsAppWebhookServer:
         if not self.session:
             return
 
-        url = (
-            f"{GRAPH_API_BASE}/{self.config.whatsapp_phone_number_id}/messages"
-        )
+        url = f"{GRAPH_API_BASE}/{self.config.whatsapp_phone_number_id}/messages"
         headers = {
             "Content-Type": "application/json",
             "Authorization": f"Bearer {self.config.whatsapp_access_token}",
@@ -442,8 +424,6 @@ class WhatsAppWebhookServer:
             async with self.session.post(url, headers=headers, json=body) as resp:
                 if resp.status not in (200, 201):
                     err = await resp.text()
-                    logger.error(
-                        f"WhatsApp image send failed: {resp.status} {err}"
-                    )
+                    logger.error(f"WhatsApp image send failed: {resp.status} {err}")
         except Exception as e:
             logger.error(f"WhatsApp image send error: {e}")
