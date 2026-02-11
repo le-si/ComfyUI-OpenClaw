@@ -20,6 +20,7 @@ if __package__ and "." in __package__:
     from ..services.callback_delivery import start_callback_watch
     from ..services.execution_budgets import BudgetExceededError
     from ..services.idempotency_store import IdempotencyStore
+    from ..services.job_events import JobEventType, get_job_event_store
     from ..services.metrics import metrics
     from ..services.queue_submit import submit_prompt
     from ..services.rate_limit import check_rate_limit
@@ -27,11 +28,16 @@ if __package__ and "." in __package__:
     from ..services.trace import get_effective_trace_id
     from ..services.trace_store import trace_store
     from ..services.webhook_auth import require_auth
+    from ..services.webhook_mapping import (
+        apply_mapping,
+        resolve_profile,
+    )  # F40
 else:  # pragma: no cover (test-only import mode)
     from models.schemas import MAX_BODY_SIZE, WebhookJobRequest
     from services.callback_delivery import start_callback_watch  # type: ignore
     from services.execution_budgets import BudgetExceededError  # type: ignore
     from services.idempotency_store import IdempotencyStore  # type: ignore
+    from services.job_events import JobEventType, get_job_event_store  # type: ignore
     from services.metrics import metrics  # type: ignore
     from services.queue_submit import submit_prompt  # type: ignore
     from services.rate_limit import check_rate_limit  # type: ignore
@@ -39,6 +45,10 @@ else:  # pragma: no cover (test-only import mode)
     from services.trace import get_effective_trace_id  # type: ignore
     from services.trace_store import trace_store  # type: ignore
     from services.webhook_auth import require_auth  # type: ignore
+    from services.webhook_mapping import (
+        apply_mapping,
+        resolve_profile,
+    )  # F40  # type: ignore
 
 logger = logging.getLogger("ComfyUI-OpenClaw.api.webhook_submit")
 
@@ -125,6 +135,30 @@ async def webhook_submit_handler(request: web.Request) -> web.Response:
         trace_id = get_effective_trace_id(request.headers, data)
         data["trace_id"] = trace_id
 
+        # F40: Payload Mapping Engine
+        # 1. Resolve profile
+        mapping_profile = resolve_profile(request.headers)
+
+        # 2. Apply mapping if profile found
+        if mapping_profile:
+            try:
+                # Log usage of mapping profile for observability
+                logger.info(
+                    f"Applying mapping profile '{mapping_profile.id}' to request (trace: {trace_id})"
+                )
+                mapped_data, mapping_warnings = apply_mapping(mapping_profile, data)
+
+                # If trace_id was not in source but resolved from headers, re-inject it
+                if "trace_id" not in mapped_data:
+                    mapped_data["trace_id"] = trace_id
+
+                data = mapped_data
+                for w in mapping_warnings:
+                    logger.warning(f"Mapping warning (trace: {trace_id}): {w}")
+            except ValueError as e:
+                metrics.inc("webhook_denied")
+                return safe_error_response(400, "mapping_error", str(e))
+
         # Validate against schema
         try:
             job_request = WebhookJobRequest.from_dict(data)
@@ -197,6 +231,22 @@ async def webhook_submit_handler(request: web.Request) -> web.Response:
                     prompt_id, callback_config, trace_id=trace_id
                 )
 
+            # R71: Emit QUEUED event
+            if prompt_id:
+                try:
+                    get_job_event_store().emit(
+                        JobEventType.QUEUED,
+                        prompt_id=prompt_id,
+                        trace_id=trace_id,
+                        data={
+                            "source": "webhook",
+                            "template_id": template_id,
+                            "job_id": job_id,
+                        },
+                    )
+                except Exception:
+                    pass
+
             metrics.inc("webhook_requests_executed")
             return web.json_response(
                 {
@@ -204,6 +254,7 @@ async def webhook_submit_handler(request: web.Request) -> web.Response:
                     "deduped": False,
                     "prompt_id": prompt_id,
                     "trace_id": trace_id,
+                    "mapped": bool(mapping_profile),  # F40
                     "number": result.get("number"),
                     "callback_scheduled": bool(callback_config),
                 }

@@ -24,6 +24,7 @@ config_get_handler = config_put_handler = llm_test_handler = llm_models_handler 
 templates_list_handler = None  # type: ignore
 secrets_status_handler = secrets_put_handler = secrets_delete_handler = None  # type: ignore
 list_checkpoints_handler = create_checkpoint_handler = get_checkpoint_handler = delete_checkpoint_handler = None  # type: ignore
+events_stream_handler = events_poll_handler = None  # type: ignore  # R71
 redact_text = None  # type: ignore
 
 if web is not None:
@@ -55,6 +56,7 @@ if web is not None:
         from ..api.webhook import webhook_handler
         from ..api.webhook_submit import webhook_submit_handler
         from ..api.webhook_validate import webhook_validate_handler
+        from ..api.events import events_poll_handler, events_stream_handler  # R71
 
         # IMPORTANT: use PACK_VERSION / PACK_START_TIME from config.
         # Do NOT import VERSION or config_path (they do not exist) or route registration will fail.
@@ -97,6 +99,10 @@ if web is not None:
         from api.webhook import webhook_handler
         from api.webhook_submit import webhook_submit_handler
         from api.webhook_validate import webhook_validate_handler
+        from api.events import (
+            events_poll_handler,
+            events_stream_handler,
+        )  # R71  # type: ignore
 
         # IMPORTANT: keep PACK_* imports aligned with config.py (VERSION/config_path do not exist).
         from config import LOG_FILE, PACK_NAME, PACK_START_TIME, PACK_VERSION
@@ -504,6 +510,16 @@ def register_routes(server) -> None:
                 secrets_status_handler,
             ),  # S25: Secret status (no values)
             ("PUT", f"{prefix}/secrets", secrets_put_handler),  # S25: Save secret
+            (
+                "GET",
+                f"{prefix}/events/stream",
+                events_stream_handler,
+            ),  # R71: SSE event stream
+            (
+                "GET",
+                f"{prefix}/events",
+                events_poll_handler,
+            ),  # R71: JSON polling fallback
             (
                 "DELETE",
                 f"{prefix}/secrets/{{provider}}",

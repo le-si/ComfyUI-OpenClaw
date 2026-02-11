@@ -25,11 +25,12 @@ It is designed to make **ComfyUI a reliable automation target** with an explicit
 <details>
 <summary><strong>Sprint A: closes out with five concrete reliability and security improvements</strong></summary>
 
- - Configuration save/apply now returns explicit apply metadata, so callers can see what was actually applied, what requires restart, and which effective provider/model is active.
- - The Settings update flow adds defensive guards against stale or partial state, reducing accidental overwrites.
- - Provider/model precedence is now deterministic across save, test, and chat paths, and prevents model contamination when switching providers.
- - In localhost convenience mode (no admin token configured), chat requests enforce same-origin CSRF protection: same-origin requests are allowed, cross-origin requests are denied.
- - Model-list fetching now uses a bounded in-memory cache keyed by provider and base URL, with a 5-minute TTL and LRU eviction cap to improve responsiveness and stability.
+- Configuration save/apply now returns explicit apply metadata, so callers can see what was actually applied, what requires restart, and which effective provider/model is active.
+- The Settings update flow adds defensive guards against stale or partial state, reducing accidental overwrites.
+- Provider/model precedence is now deterministic across save, test, and chat paths, and prevents model contamination when switching providers.
+- In localhost convenience mode (no admin token configured), chat requests enforce same-origin CSRF protection: same-origin requests are allowed, cross-origin requests are denied.
+- Model-list fetching now uses a bounded in-memory cache keyed by provider and base URL, with a 5-minute TTL and LRU eviction cap to improve responsiveness and stability.
+
 </details>
 
 ---
@@ -220,6 +221,17 @@ Notes:
 - `POST /openclaw/webhook/validate` — dry-run render (no queue submission; includes render budgets + warnings)
 - `POST /openclaw/webhook/submit` — full pipeline: auth → normalize → idempotency → render → submit to queue
 
+**Payload Mapping (F40)**:
+
+- Submit arbitrary payloads (GitHub, Discord, etc.) by adding `X-Webhook-Mapping-Profile: github_push` (or `discord_message`).
+- The internal engine maps fields to the canonical schema before validation.
+
+**Job Events (R71)**:
+
+- `GET /openclaw/events/stream` — SSE endpoint for real-time job lifecycle events (queued, running, completed, failed).
+- `GET /openclaw/events` — JSON polling fallback.
+- Supports `Last-Event-ID` header to resume streams without data loss.
+
 Request schema (minimal):
 
 ```json
@@ -409,6 +421,16 @@ Notes:
 
 - If your pack folder name is not `comfyui-openclaw`, the smoke script may need `OPENCLAW_PACK_IMPORT_NAME=your-folder-name`.
 - If imports fail with a `services.*` module error, check for name collisions with other custom nodes and prefer package-relative imports.
+
+### Operator Doctor (R72)
+
+Run the built-in diagnostic tool to verify environment readiness (libraries, permissions, contract files):
+
+```bash
+python scripts/operator_doctor.py
+# Or check JSON output:
+python scripts/operator_doctor.py --json
+```
 
 ### Webhooks return `403 auth_not_configured`
 

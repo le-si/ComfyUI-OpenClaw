@@ -43,8 +43,13 @@ if __package__ and "." in __package__:
     from ..services.templates import get_template_service
     from ..services.trace import get_effective_trace_id
     from ..services.webhook_auth import require_auth
+    from ..services.webhook_mapping import (
+        apply_mapping,
+        resolve_profile,
+    )  # F40
 else:  # pragma: no cover (test-only import mode)
     from models.schemas import MAX_BODY_SIZE, WebhookJobRequest
+
     from services.execution_budgets import (  # type: ignore
         BudgetExceededError,
         check_render_size,
@@ -54,6 +59,10 @@ else:  # pragma: no cover (test-only import mode)
     from services.templates import get_template_service  # type: ignore
     from services.trace import get_effective_trace_id  # type: ignore
     from services.webhook_auth import require_auth  # type: ignore
+    from services.webhook_mapping import (
+        apply_mapping,
+        resolve_profile,
+    )  # F40  # type: ignore
 
 logger = logging.getLogger("ComfyUI-OpenClaw.api.webhook_validate")
 
@@ -137,6 +146,19 @@ async def webhook_validate_handler(request: web.Request) -> web.Response:
     trace_id = get_effective_trace_id(request.headers, data)
     data["trace_id"] = trace_id
 
+    # F40: Payload Mapping Engine
+    # 1. Resolve profile
+    mapping_profile = resolve_profile(request.headers)
+    mapping_warnings = []
+
+    # 2. Apply mapping if profile found
+    if mapping_profile:
+        try:
+            data, mapping_warnings = apply_mapping(mapping_profile, data)
+        except ValueError as e:
+            metrics.inc("webhook_denied")
+            return _safe_error_response(400, "mapping_error", str(e))
+
     # Schema validation
     try:
         job_request = WebhookJobRequest.from_dict(data)
@@ -181,8 +203,8 @@ async def webhook_validate_handler(request: web.Request) -> web.Response:
             headers={"Retry-After": str(e.retry_after)},
         )
 
-    # Warnings: unresolved placeholders
-    warnings: List[str] = []
+    # Warnings: unresolved placeholders + mapping warnings
+    warnings: List[str] = mapping_warnings
     unresolved: List[str] = []
     try:
         workflow_json = json.dumps(workflow, ensure_ascii=False, separators=(",", ":"))
@@ -197,7 +219,11 @@ async def webhook_validate_handler(request: web.Request) -> web.Response:
 
     # Redact normalized response (security: may contain secrets)
     try:
-        from services.redaction import redact_json
+        # Import discipline: attempt package-relative first
+        if __package__ and "." in __package__:
+            from ..services.redaction import redact_json
+        else:
+            from services.redaction import redact_json
 
         safe_normalized = redact_json(normalized)
     except ImportError:
@@ -209,6 +235,7 @@ async def webhook_validate_handler(request: web.Request) -> web.Response:
     return web.json_response(
         {
             "ok": True,
+            "mapped": bool(mapping_profile),  # F40: Indicate if mapping occurred
             "trace_id": trace_id,
             "template_id": template_id,
             "normalized": safe_normalized,  # Redacted for security

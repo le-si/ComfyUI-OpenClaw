@@ -45,5 +45,9 @@ def get_capabilities() -> dict:
             # R70/F39/R73: Settings contract + UX degradation + Provider governance
             "settings_contract": True,
             "provider_governance": True,
+            # F40/R71/R72: Webhook mapping + Job events + Operator doctor
+            "webhook_mapping": True,
+            "job_events": True,
+            "operator_doctor": True,
         },
     }
