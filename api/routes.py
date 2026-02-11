@@ -21,6 +21,7 @@ PACK_NAME = PACK_VERSION = PACK_START_TIME = LOG_FILE = get_api_key = None  # ty
 metrics = tail_log = require_observability_access = check_rate_limit = trace_store = None  # type: ignore
 webhook_handler = webhook_submit_handler = webhook_validate_handler = capabilities_handler = preflight_handler = None  # type: ignore
 config_get_handler = config_put_handler = llm_test_handler = llm_models_handler = llm_chat_handler = None  # type: ignore
+security_doctor_handler = None  # type: ignore  # S30
 templates_list_handler = None  # type: ignore
 secrets_status_handler = secrets_put_handler = secrets_delete_handler = None  # type: ignore
 list_checkpoints_handler = create_checkpoint_handler = get_checkpoint_handler = delete_checkpoint_handler = None  # type: ignore
@@ -53,6 +54,7 @@ if web is not None:
             secrets_put_handler,
             secrets_status_handler,
         )
+        from ..api.security_doctor import security_doctor_handler  # S30
         from ..api.templates import templates_list_handler
         from ..api.webhook import webhook_handler
         from ..api.webhook_submit import webhook_submit_handler
@@ -99,6 +101,7 @@ if web is not None:
             secrets_put_handler,
             secrets_status_handler,
         )
+        from api.security_doctor import security_doctor_handler  # type: ignore  # S30
         from api.templates import templates_list_handler
         from api.webhook import webhook_handler
         from api.webhook_submit import webhook_submit_handler
@@ -525,6 +528,11 @@ def register_routes(server) -> None:
                 f"{prefix}/secrets/{{provider}}",
                 secrets_delete_handler,
             ),  # S25: Clear secret
+            (
+                "GET",
+                f"{prefix}/security/doctor",
+                security_doctor_handler,
+            ),  # S30: Security Doctor diagnostics
         ]
 
         for method, path, handler in core_routes:
