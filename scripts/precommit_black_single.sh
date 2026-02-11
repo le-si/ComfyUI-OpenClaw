@@ -1,6 +1,11 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+# Keep Black cache local to avoid AppData lock/permission errors on Windows.
+export BLACK_CACHE_DIR="${BLACK_CACHE_DIR:-$ROOT_DIR/.tmp/black-cache}"
+mkdir -p "$BLACK_CACHE_DIR"
+
 if command -v python >/dev/null 2>&1; then
   # CRITICAL cross-platform guard:
   # WSL sometimes has only `python3`, while Windows shells usually expose `python`.

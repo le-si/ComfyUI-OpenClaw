@@ -20,10 +20,15 @@ case "$UNAME_S" in
     # It frequently leaves locked .exe files (WinError 5) and blocks hook cleanup.
     export PRE_COMMIT_HOME="${PRE_COMMIT_HOME:-$ROOT_DIR/.tmp/pre-commit-win}"
     mkdir -p "$PRE_COMMIT_HOME"
+    # Keep Black cache local to avoid AppData lock/permission errors.
+    export BLACK_CACHE_DIR="${BLACK_CACHE_DIR:-$ROOT_DIR/.tmp/black-cache}"
+    mkdir -p "$BLACK_CACHE_DIR"
     ;;
   *)
     export PRE_COMMIT_HOME="${PRE_COMMIT_HOME:-$ROOT_DIR/.tmp/pre-commit}"
     mkdir -p "$PRE_COMMIT_HOME"
+    export BLACK_CACHE_DIR="${BLACK_CACHE_DIR:-$ROOT_DIR/.tmp/black-cache}"
+    mkdir -p "$BLACK_CACHE_DIR"
     ;;
 esac
 
@@ -114,6 +119,10 @@ run_pre_commit_safe() {
     # Avoid removing this block; without it, pre-push can hang/fail repeatedly on Windows.
     echo "[pre-push] WARN: pre-commit cache appears locked by another process; running cache reset + single retry." >&2
     reset_cache
+    if [ -n "${BLACK_CACHE_DIR:-}" ] && [ -d "$BLACK_CACHE_DIR" ]; then
+      rm -rf "$BLACK_CACHE_DIR" 2>/dev/null || true
+      mkdir -p "$BLACK_CACHE_DIR"
+    fi
     pre-commit "$@"
     rm -f "$tmp_log"
     rm -f "$lower_log"
