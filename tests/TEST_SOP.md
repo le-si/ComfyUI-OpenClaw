@@ -13,6 +13,20 @@ Every implementation plan must include the **full test validation procedure** in
 - `pre-commit` installed: `python -m pip install pre-commit`
 - Frontend deps installed: `npm install`
 
+## Environment Sanity (Required Guardrails)
+
+- **Python interpreter must be consistent** for all test commands.
+  - Verify: `python -c "import sys; print(sys.executable)"`
+  - If you use conda or venv, ensure the same interpreter runs unit tests and connector tests.
+- **Project venv recommended**: use `.venv` when possible to avoid mixed dependencies.
+  - Create: `python -m venv .venv`
+  - Activate (bash): `source .venv/bin/activate`
+  - Activate (pwsh): `.\.venv\Scripts\Activate.ps1`
+  - If tests fail due to missing deps in CI parity, **rerun in `.venv` and record that in the implementation record**.
+- **Node version must be 18+** before E2E:
+  - Verify: `node -v`
+  - If mismatch in WSL, use the Node 18 path specified below.
+
 ## Environment Parity Guardrails (CI Safety)
 
 To avoid local vs CI mismatches:
@@ -22,7 +36,99 @@ To avoid local vs CI mismatches:
 - If a test truly requires an optional dependency, mark it with a **clear skip** when the dep is unavailable.
 - Record the environment in the implementation record (OS, Python, Node, and any extras installed) so mismatches are visible.
 
+## Offline / Restricted Network Pre-commit (Fail Fast)
+
+If your environment cannot reach GitHub, `pre-commit` may hang while installing hook repos.
+Use **one** of the following, and record it in the implementation record:
+
+1) **Preferred**: run once with network to populate the cache
+   - `pre-commit install --install-hooks`
+   - Subsequent runs will use cache without network.
+2) **Proxy**: configure `https_proxy` / `http_proxy` for GitHub access.
+3) **Fail-fast guard**: if GitHub access is blocked, stop and fix connectivity or use cached hooks.
+   - Do not mark pre-commit as "passed" unless the hooks complete successfully.
+
+Do **not** switch hooks to `repo: local` unless CI is updated to match, or you will reintroduce local/CI divergence.
+
+## Pre-commit Cache Repair (If Cache Is Corrupt)
+
+Symptoms:
+- `InvalidManifestError` or missing `.pre-commit-hooks.yaml`
+- partial venv in pre-commit cache
+- repeated install failures even after network is restored
+
+Fix (choose one):
+
+1) **Clear cache and re-install hooks (recommended)**
+   - Linux/WSL:
+     - `rm -rf ~/.cache/pre-commit`
+     - `pre-commit install --install-hooks`
+   - Windows (PowerShell):
+     - `Remove-Item -Recurse -Force \"$env:USERPROFILE\\.cache\\pre-commit\"`
+     - `pre-commit install --install-hooks`
+
+2) **Set a clean cache location**
+   - `set PRE_COMMIT_HOME=/path/to/new/cache`
+   - `pre-commit install --install-hooks`
+
+If GitHub is unreachable, the above will still fail; fix connectivity or configure a proxy first.
+
+## Windows Lock-File Guardrail (Required on WinError 5)
+
+When you see:
+- `PermissionError: [WinError 5] Access is denied`
+- failure deleting `...\\.cache\\pre-commit\\...\\Scripts\\*.exe`
+
+this is usually a **locked executable**, not a logic error in hooks.
+
+Use this exact sequence (PowerShell):
+
+1) Stop active processes that may hold the file lock
+   - `Get-Process pre-commit,python,git -ErrorAction SilentlyContinue | Stop-Process -Force`
+2) Use a repo-local pre-commit cache (prevents repeated global-cache lock conflicts)
+   - `$env:PRE_COMMIT_HOME = \"$PWD\\.tmp\\pre-commit-win\"`
+3) Clean and rerun
+   - `pre-commit clean`
+   - `pre-commit run detect-secrets --all-files`
+   - `pre-commit run --all-files --show-diff-on-failure`
+4) If cleanup still fails, remove cache directory directly
+   - `Remove-Item -Recurse -Force \"$env:PRE_COMMIT_HOME\"`
+   - `New-Item -ItemType Directory -Force \"$env:PRE_COMMIT_HOME\" | Out-Null`
+   - rerun step (3)
+
+Rules:
+- Do not run multiple pre-commit commands in parallel on Windows.
+- Do not mark tests as passed if hooks were interrupted by lock errors.
+
+### Windows PATH and Process Reality Checks
+
+Use these checks before assuming the hook runner is broken:
+
+1) `where pre-commit` can be empty in PowerShell even when module execution works.
+   - Prefer:
+     - `python -m pre_commit --version`
+     - `Get-Command pre-commit -All`
+2) If multiple Python installations exist, always run:
+   - `python -m pre_commit ...`
+   instead of relying on bare `pre-commit` resolution.
+3) If process cleanup looks inconsistent, inspect actual command lines:
+   - `Get-CimInstance Win32_Process | Where-Object { $_.CommandLine -match 'pre-commit|detect-secrets|black' } | Select-Object ProcessId,ParentProcessId,Name,CommandLine`
+4) `taskkill` may report "no running instance" when the PID already exited between scans.
+   - Re-run the `Get-CimInstance` query above before deciding a process is still stuck.
+
 ## Required Pre-Push Workflow (Must Run)
+
+### Optional: One-Command Full Test Scripts (Fastest)
+
+Use these if you want a single command that runs **all required steps** (detect-secrets, pre-commit, unit tests, E2E). These scripts also handle the most common environment issues (Windows cache locks, Black cache, Node 18).
+Both scripts enforce a project-local `.venv` and will bootstrap missing test tooling (`pre-commit`, and `aiohttp` where needed for imports).
+If `.venv` exists but is invalid for the current OS (for example created in WSL then reused in Windows), rerun via the script so it can recreate the environment.
+Linux script includes an explicit offline fail-fast guard: if dependency bootstrap fails (for example `aiohttp` / `pre-commit` install), it stops with remediation hints instead of continuing with partial state.
+
+- Linux/WSL:
+  - `bash scripts/run_full_tests_linux.sh`
+- Windows (PowerShell):
+  - `powershell -File scripts/run_full_tests_windows.ps1`
 
 ### Optional automation (recommended)
 

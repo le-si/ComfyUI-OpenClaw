@@ -55,10 +55,43 @@ else:  # pragma: no cover (test-only import mode)
 
 logger = logging.getLogger("ComfyUI-OpenClaw.api.config")
 
-# In-memory cache for remote model list (best-effort).
-# Key: provider_id -> (ts, models[])
-_MODEL_LIST_CACHE = {}
+# R60: Bounded model list cache with TTL + LRU eviction.
+# Key: (provider, base_url) -> (timestamp, models[])
+# - TTL: entries older than _MODEL_LIST_TTL_SEC are treated as stale on read.
+# - Size cap: at most _MODEL_LIST_MAX_ENTRIES; oldest entry evicted on insert.
+from collections import OrderedDict
+
+_MODEL_LIST_CACHE: OrderedDict = OrderedDict()
 _MODEL_LIST_TTL_SEC = 600  # 10 minutes
+_MODEL_LIST_MAX_ENTRIES = 16
+
+
+def _cache_put(key: tuple, models: list) -> None:
+    """Insert into bounded cache, evicting oldest if over cap."""
+    if key in _MODEL_LIST_CACHE:
+        _MODEL_LIST_CACHE.move_to_end(key)
+    _MODEL_LIST_CACHE[key] = (time.time(), models)
+    while len(_MODEL_LIST_CACHE) > _MODEL_LIST_MAX_ENTRIES:
+        _MODEL_LIST_CACHE.popitem(last=False)
+
+
+def _cache_get(key: tuple):
+    """Return (timestamp, models) if fresh, else None.
+
+    Expired entries are NOT removed — they remain available for fallback
+    on network failure (handler reads _MODEL_LIST_CACHE directly).
+    Eviction is handled only by the size cap in _cache_put.
+    """
+    entry = _MODEL_LIST_CACHE.get(key)
+    if entry is None:
+        return None
+    ts, models = entry
+    if (time.time() - ts) >= _MODEL_LIST_TTL_SEC:
+        return None
+    # Touch for LRU
+    _MODEL_LIST_CACHE.move_to_end(key)
+    return entry
+
 
 # Provider catalog for UI dropdown (R16 dynamic)
 PROVIDER_CATALOG = []
@@ -290,16 +323,14 @@ async def llm_models_handler(request: web.Request) -> web.Response:
             status=400,
         )
 
-    # Cache Key: (provider, base_url)
-    # This ensures switching base_url (e.g. from OpenAI to local proxy) doesn't use stale cache.
+    # R60: Cache key includes provider + base_url to avoid cross-provider staleness.
     cache_key = (provider, base_url)
 
-    # Check Cache
-    now = time.time()
-    cached_entry = _MODEL_LIST_CACHE.get(cache_key)
+    # R60: Check bounded TTL+LRU cache
+    cached_entry = _cache_get(cache_key)
     if cached_entry:
-        ts, models = cached_entry
-        if (now - ts) < _MODEL_LIST_TTL_SEC and isinstance(models, list):
+        _ts, models = cached_entry
+        if isinstance(models, list):
             return web.json_response(
                 {"ok": True, "provider": provider, "models": models, "cached": True}
             )
@@ -354,16 +385,17 @@ async def llm_models_handler(request: web.Request) -> web.Response:
         payload = json.loads(body.decode("utf-8", errors="replace"))
         models = _extract_models_from_payload(payload)
 
-        # Update Cache
-        _MODEL_LIST_CACHE[cache_key] = (now, models)
+        # R60: Insert/update bounded cache
+        _cache_put(cache_key, models)
 
         return web.json_response(
             {"ok": True, "provider": provider, "models": models, "cached": False}
         )
     except urllib.error.HTTPError as e:
-        # Fallback Check
-        if cached_entry:
-            ts, models = cached_entry
+        # Fallback: serve stale cache entry (if any) on fetch failure
+        stale = _MODEL_LIST_CACHE.get(cache_key)
+        if stale:
+            _ts, models = stale
             warning = f"Using cached list (refresh failed: HTTP {e.code} {e.reason})"
             return web.json_response(
                 {
@@ -379,9 +411,9 @@ async def llm_models_handler(request: web.Request) -> web.Response:
         )
     except Exception as e:
         logger.exception("Failed to fetch model list")
-        # Fallback Check
-        if cached_entry:
-            ts, models = cached_entry
+        stale = _MODEL_LIST_CACHE.get(cache_key)
+        if stale:
+            _ts, models = stale
             warning = f"Using cached list (refresh failed: {str(e)})"
             return web.json_response(
                 {
@@ -668,6 +700,12 @@ async def llm_chat_handler(request: web.Request) -> web.Response:
     except ImportError:
         from services.provider_errors import ProviderHTTPError  # type: ignore
 
+    # S28: CSRF protection for convenience mode (no admin token configured)
+    admin_token_configured = bool(get_admin_token())
+    resp = require_same_origin_if_no_token(request, admin_token_configured)
+    if resp:
+        return resp
+
     # S17: Rate Limit
     if not check_rate_limit(request, "admin"):
         return web.json_response(
@@ -719,6 +757,15 @@ async def llm_chat_handler(request: web.Request) -> web.Response:
             status=400,
         )
 
+    # S29: Debug-level structured log — metadata only, never raw prompt content.
+    logger.debug(
+        "llm_chat: has_system=%s msg_len=%d temperature=%.2f max_tokens=%d",
+        bool(system),
+        len(user_message),
+        temperature,
+        max_tokens,
+    )
+
     try:
         client = LLMClient()
 
@@ -756,8 +803,20 @@ async def llm_chat_handler(request: web.Request) -> web.Response:
             payload["retry_after"] = e.retry_after
         return web.json_response(payload, status=e.status_code)
     except Exception as e:
-        # Log type + message (never log prompt content).
-        logger.error(f"LLM chat request failed: {type(e).__name__}: {e}")
+        # S29: Redact exception message to prevent accidental prompt content leakage.
+        # Downgraded from error → warning (non-actionable for operators when provider-specific).
+        try:
+            from services.redaction import redact_text  # type: ignore
+        except ImportError:
+            try:
+                from ..services.redaction import redact_text
+            except ImportError:
+                redact_text = str  # type: ignore
+        logger.warning(
+            "LLM chat request failed: %s: %s",
+            type(e).__name__,
+            redact_text(str(e)),
+        )
         return web.json_response(
             {"ok": False, "error": "llm_request_failed"},
             status=500,

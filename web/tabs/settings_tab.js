@@ -153,6 +153,18 @@ export const settingsTab = {
             providerRow.appendChild(providerSelect);
             llmSec.appendChild(providerRow);
 
+            // R60: Reset model list when provider changes (avoids showing stale models from another provider).
+            const resetModelList = () => {
+                modelsLoaded = false;
+                lastLoadedModels = [];
+                modelSelect.innerHTML = "";
+                modelDatalist.innerHTML = "";
+                modelsStatus.textContent = "";
+                modelsStatus.className = "moltbot-status";
+                updateModelUiVisibility();
+            };
+            providerSelect.onchange = () => resetModelList();
+
             // Model input
             const modelRow = createFormRow("Model", sources.model === "env");
             const modelWrap = document.createElement("div");
@@ -295,6 +307,9 @@ export const settingsTab = {
             baseUrlInput.disabled = sources.base_url === "env";
             baseUrlRow.appendChild(baseUrlInput);
             llmSec.appendChild(baseUrlRow);
+
+            // R60: Reset model list when base URL changes (cache key includes base_url).
+            baseUrlInput.onchange = () => resetModelList();
 
             // Timeout
             const timeoutRow = createFormRow("Timeout (sec)", sources.timeout_sec === "env");

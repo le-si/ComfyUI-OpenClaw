@@ -1,6 +1,9 @@
 # Normalize line endings for cross-platform consistency (pre-commit safe on Windows).
 * text=auto eol=lf
 
+# POSIX shell scripts must stay LF.
+*.sh text eol=lf
+
 # Windows scripts should remain CRLF.
 *.bat text eol=crlf
 *.cmd text eol=crlf
