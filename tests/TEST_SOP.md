@@ -13,6 +13,20 @@ Every implementation plan must include the **full test validation procedure** in
 - `pre-commit` installed: `python -m pip install pre-commit`
 - Frontend deps installed: `npm install`
 
+## Environment Sanity (Required Guardrails)
+
+- **Python interpreter must be consistent** for all test commands.
+  - Verify: `python -c "import sys; print(sys.executable)"`
+  - If you use conda or venv, ensure the same interpreter runs unit tests and connector tests.
+- **Project venv recommended**: use `.venv` when possible to avoid mixed dependencies.
+  - Create: `python -m venv .venv`
+  - Activate (bash): `source .venv/bin/activate`
+  - Activate (pwsh): `.\.venv\Scripts\Activate.ps1`
+  - If tests fail due to missing deps in CI parity, **rerun in `.venv` and record that in the implementation record**.
+- **Node version must be 18+** before E2E:
+  - Verify: `node -v`
+  - If mismatch in WSL, use the Node 18 path specified below.
+
 ## Environment Parity Guardrails (CI Safety)
 
 To avoid local vs CI mismatches:
@@ -21,6 +35,43 @@ To avoid local vs CI mismatches:
 - If a test needs a module that may be missing in CI, **use a stub** (e.g. `sys.modules["services.foo"]=stub`) or patch the **module-level import location** used by the code under test.
 - If a test truly requires an optional dependency, mark it with a **clear skip** when the dep is unavailable.
 - Record the environment in the implementation record (OS, Python, Node, and any extras installed) so mismatches are visible.
+
+## Offline / Restricted Network Pre-commit (Fail Fast)
+
+If your environment cannot reach GitHub, `pre-commit` may hang while installing hook repos.
+Use **one** of the following, and record it in the implementation record:
+
+1) **Preferred**: run once with network to populate the cache
+   - `pre-commit install --install-hooks`
+   - Subsequent runs will use cache without network.
+2) **Proxy**: configure `https_proxy` / `http_proxy` for GitHub access.
+3) **Fail-fast guard**: if GitHub access is blocked, stop and fix connectivity or use cached hooks.
+   - Do not mark pre-commit as "passed" unless the hooks complete successfully.
+
+Do **not** switch hooks to `repo: local` unless CI is updated to match, or you will reintroduce local/CI divergence.
+
+## Pre-commit Cache Repair (If Cache Is Corrupt)
+
+Symptoms:
+- `InvalidManifestError` or missing `.pre-commit-hooks.yaml`
+- partial venv in pre-commit cache
+- repeated install failures even after network is restored
+
+Fix (choose one):
+
+1) **Clear cache and re-install hooks (recommended)**
+   - Linux/WSL:
+     - `rm -rf ~/.cache/pre-commit`
+     - `pre-commit install --install-hooks`
+   - Windows (PowerShell):
+     - `Remove-Item -Recurse -Force \"$env:USERPROFILE\\.cache\\pre-commit\"`
+     - `pre-commit install --install-hooks`
+
+2) **Set a clean cache location**
+   - `set PRE_COMMIT_HOME=/path/to/new/cache`
+   - `pre-commit install --install-hooks`
+
+If GitHub is unreachable, the above will still fail; fix connectivity or configure a proxy first.
 
 ## Required Pre-Push Workflow (Must Run)
 

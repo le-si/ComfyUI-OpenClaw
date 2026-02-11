@@ -56,7 +56,7 @@
         url.endsWith('/openclaw/health') || url.endsWith('/api/openclaw/health') ||
         url.endsWith('/moltbot/health') || url.endsWith('/api/moltbot/health')
       ) {
-        return new Response(JSON.stringify({ ok: true, pack: { name: 'ComfyUI-OpenClaw', version: 'test' }, access_policy: { observability: 'loopback_only', token_configured: false } }), {
+        return new Response(JSON.stringify({ ok: true, pack: { name: 'ComfyUI-OpenClaw', version: 'test' }, access_policy: { observability: 'loopback_only', token_configured: false }, config: {} }), {
           status: 200,
           headers: { 'Content-Type': 'application/json' },
         });

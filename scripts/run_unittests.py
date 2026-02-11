@@ -9,10 +9,10 @@ from __future__ import annotations
 import argparse
 import io
 import os
-from pathlib import Path
 import sys
 import time
 import unittest
+from pathlib import Path
 
 
 def _build_suite(args: argparse.Namespace) -> unittest.TestSuite:
