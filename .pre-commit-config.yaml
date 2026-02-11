@@ -10,7 +10,13 @@ exclude: |
     node_modules/.*|
     test-results/.*|
     playwright-report/.*|
-    playwright/\\.cache/.*
+    playwright/\\.cache/.*|
+    \\.venv/.*|
+    \\.tmp/.*|
+    moltbot_state/.*|
+    openclaw_state/.*|
+    media/.*|
+    __pycache__/.*
   )$
 
 repos:
@@ -35,6 +41,16 @@ repos:
         exclude: |
           (?x)^(
             REFERENCE/.*|
+            node_modules/.*|
+            test-results/.*|
+            playwright-report/.*|
+            playwright/\.cache/.*|
+            \.venv/.*|
+            \.tmp/.*|
+            moltbot_state/.*|
+            openclaw_state/.*|
+            media/.*|
+            __pycache__/.*|
             tests/.*|
             web/tests/.*|
             .*\.lock$|
@@ -57,9 +73,10 @@ repos:
     hooks:
       - id: black-single
         name: black (single-file)
-        entry: python -B scripts/precommit_black_single.py
-        language: python
-        additional_dependencies: ['black==24.1.1']
+        # CRITICAL: keep `language: system` to avoid `pip install .` bootstrap stalls
+        # on mixed Windows/WSL environments.
+        entry: bash scripts/precommit_black_single.sh
+        language: system
         types: [python]
         # Remove --check --diff to auto-format
 

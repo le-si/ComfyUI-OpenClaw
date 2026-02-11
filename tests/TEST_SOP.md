@@ -73,6 +73,33 @@ Fix (choose one):
 
 If GitHub is unreachable, the above will still fail; fix connectivity or configure a proxy first.
 
+## Windows Lock-File Guardrail (Required on WinError 5)
+
+When you see:
+- `PermissionError: [WinError 5] Access is denied`
+- failure deleting `...\\.cache\\pre-commit\\...\\Scripts\\*.exe`
+
+this is usually a **locked executable**, not a logic error in hooks.
+
+Use this exact sequence (PowerShell):
+
+1) Stop active processes that may hold the file lock
+   - `Get-Process pre-commit,python,git -ErrorAction SilentlyContinue | Stop-Process -Force`
+2) Use a repo-local pre-commit cache (prevents repeated global-cache lock conflicts)
+   - `$env:PRE_COMMIT_HOME = \"$PWD\\.tmp\\pre-commit-win\"`
+3) Clean and rerun
+   - `pre-commit clean`
+   - `pre-commit run detect-secrets --all-files`
+   - `pre-commit run --all-files --show-diff-on-failure`
+4) If cleanup still fails, remove cache directory directly
+   - `Remove-Item -Recurse -Force \"$env:PRE_COMMIT_HOME\"`
+   - `New-Item -ItemType Directory -Force \"$env:PRE_COMMIT_HOME\" | Out-Null`
+   - rerun step (3)
+
+Rules:
+- Do not run multiple pre-commit commands in parallel on Windows.
+- Do not mark tests as passed if hooks were interrupted by lock errors.
+
 ## Required Pre-Push Workflow (Must Run)
 
 ### Optional automation (recommended)
