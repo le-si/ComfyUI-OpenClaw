@@ -12,7 +12,34 @@ import time
 try:
     from aiohttp import web
 except ImportError:  # pragma: no cover (optional for unit tests)
-    web = None  # type: ignore
+    # CRITICAL test/CI fallback:
+    # Some CI/unit environments intentionally run without aiohttp installed.
+    # Keep this module importable by providing a minimal `web` shim used by
+    # handler tests (json_response/status/body), while production keeps real aiohttp.
+    class _MockResponse:
+        def __init__(
+            self, payload: dict, status: int = 200, headers: dict | None = None
+        ):
+            self.status = status
+            self.headers = headers or {}
+            self.body = json.dumps(payload).encode("utf-8")
+
+    class _MockWeb:
+        _IS_MOCKWEB = True
+
+        class Request:  # pragma: no cover - typing shim only
+            pass
+
+        class Response:  # pragma: no cover - typing shim only
+            pass
+
+        @staticmethod
+        def json_response(
+            payload: dict, status: int = 200, headers: dict | None = None
+        ):
+            return _MockResponse(payload, status=status, headers=headers)
+
+    web = _MockWeb()  # type: ignore
 
 # Import discipline:
 # - In real ComfyUI runtimes, this pack is loaded as a package and must use package-relative imports.
