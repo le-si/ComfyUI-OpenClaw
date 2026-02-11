@@ -43,13 +43,9 @@ if __package__ and "." in __package__:
     from ..services.templates import get_template_service
     from ..services.trace import get_effective_trace_id
     from ..services.webhook_auth import require_auth
-    from ..services.webhook_mapping import (
-        apply_mapping,
-        resolve_profile,
-    )  # F40
+    from ..services.webhook_mapping import apply_mapping, resolve_profile  # F40
 else:  # pragma: no cover (test-only import mode)
     from models.schemas import MAX_BODY_SIZE, WebhookJobRequest
-
     from services.execution_budgets import (  # type: ignore
         BudgetExceededError,
         check_render_size,
@@ -59,10 +55,10 @@ else:  # pragma: no cover (test-only import mode)
     from services.templates import get_template_service  # type: ignore
     from services.trace import get_effective_trace_id  # type: ignore
     from services.webhook_auth import require_auth  # type: ignore
-    from services.webhook_mapping import (
+    from services.webhook_mapping import (  # F40  # type: ignore
         apply_mapping,
         resolve_profile,
-    )  # F40  # type: ignore
+    )
 
 logger = logging.getLogger("ComfyUI-OpenClaw.api.webhook_validate")
 

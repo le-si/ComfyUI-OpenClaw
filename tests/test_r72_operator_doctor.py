@@ -4,13 +4,15 @@ Tests for R72 Operator Doctor.
 
 import unittest
 from pathlib import Path
+
 from services.operator_doctor import (
     CheckResult,
     DoctorReport,
     check_python_version,
-    check_venv,
     check_state_dir,
+    check_venv,
 )
+
 
 class TestOperatorDoctor(unittest.TestCase):
     def test_report_structure(self):
@@ -40,6 +42,7 @@ class TestOperatorDoctor(unittest.TestCase):
         # Mock env vars?? No, just call directly.
         # But check_state_dir reads os.environ.
         import os
+
         orig = os.environ.get("MOLTBOT_STATE_DIR")
         try:
             os.environ["MOLTBOT_STATE_DIR"] = "/tmp/does-not-exist-123"
@@ -52,6 +55,7 @@ class TestOperatorDoctor(unittest.TestCase):
                 os.environ["MOLTBOT_STATE_DIR"] = orig
             else:
                 del os.environ["MOLTBOT_STATE_DIR"]
+
 
 if __name__ == "__main__":
     unittest.main()

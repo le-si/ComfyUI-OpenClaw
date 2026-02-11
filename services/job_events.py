@@ -32,12 +32,8 @@ logger = logging.getLogger("ComfyUI-OpenClaw.services.job_events")
 # Configuration
 # ---------------------------------------------------------------------------
 
-MAX_EVENT_BUFFER = int(
-    os.environ.get("OPENCLAW_JOB_EVENT_BUFFER_SIZE", "500")
-)
-EVENT_TTL_SEC = int(
-    os.environ.get("OPENCLAW_JOB_EVENT_TTL_SEC", "600")
-)  # 10 minutes
+MAX_EVENT_BUFFER = int(os.environ.get("OPENCLAW_JOB_EVENT_BUFFER_SIZE", "500"))
+EVENT_TTL_SEC = int(os.environ.get("OPENCLAW_JOB_EVENT_TTL_SEC", "600"))  # 10 minutes
 
 
 # ---------------------------------------------------------------------------

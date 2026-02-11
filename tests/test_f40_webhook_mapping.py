@@ -3,15 +3,16 @@ Tests for F40 Webhook Mapping Engine.
 """
 
 import unittest
+
 from services.webhook_mapping import (
-    MappingProfile,
-    FieldMapping,
+    BUILTIN_PROFILES,
     CoercionType,
-    apply_mapping,
-    resolve_profile,
+    FieldMapping,
+    MappingProfile,
     _resolve_path,
     _set_path,
-    BUILTIN_PROFILES,
+    apply_mapping,
+    resolve_profile,
 )
 
 

@@ -3,6 +3,7 @@ Tests for R71 Job Event Stream (SSE).
 """
 
 import unittest
+
 from services.job_events import (
     JobEvent,
     JobEventStore,

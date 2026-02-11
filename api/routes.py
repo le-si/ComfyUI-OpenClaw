@@ -46,6 +46,7 @@ if web is not None:
             llm_models_handler,
             llm_test_handler,
         )
+        from ..api.events import events_poll_handler, events_stream_handler  # R71
         from ..api.preflight_handler import inventory_handler, preflight_handler
         from ..api.secrets import (
             secrets_delete_handler,
@@ -56,7 +57,6 @@ if web is not None:
         from ..api.webhook import webhook_handler
         from ..api.webhook_submit import webhook_submit_handler
         from ..api.webhook_validate import webhook_validate_handler
-        from ..api.events import events_poll_handler, events_stream_handler  # R71
 
         # IMPORTANT: use PACK_VERSION / PACK_START_TIME from config.
         # Do NOT import VERSION or config_path (they do not exist) or route registration will fail.
@@ -89,6 +89,10 @@ if web is not None:
             llm_models_handler,
             llm_test_handler,
         )
+        from api.events import (  # R71  # type: ignore
+            events_poll_handler,
+            events_stream_handler,
+        )
         from api.preflight_handler import inventory_handler, preflight_handler
         from api.secrets import (
             secrets_delete_handler,
@@ -99,10 +103,6 @@ if web is not None:
         from api.webhook import webhook_handler
         from api.webhook_submit import webhook_submit_handler
         from api.webhook_validate import webhook_validate_handler
-        from api.events import (
-            events_poll_handler,
-            events_stream_handler,
-        )  # R71  # type: ignore
 
         # IMPORTANT: keep PACK_* imports aligned with config.py (VERSION/config_path do not exist).
         from config import LOG_FILE, PACK_NAME, PACK_START_TIME, PACK_VERSION

@@ -28,10 +28,7 @@ if __package__ and "." in __package__:
     from ..services.trace import get_effective_trace_id
     from ..services.trace_store import trace_store
     from ..services.webhook_auth import require_auth
-    from ..services.webhook_mapping import (
-        apply_mapping,
-        resolve_profile,
-    )  # F40
+    from ..services.webhook_mapping import apply_mapping, resolve_profile  # F40
 else:  # pragma: no cover (test-only import mode)
     from models.schemas import MAX_BODY_SIZE, WebhookJobRequest
     from services.callback_delivery import start_callback_watch  # type: ignore
@@ -45,10 +42,10 @@ else:  # pragma: no cover (test-only import mode)
     from services.trace import get_effective_trace_id  # type: ignore
     from services.trace_store import trace_store  # type: ignore
     from services.webhook_auth import require_auth  # type: ignore
-    from services.webhook_mapping import (
+    from services.webhook_mapping import (  # F40  # type: ignore
         apply_mapping,
         resolve_profile,
-    )  # F40  # type: ignore
+    )
 
 logger = logging.getLogger("ComfyUI-OpenClaw.api.webhook_submit")
 

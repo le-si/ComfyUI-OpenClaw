@@ -192,9 +192,7 @@ def check_node_version(report: DoctorReport) -> None:
         )
         return
     try:
-        out = subprocess.check_output(
-            [node, "--version"], text=True, timeout=5
-        ).strip()
+        out = subprocess.check_output([node, "--version"], text=True, timeout=5).strip()
         report.environment["node"] = out
         major = int(out.lstrip("v").split(".")[0])
         if major >= 18:
