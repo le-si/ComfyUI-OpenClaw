@@ -35,7 +35,35 @@ require_cmd() {
   fi
 }
 
+ensure_single_pre_commit_source() {
+  # CRITICAL (Windows): mixed pre-commit installations (e.g. Roaming Python + conda)
+  # can spawn competing process trees and repeatedly lock hook executables.
+  # Fail fast here so users fix PATH/source before running expensive checks.
+  local paths=()
+  local line
+  while IFS= read -r line; do
+    paths+=("$line")
+  done < <(type -a pre-commit 2>/dev/null | sed -n 's/^pre-commit is //p' | awk '!seen[$0]++')
+
+  [ "${#paths[@]}" -eq 0 ] && return 0
+
+  case "$UNAME_S" in
+    MINGW*|MSYS*|CYGWIN*)
+      if [ "${#paths[@]}" -gt 1 ]; then
+        echo "[pre-push] ERROR: multiple pre-commit executables detected on PATH." >&2
+        for line in "${paths[@]}"; do
+          echo "[pre-push]   - $line" >&2
+        done
+        echo "[pre-push] Fix: keep a single source (recommended: conda env), uninstall the others, then retry." >&2
+        echo "[pre-push] Example: py -3.12 -m pip uninstall pre-commit" >&2
+        exit 1
+      fi
+      ;;
+  esac
+}
+
 require_cmd pre-commit
+ensure_single_pre_commit_source
 require_cmd npm
 
 run_pre_commit_safe() {
