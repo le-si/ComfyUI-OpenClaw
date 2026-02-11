@@ -106,11 +106,13 @@ class TestSettingsSchema(unittest.TestCase):
         """coerce_dict should handle valid + invalid keys together."""
         from services.settings_schema import coerce_dict
 
-        coerced, errors = coerce_dict({
-            "provider": "openai",
-            "timeout_sec": "30",
-            "unknown_key": "foo",
-        })
+        coerced, errors = coerce_dict(
+            {
+                "provider": "openai",
+                "timeout_sec": "30",
+                "unknown_key": "foo",
+            }
+        )
         self.assertEqual(len(errors), 1)
         self.assertIn("unknown_key", errors[0])
         self.assertEqual(coerced["provider"], "openai")
@@ -126,12 +128,14 @@ class TestSettingsSchema(unittest.TestCase):
             register_setting,
         )
 
-        register_setting(SettingDef(
-            key="custom_flag",
-            type=SettingType.BOOL,
-            default=False,
-            description="Test custom flag",
-        ))
+        register_setting(
+            SettingDef(
+                key="custom_flag",
+                type=SettingType.BOOL,
+                default=False,
+                description="Test custom flag",
+            )
+        )
         self.assertTrue(is_registered("custom_flag"))
 
         val, err = coerce_value("custom_flag", "true")

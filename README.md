@@ -25,11 +25,48 @@ It is designed to make **ComfyUI a reliable automation target** with an explicit
 <details>
 <summary><strong>Sprint A: closes out with five concrete reliability and security improvements</strong></summary>
 
- - Configuration save/apply now returns explicit apply metadata, so callers can see what was actually applied, what requires restart, and which effective provider/model is active.
- - The Settings update flow adds defensive guards against stale or partial state, reducing accidental overwrites.
- - Provider/model precedence is now deterministic across save, test, and chat paths, and prevents model contamination when switching providers.
- - In localhost convenience mode (no admin token configured), chat requests enforce same-origin CSRF protection: same-origin requests are allowed, cross-origin requests are denied.
- - Model-list fetching now uses a bounded in-memory cache keyed by provider and base URL, with a 5-minute TTL and LRU eviction cap to improve responsiveness and stability.
+- Configuration save/apply now returns explicit apply metadata, so callers can see what was actually applied, what requires restart, and which effective provider/model is active.
+- The Settings update flow adds defensive guards against stale or partial state, reducing accidental overwrites.
+- Provider/model precedence is now deterministic across save, test, and chat paths, and prevents model contamination when switching providers.
+- In localhost convenience mode (no admin token configured), chat requests enforce same-origin CSRF protection: same-origin requests are allowed, cross-origin requests are denied.
+- Model-list fetching now uses a bounded in-memory cache keyed by provider and base URL, with a 5-minute TTL and LRU eviction cap to improve responsiveness and stability.
+
+</details>
+
+<details>
+<summary><strong>Sprint B: ships security doctor diagnostics, registry quarantine gates, and constrained transforms defaults</strong></summary>
+
+- Added the Security Doctor surface (`GET /openclaw/security/doctor`) for operator-focused security posture checks across endpoint exposure, token boundaries, SSRF posture, state-dir permissions, redaction drift, runtime mode, feature flags, and API key posture.
+- Added optional remote pack registry quarantine controls with explicit lifecycle states, SHA256 integrity verification, bounded local persistence, and per-entry audit trail; this path remains disabled by default and fail-closed.
+- Added optional constrained transform execution with trusted-directory + integrity pinning, timeout and output-size caps, and bounded chain execution semantics; transforms remain disabled by default and mapping-only behavior remains intact unless explicitly enabled.
+
+</details>
+
+<details>
+<summary><strong>Settings contract, frontend graceful degradation, and provider drift governance</strong></summary>
+
+- Enforced a strict settings write contract with schema-coerced values and explicit unknown-key rejection, reducing save/apply regressions across ComfyUI variants.
+- Hardened frontend behavior to degrade safely when optional routes or runtime capabilities are unavailable, with clearer recovery hints instead of brittle failures.
+- Added provider alias/deprecation governance and normalization coverage to reduce preset drift as upstream model IDs and endpoint shapes evolve.
+
+</details>
+
+<details>
+<summary><strong>Mapping v1, job event stream, and operator doctor</strong></summary>
+
+- Added webhook mapping engine v1 with declarative field mapping + type coercion, enabling external payload normalization without custom adapter code paths.
+- Added real-time job event stream support via SSE (`/openclaw/events/stream`) with bounded buffering and polling fallback (`/openclaw/events`) for compatibility.
+- Added Operator Doctor diagnostics tooling for runtime/deployment checks (Python/Node environment, state-dir posture, and contract readiness signals).
+
+</details>
+
+<details>
+<summary><strong>Security doctor, registry quarantine, and constrained transforms</strong></summary>
+
+- Added Security Doctor diagnostics surface (`GET /openclaw/security/doctor`) for operator-focused security posture checks and guarded remediation flow.
+- Added optional remote registry quarantine lifecycle controls with integrity verification, bounded local persistence, and explicit trust/audit gates.
+- Added optional constrained transform execution with integrity pinning, timeout/output caps, and bounded chain semantics; default posture remains disabled/fail-closed.
+
 </details>
 
 ---
@@ -220,6 +257,17 @@ Notes:
 - `POST /openclaw/webhook/validate` — dry-run render (no queue submission; includes render budgets + warnings)
 - `POST /openclaw/webhook/submit` — full pipeline: auth → normalize → idempotency → render → submit to queue
 
+**Payload Mapping (F40)**:
+
+- Submit arbitrary payloads (GitHub, Discord, etc.) by adding `X-Webhook-Mapping-Profile: github_push` (or `discord_message`).
+- The internal engine maps fields to the canonical schema before validation.
+
+**Job Events (R71)**:
+
+- `GET /openclaw/events/stream` — SSE endpoint for real-time job lifecycle events (queued, running, completed, failed).
+- `GET /openclaw/events` — JSON polling fallback.
+- Supports `Last-Event-ID` header to resume streams without data loss.
+
 Request schema (minimal):
 
 ```json
@@ -409,6 +457,16 @@ Notes:
 
 - If your pack folder name is not `comfyui-openclaw`, the smoke script may need `OPENCLAW_PACK_IMPORT_NAME=your-folder-name`.
 - If imports fail with a `services.*` module error, check for name collisions with other custom nodes and prefer package-relative imports.
+
+### Operator Doctor (R72)
+
+Run the built-in diagnostic tool to verify environment readiness (libraries, permissions, contract files):
+
+```bash
+python scripts/operator_doctor.py
+# Or check JSON output:
+python scripts/operator_doctor.py --json
+```
 
 ### Webhooks return `403 auth_not_configured`
 

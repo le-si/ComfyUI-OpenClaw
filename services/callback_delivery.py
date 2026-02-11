@@ -10,6 +10,7 @@ from typing import Any, Dict, Optional, Set
 
 from .async_utils import run_in_thread
 from .comfyui_history import extract_images, fetch_history, get_job_status
+from .job_events import JobEventType, get_job_event_store  # R71
 from .metrics import metrics
 from .safe_io import SSRFError, safe_request_json
 from .trace_store import trace_store
@@ -94,11 +95,35 @@ async def _watch_and_deliver(
     if history_item is None:
         logger.warning(f"[Callback] Job {prompt_id} never completed (timed out)")
         metrics.inc("callback_timeout")
+        try:
+            get_job_event_store().emit(
+                JobEventType.FAILED,
+                prompt_id=prompt_id,
+                trace_id=trace_id or "",
+                data={"reason": "timeout"},
+            )
+        except Exception:
+            pass
         return
 
     # R25: Record completion
     try:
         trace_store.add_event(prompt_id, trace_id or "", get_job_status(history_item))
+    except Exception:
+        pass
+
+    # R71: Emit lifecycle event (COMPLETED vs ERROR)
+    status = get_job_status(history_item)
+    try:
+        event_type = (
+            JobEventType.COMPLETED if status == "completed" else JobEventType.FAILED
+        )
+        get_job_event_store().emit(
+            event_type,
+            prompt_id=prompt_id,
+            trace_id=trace_id or "",
+            data={"status": status},
+        )
     except Exception:
         pass
 
@@ -133,6 +158,13 @@ async def _watch_and_deliver(
                     "delivered",
                     {"host": (url.split("/")[2] if "/" in url else url)},
                 )
+                # R71: Emit delivery success
+                get_job_event_store().emit(
+                    JobEventType.CALLBACK_SENT,
+                    prompt_id=prompt_id,
+                    trace_id=trace_id or "",
+                    data={"target": url},
+                )
             except Exception:
                 pass
             metrics.inc("callback_success")
@@ -148,3 +180,12 @@ async def _watch_and_deliver(
 
     logger.error(f"[Callback] All retries failed for {prompt_id}")
     metrics.inc("callback_failed")
+    try:
+        get_job_event_store().emit(
+            JobEventType.CALLBACK_FAILED,
+            prompt_id=prompt_id,
+            trace_id=trace_id or "",
+            data={"target": url, "reason": "max_retries_exceeded"},
+        )
+    except Exception:
+        pass

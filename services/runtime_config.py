@@ -13,14 +13,16 @@ logger = logging.getLogger("ComfyUI-OpenClaw.services.runtime_config")
 
 # R70: Settings schema registry (type coercion + unknown-key rejection)
 try:
-    from .settings_schema import (
-        coerce_dict as _schema_coerce,
-        get_schema_map,
-        is_registered as _schema_registered,
-    )
+    from .settings_schema import coerce_dict as _schema_coerce
+    from .settings_schema import get_schema_map
+    from .settings_schema import is_registered as _schema_registered
 except ImportError:
     try:
-        from services.settings_schema import coerce_dict as _schema_coerce, get_schema_map, is_registered as _schema_registered  # type: ignore
+        from services.settings_schema import (
+            coerce_dict as _schema_coerce,  # type: ignore
+        )
+        from services.settings_schema import get_schema_map
+        from services.settings_schema import is_registered as _schema_registered
     except ImportError:
         # Fail-open: no schema enforcement if module missing
         def _schema_coerce(updates):  # type: ignore
@@ -349,7 +351,10 @@ def validate_config_update(updates: Dict[str, Any]) -> Tuple[Dict[str, Any], lis
                 valid_providers = set(list_providers())
             except ImportError:
                 try:
-                    from services.providers.catalog import list_providers, normalize_provider_id  # type: ignore
+                    from services.providers.catalog import (  # type: ignore
+                        list_providers,
+                        normalize_provider_id,
+                    )
 
                     val = normalize_provider_id(val)
                     valid_providers = set(list_providers())

@@ -94,7 +94,10 @@ class TestProviderGovernanceInfo(unittest.TestCase):
 
     def test_governance_info_complete(self):
         """get_provider_governance_info should return entries for all catalog providers."""
-        from services.providers.catalog import PROVIDER_CATALOG, get_provider_governance_info
+        from services.providers.catalog import (
+            PROVIDER_CATALOG,
+            get_provider_governance_info,
+        )
 
         info = get_provider_governance_info()
         for pid in PROVIDER_CATALOG:
@@ -166,6 +169,7 @@ class TestR73InValidateConfig(unittest.TestCase):
                     self.assertEqual(sanitized["provider"], "gemini")
         finally:
             shutil.rmtree(temp_dir, ignore_errors=True)
+
     def test_local_alias_with_localhost_base_url_accepted(self):
         """provider=local (alias for lmstudio) + localhost URL should be accepted."""
         import shutil
@@ -181,10 +185,12 @@ class TestR73InValidateConfig(unittest.TestCase):
                 ):
                     from services.runtime_config import validate_config_update
 
-                    sanitized, errors = validate_config_update({
-                        "provider": "local",
-                        "base_url": "http://127.0.0.1:1234",
-                    })
+                    sanitized, errors = validate_config_update(
+                        {
+                            "provider": "local",
+                            "base_url": "http://127.0.0.1:1234",
+                        }
+                    )
                     self.assertEqual(len(errors), 0, f"Unexpected errors: {errors}")
                     self.assertEqual(sanitized["provider"], "lmstudio")
                     self.assertEqual(sanitized["base_url"], "http://127.0.0.1:1234")
@@ -206,10 +212,12 @@ class TestR73InValidateConfig(unittest.TestCase):
                 ):
                     from services.runtime_config import validate_config_update
 
-                    sanitized, errors = validate_config_update({
-                        "provider": "local",
-                        "base_url": "http://localhost:1234",
-                    })
+                    sanitized, errors = validate_config_update(
+                        {
+                            "provider": "local",
+                            "base_url": "http://localhost:1234",
+                        }
+                    )
                     self.assertEqual(len(errors), 0, f"Unexpected errors: {errors}")
                     self.assertEqual(sanitized["provider"], "lmstudio")
 
@@ -231,10 +239,12 @@ class TestR73InValidateConfig(unittest.TestCase):
                 ):
                     from services.runtime_config import validate_config_update
 
-                    sanitized, errors = validate_config_update({
-                        "provider": "chatgpt",
-                        "base_url": "",  # empty = use default
-                    })
+                    sanitized, errors = validate_config_update(
+                        {
+                            "provider": "chatgpt",
+                            "base_url": "",  # empty = use default
+                        }
+                    )
                     self.assertEqual(len(errors), 0, f"Unexpected errors: {errors}")
                     self.assertEqual(sanitized["provider"], "openai")
         finally:

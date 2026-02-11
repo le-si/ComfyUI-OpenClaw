@@ -14,6 +14,7 @@ logger = logging.getLogger("ComfyUI-OpenClaw.services.settings_schema")
 
 class SettingType(Enum):
     """Supported setting value types."""
+
     STRING = "string"
     INT = "int"
     FLOAT = "float"
@@ -25,6 +26,7 @@ class SettingType(Enum):
 @dataclass
 class SettingDef:
     """Definition for a single registered setting key."""
+
     key: str
     type: SettingType
     default: Any
@@ -85,6 +87,7 @@ def get_schema_map() -> Dict[str, dict]:
 
 # ──────────────────────────── Coercion ────────────────────────────
 
+
 def coerce_value(key: str, raw: Any) -> Tuple[Any, Optional[str]]:
     """
     Coerce *raw* to the registered type for *key*.
@@ -136,9 +139,7 @@ def _coerce(defn: SettingDef, raw: Any) -> Any:
     if defn.type == SettingType.ENUM:
         s = str(raw).strip()
         if defn.enum_values and s not in defn.enum_values:
-            raise ValueError(
-                f"'{s}' not in allowed values: {defn.enum_values}"
-            )
+            raise ValueError(f"'{s}' not in allowed values: {defn.enum_values}")
         return s
 
     if defn.type == SettingType.LIST_STRING:
@@ -176,43 +177,71 @@ def coerce_dict(updates: Dict[str, Any]) -> Tuple[Dict[str, Any], List[str]]:
 
 # ──────────────────────────── Bootstrap defaults ────────────────────────────
 
+
 def _register_defaults() -> None:
     """Register built-in OpenClaw setting definitions."""
     _defs = [
         SettingDef(
-            key="provider", type=SettingType.STRING, default="openai",
-            description="LLM provider ID", category="llm",
+            key="provider",
+            type=SettingType.STRING,
+            default="openai",
+            description="LLM provider ID",
+            category="llm",
         ),
         SettingDef(
-            key="model", type=SettingType.STRING, default="gpt-4o-mini",
-            description="LLM model ID", category="llm",
+            key="model",
+            type=SettingType.STRING,
+            default="gpt-4o-mini",
+            description="LLM model ID",
+            category="llm",
         ),
         SettingDef(
-            key="base_url", type=SettingType.STRING, default="",
-            description="Custom base URL (empty = provider default)", category="llm",
+            key="base_url",
+            type=SettingType.STRING,
+            default="",
+            description="Custom base URL (empty = provider default)",
+            category="llm",
         ),
         SettingDef(
-            key="timeout_sec", type=SettingType.INT, default=120,
-            min_val=5, max_val=300,
-            description="LLM request timeout in seconds", category="llm",
+            key="timeout_sec",
+            type=SettingType.INT,
+            default=120,
+            min_val=5,
+            max_val=300,
+            description="LLM request timeout in seconds",
+            category="llm",
         ),
         SettingDef(
-            key="max_retries", type=SettingType.INT, default=3,
-            min_val=0, max_val=10,
-            description="Max LLM retry attempts", category="llm",
+            key="max_retries",
+            type=SettingType.INT,
+            default=3,
+            min_val=0,
+            max_val=10,
+            description="Max LLM retry attempts",
+            category="llm",
         ),
         SettingDef(
-            key="fallback_models", type=SettingType.LIST_STRING, default=[],
-            description="Failover model list (comma-separated)", category="llm",
+            key="fallback_models",
+            type=SettingType.LIST_STRING,
+            default=[],
+            description="Failover model list (comma-separated)",
+            category="llm",
         ),
         SettingDef(
-            key="fallback_providers", type=SettingType.LIST_STRING, default=[],
-            description="Failover provider list (comma-separated)", category="llm",
+            key="fallback_providers",
+            type=SettingType.LIST_STRING,
+            default=[],
+            description="Failover provider list (comma-separated)",
+            category="llm",
         ),
         SettingDef(
-            key="max_failover_candidates", type=SettingType.INT, default=3,
-            min_val=1, max_val=5,
-            description="Max failover candidates", category="llm",
+            key="max_failover_candidates",
+            type=SettingType.INT,
+            default=3,
+            min_val=1,
+            max_val=5,
+            description="Max failover candidates",
+            category="llm",
         ),
     ]
     for d in _defs:

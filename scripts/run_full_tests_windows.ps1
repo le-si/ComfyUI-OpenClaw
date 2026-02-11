@@ -18,12 +18,23 @@ function Require-Cmd($cmd) {
   }
 }
 
+function Invoke-Checked {
+  param(
+    [Parameter(Mandatory = $true)][string]$Label,
+    [Parameter(Mandatory = $true)][scriptblock]$Command
+  )
+  & $Command
+  if ($LASTEXITCODE -ne 0) {
+    throw "[tests] ERROR: $Label failed with exit code $LASTEXITCODE"
+  }
+}
+
 Require-Cmd node
 Require-Cmd npm
 
 # Prefer project-local virtualenv to avoid global PATH / cache conflicts on Windows.
 $venvPython = Join-Path $root ".venv\Scripts\python.exe"
-if (-not (Test-Path $venvPython)) {
+function New-ProjectVenv {
   Write-Host "[tests] Creating project venv at $root\.venv ..."
   if (Get-Command py -ErrorAction SilentlyContinue) {
     & py -3 -m venv .venv
@@ -34,26 +45,70 @@ if (-not (Test-Path $venvPython)) {
   }
 }
 
+function Test-VenvPython {
+  param([string]$PythonExe)
+  if (-not (Test-Path $PythonExe)) {
+    return $false
+  }
+  try {
+    & $PythonExe -c "import sys; print(sys.executable)" | Out-Null
+    return $true
+  } catch {
+    return $false
+  }
+}
+
+function Test-VenvCfgWindowsCompatible {
+  $cfg = Join-Path $root ".venv\pyvenv.cfg"
+  if (-not (Test-Path $cfg)) {
+    return $false
+  }
+  try {
+    $content = Get-Content $cfg -Raw
+    # WSL/Linux-built venvs typically contain POSIX home paths (e.g. /usr/bin)
+    if ($content -match "home\s*=\s*/") {
+      return $false
+    }
+    return $true
+  } catch {
+    return $false
+  }
+}
+
+if (-not (Test-Path $venvPython)) {
+  New-ProjectVenv
+} elseif (-not (Test-VenvCfgWindowsCompatible)) {
+  Write-Host "[tests] WARN: existing .venv was created from non-Windows interpreter; recreating ..."
+  Remove-Item -Recurse -Force ".venv"
+  New-ProjectVenv
+} elseif (-not (Test-VenvPython -PythonExe $venvPython)) {
+  Write-Host "[tests] WARN: existing .venv is invalid for current OS/interpreter; recreating ..."
+  Remove-Item -Recurse -Force ".venv"
+  New-ProjectVenv
+}
+
+if (-not (Test-VenvPython -PythonExe $venvPython)) {
+  throw "[tests] ERROR: project venv python is not runnable: $venvPython"
+}
+
 $hasPreCommit = $true
-try {
-  & $venvPython -m pre_commit --version | Out-Null
-} catch {
+& $venvPython -m pre_commit --version | Out-Null
+if ($LASTEXITCODE -ne 0) {
   $hasPreCommit = $false
 }
 if (-not $hasPreCommit) {
   Write-Host "[tests] Installing pre-commit into project venv ..."
-  & $venvPython -m pip install -U pip pre-commit
+  Invoke-Checked "pip install pre-commit" { & $venvPython -m pip install -U pip pre-commit }
 }
 
 $hasAiohttp = $true
-try {
-  & $venvPython -c "import aiohttp" | Out-Null
-} catch {
+& $venvPython -c "import aiohttp" | Out-Null
+if ($LASTEXITCODE -ne 0) {
   $hasAiohttp = $false
 }
 if (-not $hasAiohttp) {
   Write-Host "[tests] Installing aiohttp into project venv ..."
-  & $venvPython -m pip install aiohttp
+  Invoke-Checked "pip install aiohttp" { & $venvPython -m pip install aiohttp }
 }
 
 # Ensure Node >= 18
@@ -72,16 +127,16 @@ if ($nodeMajor -lt 18) {
 Write-Host "[tests] Node version: $(node -v)"
 
 Write-Host "[tests] 1/4 detect-secrets"
-& $venvPython -m pre_commit run detect-secrets --all-files
+Invoke-Checked "detect-secrets" { & $venvPython -m pre_commit run detect-secrets --all-files }
 
 Write-Host "[tests] 2/4 pre-commit all hooks"
-& $venvPython -m pre_commit run --all-files --show-diff-on-failure
+Invoke-Checked "pre-commit all hooks" { & $venvPython -m pre_commit run --all-files --show-diff-on-failure }
 
 Write-Host "[tests] 3/4 backend unit tests"
 $env:MOLTBOT_STATE_DIR = "$root\moltbot_state\_local_unit"
-& $venvPython scripts\run_unittests.py --start-dir tests --pattern "test_*.py"
+Invoke-Checked "backend unit tests" { & $venvPython scripts\run_unittests.py --start-dir tests --pattern "test_*.py" }
 
 Write-Host "[tests] 4/4 frontend E2E"
-npm test
+Invoke-Checked "frontend E2E" { npm test }
 
 Write-Host "[tests] PASS"
