@@ -100,7 +100,34 @@ Rules:
 - Do not run multiple pre-commit commands in parallel on Windows.
 - Do not mark tests as passed if hooks were interrupted by lock errors.
 
+### Windows PATH and Process Reality Checks
+
+Use these checks before assuming the hook runner is broken:
+
+1) `where pre-commit` can be empty in PowerShell even when module execution works.
+   - Prefer:
+     - `python -m pre_commit --version`
+     - `Get-Command pre-commit -All`
+2) If multiple Python installations exist, always run:
+   - `python -m pre_commit ...`
+   instead of relying on bare `pre-commit` resolution.
+3) If process cleanup looks inconsistent, inspect actual command lines:
+   - `Get-CimInstance Win32_Process | Where-Object { $_.CommandLine -match 'pre-commit|detect-secrets|black' } | Select-Object ProcessId,ParentProcessId,Name,CommandLine`
+4) `taskkill` may report "no running instance" when the PID already exited between scans.
+   - Re-run the `Get-CimInstance` query above before deciding a process is still stuck.
+
 ## Required Pre-Push Workflow (Must Run)
+
+### Optional: One-Command Full Test Scripts (Fastest)
+
+Use these if you want a single command that runs **all required steps** (detect-secrets, pre-commit, unit tests, E2E). These scripts also handle the most common environment issues (Windows cache locks, Black cache, Node 18).
+Both scripts enforce a project-local `.venv` and will bootstrap missing test tooling (`pre-commit`, and `aiohttp` where needed for imports).
+If `.venv` exists but is invalid for the current OS (for example created in WSL then reused in Windows), rerun via the script so it can recreate the environment.
+
+- Linux/WSL:
+  - `bash scripts/run_full_tests_linux.sh`
+- Windows (PowerShell):
+  - `powershell -File scripts/run_full_tests_windows.ps1`
 
 ### Optional automation (recommended)
 

@@ -1,0 +1,88 @@
+#!/usr/bin/env bash
+set -euo pipefail
+set -o errtrace
+
+ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+cd "$ROOT_DIR"
+
+trap 'echo "[tests] ERROR at line ${LINENO}: ${BASH_COMMAND}" >&2' ERR
+
+echo "[tests] repo: $ROOT_DIR"
+
+# Cache isolation for pre-commit + black
+export PRE_COMMIT_HOME="${PRE_COMMIT_HOME:-$ROOT_DIR/.tmp/pre-commit}"
+export BLACK_CACHE_DIR="${BLACK_CACHE_DIR:-$ROOT_DIR/.tmp/black-cache}"
+mkdir -p "$PRE_COMMIT_HOME" "$BLACK_CACHE_DIR"
+
+require_cmd() {
+  local cmd="$1"
+  if ! command -v "$cmd" >/dev/null 2>&1; then
+    echo "[tests] ERROR: missing command: $cmd" >&2
+    exit 1
+  fi
+}
+
+require_cmd node
+require_cmd npm
+
+# Always use project-local venv to avoid global interpreter / tool drift.
+VENV_PY="$ROOT_DIR/.venv/bin/python"
+if [ ! -x "$VENV_PY" ]; then
+  echo "[tests] Creating project venv at $ROOT_DIR/.venv ..."
+  if command -v python3 >/dev/null 2>&1; then
+    python3 -m venv "$ROOT_DIR/.venv"
+  elif command -v python >/dev/null 2>&1; then
+    python -m venv "$ROOT_DIR/.venv"
+  else
+    echo "[tests] ERROR: no bootstrap Python found (need python3 or python)" >&2
+    exit 1
+  fi
+fi
+
+if ! "$VENV_PY" -m pre_commit --version >/dev/null 2>&1; then
+  echo "[tests] Installing pre-commit into project venv ..."
+  "$VENV_PY" -m pip install -U pip pre-commit
+fi
+
+if ! "$VENV_PY" -c "import aiohttp" >/dev/null 2>&1; then
+  echo "[tests] Installing aiohttp into project venv ..."
+  "$VENV_PY" -m pip install aiohttp
+fi
+
+NODE_MAJOR="$(node -p "process.versions.node.split('.')[0]")"
+if [ "$NODE_MAJOR" -lt 18 ]; then
+  # Best-effort: try to use nvm if available
+  if [ -n "${NVM_DIR:-}" ] && [ -s "${NVM_DIR}/nvm.sh" ]; then
+    # shellcheck disable=SC1090
+    . "${NVM_DIR}/nvm.sh"
+  elif [ -s "${HOME}/.nvm/nvm.sh" ]; then
+    # shellcheck disable=SC1091
+    . "${HOME}/.nvm/nvm.sh"
+  fi
+  if command -v nvm >/dev/null 2>&1; then
+    nvm use 18 >/dev/null 2>&1 || true
+  fi
+  NODE_MAJOR="$(node -p "process.versions.node.split('.')[0]")"
+fi
+
+if [ "$NODE_MAJOR" -lt 18 ]; then
+  echo "[tests] ERROR: Node >=18 required, current=$(node -v)" >&2
+  echo "[tests] Hint: source ~/.nvm/nvm.sh && nvm use 18" >&2
+  exit 1
+fi
+
+echo "[tests] Node version: $(node -v)"
+
+echo "[tests] 1/4 detect-secrets"
+"$VENV_PY" -m pre_commit run detect-secrets --all-files
+
+echo "[tests] 2/4 pre-commit all hooks"
+"$VENV_PY" -m pre_commit run --all-files --show-diff-on-failure
+
+echo "[tests] 3/4 backend unit tests"
+MOLTBOT_STATE_DIR="$ROOT_DIR/moltbot_state/_local_unit" "$VENV_PY" scripts/run_unittests.py --start-dir tests --pattern "test_*.py"
+
+echo "[tests] 4/4 frontend E2E"
+npm test
+
+echo "[tests] PASS"

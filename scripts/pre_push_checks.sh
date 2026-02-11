@@ -40,35 +40,92 @@ require_cmd() {
   fi
 }
 
-ensure_single_pre_commit_source() {
-  # CRITICAL (Windows): mixed pre-commit installations (e.g. Roaming Python + conda)
-  # can spawn competing process trees and repeatedly lock hook executables.
-  # Fail fast here so users fix PATH/source before running expensive checks.
-  local paths=()
-  local line
-  while IFS= read -r line; do
-    paths+=("$line")
-  done < <(type -a pre-commit 2>/dev/null | sed -n 's/^pre-commit is //p' | awk '!seen[$0]++')
-
-  [ "${#paths[@]}" -eq 0 ] && return 0
-
+resolve_venv_python() {
   case "$UNAME_S" in
     MINGW*|MSYS*|CYGWIN*)
-      if [ "${#paths[@]}" -gt 1 ]; then
-        echo "[pre-push] ERROR: multiple pre-commit executables detected on PATH." >&2
-        for line in "${paths[@]}"; do
-          echo "[pre-push]   - $line" >&2
-        done
-        echo "[pre-push] Fix: keep a single source (recommended: conda env), uninstall the others, then retry." >&2
-        echo "[pre-push] Example: py -3.12 -m pip uninstall pre-commit" >&2
-        exit 1
-      fi
+      echo "$ROOT_DIR/.venv/Scripts/python.exe"
+      ;;
+    *)
+      echo "$ROOT_DIR/.venv/bin/python"
       ;;
   esac
 }
 
-require_cmd pre-commit
-ensure_single_pre_commit_source
+is_venv_python_healthy() {
+  local venv_py="$1"
+  # CRITICAL: on Git Bash/Windows, `test -x` is unreliable for `.exe`.
+  # Use existence + actual interpreter execution probe instead.
+  [ -f "$venv_py" ] || return 1
+  "$venv_py" -c "import sys; print(sys.executable)" >/dev/null 2>&1
+}
+
+bootstrap_venv() {
+  local venv_py
+  venv_py="$(resolve_venv_python)"
+  if is_venv_python_healthy "$venv_py"; then
+    echo "$venv_py"
+    return 0
+  fi
+
+  if [ -e "$venv_py" ]; then
+    echo "[pre-push] WARN: existing .venv is invalid; recreating with a Windows-native Python." >&2
+    rm -rf "$ROOT_DIR/.venv"
+  fi
+
+  echo "[pre-push] INFO: creating project .venv ..." >&2
+  case "$UNAME_S" in
+    MINGW*|MSYS*|CYGWIN*)
+      # CRITICAL: on Git Bash, `python3` may resolve to MSYS `/usr/bin/python`,
+      # which creates a broken Windows venv (`No Python at "/usr/bin\python.exe"`).
+      # Always prefer Windows-native launchers/interpreters.
+      if command -v py.exe >/dev/null 2>&1; then
+        py.exe -3 -m venv "$ROOT_DIR/.venv"
+      elif [ -x "/c/Windows/py.exe" ]; then
+        /c/Windows/py.exe -3 -m venv "$ROOT_DIR/.venv"
+      elif command -v python.exe >/dev/null 2>&1; then
+        python.exe -m venv "$ROOT_DIR/.venv"
+      elif command -v py >/dev/null 2>&1; then
+        py -3 -m venv "$ROOT_DIR/.venv"
+      else
+        echo "[pre-push] ERROR: no Windows Python launcher found (py.exe/python.exe)." >&2
+        exit 1
+      fi
+      ;;
+    *)
+      if command -v python3 >/dev/null 2>&1; then
+        python3 -m venv "$ROOT_DIR/.venv"
+      elif command -v python >/dev/null 2>&1; then
+        python -m venv "$ROOT_DIR/.venv"
+      else
+        echo "[pre-push] ERROR: no bootstrap Python found (python3/python)." >&2
+        exit 1
+      fi
+      ;;
+  esac
+
+  if ! is_venv_python_healthy "$venv_py"; then
+    echo "[pre-push] ERROR: failed to initialize project .venv." >&2
+    exit 1
+  fi
+  echo "$venv_py"
+}
+
+pre_commit_cmd() {
+  "$VENV_PY" -m pre_commit "$@"
+}
+
+# CRITICAL: pre-push must always run pre-commit from project .venv.
+# Do not switch this back to global `pre-commit` command lookup.
+VENV_PY="$(bootstrap_venv)"
+if ! "$VENV_PY" -m pre_commit --version >/dev/null 2>&1; then
+  echo "[pre-push] INFO: installing pre-commit into project .venv ..." >&2
+  "$VENV_PY" -m pip install -U pip pre-commit
+fi
+if ! "$VENV_PY" -c "import black" >/dev/null 2>&1; then
+  # Keep black in the same interpreter used by local black-single hook.
+  echo "[pre-push] INFO: installing black into project .venv ..." >&2
+  "$VENV_PY" -m pip install black==24.1.1
+fi
 require_cmd npm
 
 run_pre_commit_safe() {
@@ -93,7 +150,7 @@ run_pre_commit_safe() {
     fi
   }
 
-  if pre-commit "$@" 2>&1 | tee "$tmp_log"; then
+  if pre_commit_cmd "$@" 2>&1 | tee "$tmp_log"; then
     rm -f "$tmp_log"
     rm -f "$lower_log"
     return 0
@@ -103,12 +160,12 @@ run_pre_commit_safe() {
 
   if grep -q "invalidmanifesterror" "$lower_log"; then
     echo "[pre-push] WARN: pre-commit cache manifest is corrupted; running clean + cache reset + single retry." >&2
-    if ! pre-commit clean; then
+    if ! pre_commit_cmd clean; then
       echo "[pre-push] WARN: 'pre-commit clean' failed; trying manual cache reset." >&2
       reset_cache
     fi
     reset_cache
-    pre-commit "$@"
+    pre_commit_cmd "$@"
     rm -f "$tmp_log"
     rm -f "$lower_log"
     return 0
@@ -123,7 +180,7 @@ run_pre_commit_safe() {
       rm -rf "$BLACK_CACHE_DIR" 2>/dev/null || true
       mkdir -p "$BLACK_CACHE_DIR"
     fi
-    pre-commit "$@"
+    pre_commit_cmd "$@"
     rm -f "$tmp_log"
     rm -f "$lower_log"
     return 0

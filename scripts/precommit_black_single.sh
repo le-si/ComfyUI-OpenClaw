@@ -6,16 +6,42 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 export BLACK_CACHE_DIR="${BLACK_CACHE_DIR:-$ROOT_DIR/.tmp/black-cache}"
 mkdir -p "$BLACK_CACHE_DIR"
 
-if command -v python >/dev/null 2>&1; then
-  # CRITICAL cross-platform guard:
-  # WSL sometimes has only `python3`, while Windows shells usually expose `python`.
-  # Keep this fallback chain to avoid false hook failures like "Executable `python` not found".
-  exec python -B scripts/precommit_black_single.py "$@"
+# CRITICAL: Always prefer project-local .venv interpreter for Black.
+# Without this, Windows can accidentally pick global Python (e.g. C:\Program Files\Python312)
+# where `black` is not installed, causing flaky pre-commit failures.
+can_use_python() {
+  local candidate="$1"
+  [ -f "$candidate" ] || return 1
+  "$candidate" -c "import sys; print(sys.executable)" >/dev/null 2>&1
+}
+
+has_project_venv=false
+[ -d "$ROOT_DIR/.venv" ] && has_project_venv=true
+
+if can_use_python "$ROOT_DIR/.venv/Scripts/python.exe"; then
+  PY_CMD="$ROOT_DIR/.venv/Scripts/python.exe"
+elif can_use_python "$ROOT_DIR/.venv/bin/python"; then
+  PY_CMD="$ROOT_DIR/.venv/bin/python"
+elif [ "$has_project_venv" = true ]; then
+  # CRITICAL: if .venv exists but is broken, fail fast instead of silently
+  # falling back to a random global Python (which reintroduces flakiness).
+  echo "ERROR: project .venv exists but Python is unusable. Recreate .venv and retry." >&2
+  exit 1
+elif command -v python >/dev/null 2>&1; then
+  # Fallback chain only for environments that intentionally do not use .venv.
+  PY_CMD="$(command -v python)"
+elif command -v python3 >/dev/null 2>&1; then
+  PY_CMD="$(command -v python3)"
+else
+  echo "ERROR: python interpreter not found (need python or python3 in PATH)." >&2
+  exit 127
 fi
 
-if command -v python3 >/dev/null 2>&1; then
-  exec python3 -B scripts/precommit_black_single.py "$@"
+# Ensure black exists in the selected interpreter.
+# This self-heals first-run environments and prevents recurring "No module named black".
+if ! "$PY_CMD" -c "import black" >/dev/null 2>&1; then
+  echo "[black-single] INFO: installing black==24.1.1 into selected Python env ..." >&2
+  "$PY_CMD" -m pip install black==24.1.1 >/dev/null
 fi
 
-echo "ERROR: python interpreter not found (need python or python3 in PATH)." >&2
-exit 127
+exec "$PY_CMD" -B scripts/precommit_black_single.py "$@"
