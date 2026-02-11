@@ -13,6 +13,11 @@ from typing import Optional
 
 from aiohttp import web
 
+# NOTE FOR CALLERS:
+# This module has an import-time aiohttp dependency. If a caller must remain
+# importable in minimal test/CI environments without aiohttp, guard the import
+# at the caller boundary (see `api/config.py` for the required pattern).
+
 logger = logging.getLogger("ComfyUI-OpenClaw.services.csrf_protection")
 
 # Allowed localhost origins for same-origin checks
