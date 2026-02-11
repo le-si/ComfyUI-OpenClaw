@@ -16,11 +16,20 @@ export const settingsTab = {
         container.innerHTML = `
             <div class="moltbot-panel">
                 <div class="moltbot-scroll-area" id="openclaw-settings-scroll">
-                    <div>Loading...</div>
+                    <div class="openclaw-loading-gate" style="padding:16px;text-align:center;opacity:0.6;">Initializing…</div>
                 </div>
             </div>
         `;
         const scroll = container.querySelector("#openclaw-settings-scroll");
+
+        // F39: Capability probe FIRST — gate optional features before any rendering.
+        let capabilities = {};
+        try {
+            const capRes = await moltbotApi.getCapabilities();
+            if (capRes.ok && capRes.data?.features) {
+                capabilities = capRes.data.features;
+            }
+        } catch { /* non-fatal */ }
 
         const [healthRes, logRes, configRes] = await Promise.all([
             moltbotApi.getHealth(),
@@ -28,6 +37,7 @@ export const settingsTab = {
             moltbotApi.getConfig(),
         ]);
 
+        // F39: Remove loading gate (readiness gating prevents first-render flicker)
         scroll.innerHTML = "";
 
         // If everything is 404, backend routes not registered
@@ -55,6 +65,21 @@ export const settingsTab = {
             `;
             warn.appendChild(hint);
             scroll.appendChild(warn);
+        }
+
+        // F39: Show degraded-state banner when capabilities are missing or partial
+        if (!all404 && healthRes.ok && Object.keys(capabilities).length === 0) {
+            const degradedWarn = createSection("Limited Mode");
+            const degradedHint = document.createElement("div");
+            degradedHint.className = "moltbot-note";
+            degradedHint.style.borderLeft = "4px solid #ffaa00";
+            degradedHint.innerHTML = `
+                <b>⚠ Capabilities endpoint unavailable.</b> Some features may be hidden or behave differently.
+                This can happen if the backend pack version is older than the frontend UI.
+                <br/>Consider updating ComfyUI-OpenClaw to the latest version.
+            `;
+            degradedWarn.appendChild(degradedHint);
+            scroll.appendChild(degradedWarn);
         }
 
         // -- System Health & Diagnostics --
@@ -136,6 +161,8 @@ export const settingsTab = {
             const providers = data.providers || [];
             // R53: Apply feedback (optional, for debug/toast later)
             const applyInfo = data.apply || {};
+            // R70: Settings schema (for frontend validation)
+            const schema = data.schema || {};
 
 
             // Provider dropdown
@@ -401,6 +428,17 @@ export const settingsTab = {
                     timeout_sec: parseInt(timeoutInput.value) || 120,
                     max_retries: parseInt(retriesInput.value) || 3,
                 };
+
+                // R70: Client-side schema coercion (if schema available)
+                if (schema && Object.keys(schema).length > 0) {
+                    for (const [k, v] of Object.entries(updates)) {
+                        const def = schema[k];
+                        if (!def) continue;
+                        if (def.type === "int" && typeof v !== "number") {
+                            updates[k] = parseInt(v) || def.default;
+                        }
+                    }
+                }
 
                 const res = await moltbotApi.putConfig(updates, token);
                 // R53: Hot-Reload Feedback

@@ -171,7 +171,11 @@ class TestRuntimeConfig(unittest.TestCase):
 
         sanitized, errors = validate_config_update({"api_key": "secret123"})
 
-        self.assertIn("Unknown key: api_key", errors)
+        # R70: Schema coercion now reports "Unknown setting key" instead of "Unknown key"
+        self.assertTrue(
+            any("api_key" in e for e in errors),
+            f"Expected api_key rejection in errors: {errors}",
+        )
         self.assertNotIn("api_key", sanitized)
 
     def test_base_url_policy(self):
