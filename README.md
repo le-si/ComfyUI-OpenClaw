@@ -20,12 +20,25 @@ It is designed to make **ComfyUI a reliable automation target** with an explicit
 - Strict outbound SSRF policy (callbacks + custom LLM base URLs)
 - Secrets are never stored in browser storage (optional server-side key store is local-only convenience)
 
+## Latest Updates - Click to expand
+
+<details>
+<summary><strong>Sprint A: closes out with five concrete reliability and security improvements</strong></summary>
+
+ - Configuration save/apply now returns explicit apply metadata, so callers can see what was actually applied, what requires restart, and which effective provider/model is active.
+ - The Settings update flow adds defensive guards against stale or partial state, reducing accidental overwrites.
+ - Provider/model precedence is now deterministic across save, test, and chat paths, and prevents model contamination when switching providers.
+ - In localhost convenience mode (no admin token configured), chat requests enforce same-origin CSRF protection: same-origin requests are allowed, cross-origin requests are denied.
+ - Model-list fetching now uses a bounded in-memory cache keyed by provider and base URL, with a 5-minute TTL and LRU eviction cap to improve responsiveness and stability.
+</details>
+
 ---
 
 ## Table of Contents
 
 - [Installation](#installation)
 - [Quick Start (Minimal)](#quick-start-minimal)
+  - [Sprint A Reliability Highlights](#sprint-a-reliability-highlights)
   - [Configure an LLM key](#1-configure-an-llm-key-for-plannerrefinervision-helpers)
   - [Configure webhook auth](#2-configure-webhook-auth-required-for-webhook)
   - [Set an Admin Token](#3-optional-recommended-set-an-admin-token)
@@ -66,6 +79,16 @@ Alternative install options:
 If the UI loads but endpoints return 404, ComfyUI likely did not load the Python part of the pack (see “Troubleshooting”).
 
 ## Quick Start (Minimal)
+
+### Sprint A Reliability Highlights
+
+Sprint A closes the M1 release gate with stronger config behavior and safer local convenience mode:
+
+- `R53`: config save/apply semantics are explicit in `PUT /openclaw/config` responses
+- `R54`: frontend guards for stale/partial settings states reduce accidental overwrite risk
+- `R57`: provider/model precedence is deterministic and stable across save/test/chat paths
+- `S27`: `/openclaw/llm/chat` enforces same-origin checks in localhost convenience mode
+- `R60`: `/openclaw/llm/models` uses bounded in-memory caching (TTL + max entries)
 
 ### 1) Configure an LLM key (for Planner/Refiner/vision helpers)
 
@@ -166,10 +189,25 @@ Access control:
 - `GET /openclaw/config` — effective config + sources + provider catalog (observability-protected)
 - `PUT /openclaw/config` — update non-secret config (admin boundary)
 - `POST /openclaw/llm/test` — test connectivity (admin boundary)
+- `POST /openclaw/llm/chat` — connector chat completion path (admin boundary)
+- `GET /openclaw/llm/models` — fetch model list for selected provider/base URL
 
 Notes:
 
 - Queue submission uses `OPENCLAW_COMFYUI_URL` (default `http://127.0.0.1:8188`).
+- `PUT /openclaw/config` now returns apply metadata so callers can reason about what actually took effect:
+  - `apply.ok`, `apply.requires_restart`, `apply.applied_keys`
+  - `apply.effective_provider`, `apply.effective_model`
+- Provider/model precedence is strict:
+  - explicit request values > persisted config > provider defaults
+  - model is revalidated against provider when provider changes (prevents cross-provider contamination)
+- `POST /openclaw/llm/chat` in localhost convenience mode (no admin token configured):
+  - allows same-origin loopback requests
+  - denies cross-origin requests with CSRF error
+- `/openclaw/llm/models` cache behavior:
+  - key: `(provider, base_url)`
+  - TTL: 5 minutes
+  - capacity: 16 entries (LRU eviction)
 - Custom `base_url` is protected by SSRF policy:
   - built-in provider hosts are allowlisted by default
   - allow additional exact hosts via `OPENCLAW_LLM_ALLOWED_HOSTS=host1,host2`
