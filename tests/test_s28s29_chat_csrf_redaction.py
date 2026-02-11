@@ -46,9 +46,7 @@ class TestS28ChatCSRFGuard(unittest.IsolatedAsyncioTestCase):
     @patch("api.config.get_admin_token", return_value="")
     @patch("api.config.check_rate_limit", return_value=True)
     @patch("api.config.require_admin_token", return_value=(True, None))
-    async def test_cross_origin_denied_no_token(
-        self, _admin, _rate, _get_token
-    ):
+    async def test_cross_origin_denied_no_token(self, _admin, _rate, _get_token):
         """Cross-origin request denied when no admin token configured."""
         request = _make_request(
             origin="https://evil.example.com",
@@ -62,9 +60,7 @@ class TestS28ChatCSRFGuard(unittest.IsolatedAsyncioTestCase):
     @patch("api.config.get_admin_token", return_value="")
     @patch("api.config.check_rate_limit", return_value=True)
     @patch("api.config.require_admin_token", return_value=(True, None))
-    async def test_same_origin_allowed_no_token(
-        self, _admin, _rate, _get_token
-    ):
+    async def test_same_origin_allowed_no_token(self, _admin, _rate, _get_token):
         """Same-origin loopback request allowed in convenience mode."""
         request = _make_request(
             origin="http://127.0.0.1:8188",
@@ -80,9 +76,7 @@ class TestS28ChatCSRFGuard(unittest.IsolatedAsyncioTestCase):
     @patch("api.config.get_admin_token", return_value="my-secret-token")
     @patch("api.config.check_rate_limit", return_value=True)
     @patch("api.config.require_admin_token", return_value=(True, None))
-    async def test_token_configured_bypasses_csrf(
-        self, _admin, _rate, _get_token
-    ):
+    async def test_token_configured_bypasses_csrf(self, _admin, _rate, _get_token):
         """When admin token is configured, CSRF check is skipped (token auth sufficient)."""
         request = _make_request(
             origin="https://evil.example.com",
