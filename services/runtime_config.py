@@ -1,14 +1,39 @@
 """
-Runtime Config Service (R21/S13).
+Runtime Config Service (R21/S13/R70).
 Manages non-secret LLM configuration with precedence, validation, and persistence.
+R70: Strict settings registration + schema-coerced writes.
 """
 
 import json
 import logging
 import os
-from typing import Any, Dict, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 logger = logging.getLogger("ComfyUI-OpenClaw.services.runtime_config")
+
+# R70: Settings schema registry (type coercion + unknown-key rejection)
+try:
+    from .settings_schema import coerce_dict as _schema_coerce
+    from .settings_schema import get_schema_map
+    from .settings_schema import is_registered as _schema_registered
+except ImportError:
+    try:
+        from services.settings_schema import (
+            coerce_dict as _schema_coerce,  # type: ignore
+        )
+        from services.settings_schema import get_schema_map
+        from services.settings_schema import is_registered as _schema_registered
+    except ImportError:
+        # Fail-open: no schema enforcement if module missing
+        def _schema_coerce(updates):  # type: ignore
+            return updates, []
+
+        def get_schema_map():  # type: ignore
+            return {}
+
+        def _schema_registered(key):  # type: ignore
+            return True
+
 
 # Config file location (under state dir)
 try:
@@ -280,9 +305,15 @@ def get_effective_config() -> Tuple[Dict[str, Any], Dict[str, str]]:
     return effective, sources
 
 
+def get_settings_schema() -> dict:
+    """R70: Return the full settings schema map for frontend consumption."""
+    return get_schema_map()
+
+
 def validate_config_update(updates: Dict[str, Any]) -> Tuple[Dict[str, Any], list]:
     """
     Validate and sanitize config updates.
+    R70: Schema-coerced writes — types are coerced before any domain validation.
 
     Returns:
         Tuple of (sanitized_updates, errors)
@@ -290,13 +321,18 @@ def validate_config_update(updates: Dict[str, Any]) -> Tuple[Dict[str, Any], lis
     sanitized = {}
     errors = []
 
-    for key, val in updates.items():
-        # Only allow whitelisted keys
+    # R70: Phase 1 — Schema coercion (unknown keys rejected here)
+    coerced, coercion_errors = _schema_coerce(updates)
+    if coercion_errors:
+        errors.extend(coercion_errors)
+
+    for key, val in coerced.items():
+        # Belt-and-suspenders: also check legacy whitelist
         if key not in ALLOWED_LLM_KEYS:
             errors.append(f"Unknown key: {key}")
             continue
 
-        # Validate types and constraints
+        # Validate types and constraints (post-coercion, values should already be typed)
         if key in CONSTRAINTS:
             if not isinstance(val, (int, float)):
                 errors.append(f"{key} must be a number")
@@ -307,24 +343,34 @@ def validate_config_update(updates: Dict[str, Any]) -> Tuple[Dict[str, Any], lis
                 errors.append("provider must be a string")
                 continue
             # R16: Validate against known providers from catalog
+            # R73: Normalize provider aliases before validation
             try:
-                from .providers.catalog import list_providers
+                from .providers.catalog import list_providers, normalize_provider_id
 
+                val = normalize_provider_id(val)
                 valid_providers = set(list_providers())
             except ImportError:
-                # Fallback if catalog not available
-                valid_providers = {
-                    "openai",
-                    "anthropic",
-                    "openrouter",
-                    "gemini",
-                    "groq",
-                    "deepseek",
-                    "xai",
-                    "ollama",
-                    "lmstudio",
-                    "custom",
-                }
+                try:
+                    from services.providers.catalog import (  # type: ignore
+                        list_providers,
+                        normalize_provider_id,
+                    )
+
+                    val = normalize_provider_id(val)
+                    valid_providers = set(list_providers())
+                except ImportError:
+                    valid_providers = {
+                        "openai",
+                        "anthropic",
+                        "openrouter",
+                        "gemini",
+                        "groq",
+                        "deepseek",
+                        "xai",
+                        "ollama",
+                        "lmstudio",
+                        "custom",
+                    }
 
             if val not in valid_providers:
                 errors.append(f"Unknown provider: {val}")
@@ -341,7 +387,17 @@ def validate_config_update(updates: Dict[str, Any]) -> Tuple[Dict[str, Any], lis
             # S16: Base URL policy
 
             # 1. Allow if it matches the *default* base_url for the selected provider
-            provider_key = updates.get("provider", "custom").lower()
+            # R73 FIX: Use the already-normalized provider from sanitized (post
+            # normalize_provider_id), so alias providers like "local" → "lmstudio"
+            # hit the correct local-provider branch.
+            provider_key = sanitized.get(
+                "provider",
+                coerced.get("provider", updates.get("provider", "custom")),
+            )
+            if isinstance(provider_key, str):
+                provider_key = provider_key.lower()
+            else:
+                provider_key = "custom"
             known_provider = PROVIDER_CATALOG.get(provider_key)
 
             if known_provider and val == known_provider.base_url:

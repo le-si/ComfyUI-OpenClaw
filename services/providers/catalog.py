@@ -1,11 +1,12 @@
 """
 LLM Provider Catalog.
 R16: Default base URLs and provider metadata.
+R73: Provider drift governance — alias/deprecation metadata and resolution trace.
 """
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from enum import Enum
-from typing import Dict, Optional
+from typing import Dict, List, Optional, Tuple
 from urllib.parse import urlparse
 
 
@@ -128,8 +129,7 @@ DEFAULT_MODEL_BY_PROVIDER = {
 PROVIDER_ALIASES: Dict[str, str] = {
     "chatgpt": "openai",
     "claude": "anthropic",
-    "bard": "gemini",
-    "local": "lmstudio",  # Ambiguous, but map to one? Or reject?
+    "local": "lmstudio",  # Ambiguous, but map to one
     # Common typos/variations
     "open-ai": "openai",
     "antheropic": "anthropic",
@@ -155,9 +155,150 @@ MODEL_ALIASES: Dict[str, str] = {
 }
 
 
-def normalize_provider_id(provider: str) -> str:
-    """Normalize provider ID (resolve aliases)."""
+# R73: Deprecated aliases — maps obsolete names to canonical names + deprecation message.
+@dataclass
+class DeprecationEntry:
+    """Tracks a deprecated alias or model ID."""
+
+    canonical: str
+    message: str
+    since_version: str = ""
+
+
+DEPRECATED_PROVIDER_ALIASES: Dict[str, DeprecationEntry] = {
+    "bard": DeprecationEntry(
+        canonical="gemini",
+        message="'bard' has been renamed to 'gemini'. Please update your config.",
+        since_version="0.9.0",
+    ),
+}
+
+DEPRECATED_MODEL_ALIASES: Dict[str, DeprecationEntry] = {
+    "gpt-3.5-turbo": DeprecationEntry(
+        canonical="gpt-4o-mini",
+        message="'gpt-3.5-turbo' is deprecated; consider 'gpt-4o-mini' as a cost-effective replacement.",
+        since_version="0.8.0",
+    ),
+    "claude-3-sonnet-20240229": DeprecationEntry(
+        canonical="claude-sonnet-4-20250514",
+        message="'claude-3-sonnet-20240229' is outdated; consider 'claude-sonnet-4-20250514'.",
+        since_version="0.9.0",
+    ),
+    "gemini-pro": DeprecationEntry(
+        canonical="gemini-2.0-flash",
+        message="'gemini-pro' is deprecated; consider 'gemini-2.0-flash'.",
+        since_version="0.9.0",
+    ),
+}
+
+
+def resolve_provider_with_trace(provider: str) -> Tuple[str, List[str]]:
+    """
+    R73: Resolve provider ID through alias + deprecation chain.
+
+    Returns:
+        (final_provider_id, list_of_diagnostic_messages)
+    """
+    trace: List[str] = []
+    original = provider
     p = provider.lower().strip()
+
+    # Step 1: Check deprecated aliases (logs warning)
+    dep = DEPRECATED_PROVIDER_ALIASES.get(p)
+    if dep:
+        trace.append(f"DEPRECATED: '{p}' -> '{dep.canonical}' ({dep.message})")
+        p = dep.canonical
+
+    # Step 2: Check regular aliases
+    if p in PROVIDER_ALIASES:
+        canonical = PROVIDER_ALIASES[p]
+        trace.append(f"ALIAS: '{p}' -> '{canonical}'")
+        p = canonical
+
+    if p != original.lower().strip():
+        trace.insert(0, f"INPUT: '{original}'")
+        trace.append(f"FINAL: '{p}'")
+    else:
+        trace.append(f"RESOLVED: '{p}' (no transformation)")
+
+    return p, trace
+
+
+def resolve_model_with_trace(model: str) -> Tuple[str, List[str]]:
+    """
+    R73: Resolve model ID through alias + deprecation chain.
+
+    Returns:
+        (final_model_id, list_of_diagnostic_messages)
+    """
+    trace: List[str] = []
+    original = model
+    m = model.strip()
+    m_lower = m.lower()
+
+    # Step 1: Check deprecated models
+    dep = DEPRECATED_MODEL_ALIASES.get(m)
+    if not dep:
+        dep = DEPRECATED_MODEL_ALIASES.get(m_lower)
+    if dep:
+        trace.append(f"DEPRECATED: '{m}' -> '{dep.canonical}' ({dep.message})")
+        # Note: We do NOT auto-replace deprecated models — only warn.
+        # User should explicitly update.
+
+    # Step 2: Check regular aliases
+    alias = MODEL_ALIASES.get(m_lower)
+    if alias:
+        trace.append(f"ALIAS: '{m_lower}' -> '{alias}'")
+        m = alias
+    else:
+        # Preserve original casing if no alias match
+        pass
+
+    if m != original:
+        trace.insert(0, f"INPUT: '{original}'")
+        trace.append(f"FINAL: '{m}'")
+    else:
+        trace.append(f"RESOLVED: '{m}' (no transformation)")
+
+    return m, trace
+
+
+def get_provider_governance_info() -> Dict[str, dict]:
+    """
+    R73: Return governance metadata for all providers.
+    Used for diagnostics and frontend display.
+    """
+    info = {}
+    for pid, pinfo in PROVIDER_CATALOG.items():
+        entry: dict = {
+            "name": pinfo.name,
+            "default_model": DEFAULT_MODEL_BY_PROVIDER.get(pid),
+            "api_type": pinfo.api_type.value,
+            "requires_key": pinfo.env_key_name is not None,
+        }
+        # Check if any deprecated alias points here
+        dep_aliases = [
+            k for k, v in DEPRECATED_PROVIDER_ALIASES.items() if v.canonical == pid
+        ]
+        if dep_aliases:
+            entry["deprecated_aliases"] = dep_aliases
+
+        # Check regular aliases
+        aliases = [k for k, v in PROVIDER_ALIASES.items() if v == pid]
+        if aliases:
+            entry["aliases"] = aliases
+
+        info[pid] = entry
+    return info
+
+
+def normalize_provider_id(provider: str) -> str:
+    """Normalize provider ID (resolve deprecated + regular aliases)."""
+    p = provider.lower().strip()
+    # R73: Check deprecated aliases first
+    dep = DEPRECATED_PROVIDER_ALIASES.get(p)
+    if dep:
+        p = dep.canonical
     return PROVIDER_ALIASES.get(p, p)
 
 

@@ -70,6 +70,7 @@ if __package__ and "." in __package__:
         get_admin_token,
         get_apply_semantics,
         get_effective_config,
+        get_settings_schema,
         is_loopback_client,
         update_config,
     )
@@ -98,6 +99,7 @@ else:  # pragma: no cover (test-only import mode)
         get_admin_token,
         get_apply_semantics,
         get_effective_config,
+        get_settings_schema,
         is_loopback_client,
         update_config,
     )
@@ -205,6 +207,8 @@ async def config_get_handler(request: web.Request) -> web.Response:
                 "config": effective,
                 "sources": sources,
                 "providers": PROVIDER_CATALOG,
+                # R70: Settings schema for frontend type coercion / validation
+                "schema": get_settings_schema(),
                 # Simplified UX: writes are controlled by admin access policy, not a separate env "enable" flag.
                 "write_enabled": True,
             }
