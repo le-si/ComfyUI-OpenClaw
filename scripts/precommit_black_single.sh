@@ -9,6 +9,8 @@ mkdir -p "$BLACK_CACHE_DIR"
 # CRITICAL: Always prefer project-local .venv interpreter for Black.
 # Without this, Windows can accidentally pick global Python (e.g. C:\Program Files\Python312)
 # where `black` is not installed, causing flaky pre-commit failures.
+# DO NOT change this back to "python/python3 from PATH first" unless you also
+# guarantee black is installed in every global interpreter used by contributors.
 can_use_python() {
   local candidate="$1"
   [ -f "$candidate" ] || return 1
@@ -25,6 +27,7 @@ elif can_use_python "$ROOT_DIR/.venv/bin/python"; then
 elif [ "$has_project_venv" = true ]; then
   # CRITICAL: if .venv exists but is broken, fail fast instead of silently
   # falling back to a random global Python (which reintroduces flakiness).
+  # DO NOT relax this guard; it is intentional to prevent silent environment drift.
   echo "ERROR: project .venv exists but Python is unusable. Recreate .venv and retry." >&2
   exit 1
 elif command -v python >/dev/null 2>&1; then

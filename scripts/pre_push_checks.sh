@@ -55,6 +55,8 @@ is_venv_python_healthy() {
   local venv_py="$1"
   # CRITICAL: on Git Bash/Windows, `test -x` is unreliable for `.exe`.
   # Use existence + actual interpreter execution probe instead.
+  # DO NOT replace with `-x` checks; that regression previously caused false
+  # "invalid venv" detection and fallback to the wrong interpreter.
   [ -f "$venv_py" ] || return 1
   "$venv_py" -c "import sys; print(sys.executable)" >/dev/null 2>&1
 }
@@ -116,6 +118,7 @@ pre_commit_cmd() {
 
 # CRITICAL: pre-push must always run pre-commit from project .venv.
 # Do not switch this back to global `pre-commit` command lookup.
+# This prevents mixed global/user installs from hijacking hook execution.
 VENV_PY="$(bootstrap_venv)"
 if ! "$VENV_PY" -m pre_commit --version >/dev/null 2>&1; then
   echo "[pre-push] INFO: installing pre-commit into project .venv ..." >&2

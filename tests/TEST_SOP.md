@@ -123,6 +123,7 @@ Use these checks before assuming the hook runner is broken:
 Use these if you want a single command that runs **all required steps** (detect-secrets, pre-commit, unit tests, E2E). These scripts also handle the most common environment issues (Windows cache locks, Black cache, Node 18).
 Both scripts enforce a project-local `.venv` and will bootstrap missing test tooling (`pre-commit`, and `aiohttp` where needed for imports).
 If `.venv` exists but is invalid for the current OS (for example created in WSL then reused in Windows), rerun via the script so it can recreate the environment.
+Linux script includes an explicit offline fail-fast guard: if dependency bootstrap fails (for example `aiohttp` / `pre-commit` install), it stops with remediation hints instead of continuing with partial state.
 
 - Linux/WSL:
   - `bash scripts/run_full_tests_linux.sh`

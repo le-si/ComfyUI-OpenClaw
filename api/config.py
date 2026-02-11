@@ -700,6 +700,12 @@ async def llm_chat_handler(request: web.Request) -> web.Response:
     except ImportError:
         from services.provider_errors import ProviderHTTPError  # type: ignore
 
+    # S28: CSRF protection for convenience mode (no admin token configured)
+    admin_token_configured = bool(get_admin_token())
+    resp = require_same_origin_if_no_token(request, admin_token_configured)
+    if resp:
+        return resp
+
     # S17: Rate Limit
     if not check_rate_limit(request, "admin"):
         return web.json_response(
@@ -751,6 +757,15 @@ async def llm_chat_handler(request: web.Request) -> web.Response:
             status=400,
         )
 
+    # S29: Debug-level structured log — metadata only, never raw prompt content.
+    logger.debug(
+        "llm_chat: has_system=%s msg_len=%d temperature=%.2f max_tokens=%d",
+        bool(system),
+        len(user_message),
+        temperature,
+        max_tokens,
+    )
+
     try:
         client = LLMClient()
 
@@ -788,8 +803,20 @@ async def llm_chat_handler(request: web.Request) -> web.Response:
             payload["retry_after"] = e.retry_after
         return web.json_response(payload, status=e.status_code)
     except Exception as e:
-        # Log type + message (never log prompt content).
-        logger.error(f"LLM chat request failed: {type(e).__name__}: {e}")
+        # S29: Redact exception message to prevent accidental prompt content leakage.
+        # Downgraded from error → warning (non-actionable for operators when provider-specific).
+        try:
+            from services.redaction import redact_text  # type: ignore
+        except ImportError:
+            try:
+                from ..services.redaction import redact_text
+            except ImportError:
+                redact_text = str  # type: ignore
+        logger.warning(
+            "LLM chat request failed: %s: %s",
+            type(e).__name__,
+            redact_text(str(e)),
+        )
         return web.json_response(
             {"ok": False, "error": "llm_request_failed"},
             status=500,

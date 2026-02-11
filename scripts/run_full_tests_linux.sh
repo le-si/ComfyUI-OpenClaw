@@ -22,6 +22,18 @@ require_cmd() {
   fi
 }
 
+pip_install_or_fail() {
+  local why="$1"
+  shift
+  if "$VENV_PY" -m pip install "$@"; then
+    return 0
+  fi
+  echo "[tests] ERROR: failed to install dependency ($why): $*" >&2
+  echo "[tests] HINT: check internet/proxy, then retry the script." >&2
+  echo "[tests] HINT: if offline, pre-install into .venv manually: $VENV_PY -m pip install $*" >&2
+  exit 1
+}
+
 require_cmd node
 require_cmd npm
 
@@ -41,12 +53,12 @@ fi
 
 if ! "$VENV_PY" -m pre_commit --version >/dev/null 2>&1; then
   echo "[tests] Installing pre-commit into project venv ..."
-  "$VENV_PY" -m pip install -U pip pre-commit
+  pip_install_or_fail "required for detect-secrets and hook validation" -U pip pre-commit
 fi
 
 if ! "$VENV_PY" -c "import aiohttp" >/dev/null 2>&1; then
   echo "[tests] Installing aiohttp into project venv ..."
-  "$VENV_PY" -m pip install aiohttp
+  pip_install_or_fail "required by import paths used in unit tests" aiohttp
 fi
 
 NODE_MAJOR="$(node -p "process.versions.node.split('.')[0]")"
