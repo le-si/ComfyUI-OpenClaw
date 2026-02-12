@@ -50,6 +50,15 @@ class ConnectorConfig:
     whatsapp_bind_port: int = 8098
     whatsapp_webhook_path: str = "/whatsapp/webhook"
 
+    # WeChat Official Account (R74/S31/F43)
+    wechat_token: Optional[str] = None
+    wechat_app_id: Optional[str] = None
+    wechat_app_secret: Optional[str] = None
+    wechat_allowed_users: List[str] = field(default_factory=list)
+    wechat_bind_host: str = "127.0.0.1"
+    wechat_bind_port: int = 8097
+    wechat_webhook_path: str = "/wechat/webhook"
+
     # Privileged Access (ID match across platforms; Telegram Int vs Discord Str handled by router)
     admin_users: List[str] = field(default_factory=list)
 
@@ -155,6 +164,20 @@ def load_config() -> ConnectorConfig:
             cfg.whatsapp_bind_port = int(wa_port)
     cfg.whatsapp_webhook_path = os.environ.get(
         "OPENCLAW_CONNECTOR_WHATSAPP_PATH", "/whatsapp/webhook"
+    )
+
+    # WeChat Official Account (R74/S31/F43)
+    cfg.wechat_token = os.environ.get("OPENCLAW_CONNECTOR_WECHAT_TOKEN")
+    cfg.wechat_app_id = os.environ.get("OPENCLAW_CONNECTOR_WECHAT_APP_ID")
+    cfg.wechat_app_secret = os.environ.get("OPENCLAW_CONNECTOR_WECHAT_APP_SECRET")
+    if wc_users := os.environ.get("OPENCLAW_CONNECTOR_WECHAT_ALLOWED_USERS"):
+        cfg.wechat_allowed_users = [u.strip() for u in wc_users.split(",") if u.strip()]
+    cfg.wechat_bind_host = os.environ.get("OPENCLAW_CONNECTOR_WECHAT_BIND", "127.0.0.1")
+    if wc_port := os.environ.get("OPENCLAW_CONNECTOR_WECHAT_PORT"):
+        if wc_port.isdigit():
+            cfg.wechat_bind_port = int(wc_port)
+    cfg.wechat_webhook_path = os.environ.get(
+        "OPENCLAW_CONNECTOR_WECHAT_PATH", "/wechat/webhook"
     )
 
     # Admin

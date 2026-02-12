@@ -7,7 +7,7 @@ ComfyUI-OpenClaw is a **security-first** ComfyUI custom node pack that adds:
 - **LLM-assisted nodes** (planner/refiner/vision/batch variants)
 - **A built-in extension UI** (`OpenClaw` panel)
 - **A secure-by-default HTTP API** for automation (webhooks, triggers, schedules, approvals, presets)
-- And more exciting features being added continuously
+- **And more exciting features being added continuously**
 
 This project is intentionally **not** a general-purpose “assistant platform” with broad remote execution surfaces.
 It is designed to make **ComfyUI a reliable automation target** with an explicit admin boundary and hardened defaults.

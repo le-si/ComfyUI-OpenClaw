@@ -205,6 +205,11 @@ class CommandRouter:
                 return True
             return False
 
+        if platform == "wechat":
+            if sender_id in self.config.wechat_allowed_users:
+                return True
+            return False
+
         # Unknown platform: trust only admins
         return False
 

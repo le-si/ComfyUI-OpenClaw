@@ -12,6 +12,7 @@ from .openclaw_client import OpenClawClient
 from .platforms.discord_gateway import DiscordGateway
 from .platforms.line_webhook import LINEWebhookServer
 from .platforms.telegram_polling import TelegramPolling
+from .platforms.wechat_webhook import WeChatWebhookServer
 from .platforms.whatsapp_webhook import WhatsAppWebhookServer
 from .results_poller import ResultsPoller
 from .router import CommandRouter
@@ -38,6 +39,7 @@ def _print_security_banner(config):
         or config.line_allowed_users
         or config.line_allowed_groups
         or config.whatsapp_allowed_users
+        or config.wechat_allowed_users
     )
     has_admins = bool(config.admin_users)
 
@@ -98,6 +100,7 @@ async def main():
 
     line_server = None
     whatsapp_server = None
+    wechat_server = None
 
     # 3. Platforms
     if config.telegram_bot_token:
@@ -146,9 +149,19 @@ async def main():
             "WhatsApp not configured (OPENCLAW_CONNECTOR_WHATSAPP_ACCESS_TOKEN missing)"
         )
 
-    if not tasks and not line_server and not whatsapp_server:
+    if config.wechat_token:
+        wechat_server = WeChatWebhookServer(config, router)
+        platforms["wechat"] = wechat_server
+        await wechat_server.start()
+        # If only WeChat is active, add sleeper
+        if not tasks:
+            tasks.append(asyncio.create_task(asyncio.sleep(3600 * 24 * 365)))
+    else:
+        logger.info("WeChat not configured (OPENCLAW_CONNECTOR_WECHAT_TOKEN missing)")
+
+    if not tasks and not line_server and not whatsapp_server and not wechat_server:
         logger.error(
-            "No platforms configured! Set TELEGRAM_TOKEN, DISCORD_TOKEN, LINE_SECRET, or WHATSAPP_ACCESS_TOKEN."
+            "No platforms configured! Set TELEGRAM_TOKEN, DISCORD_TOKEN, LINE_SECRET, WHATSAPP_ACCESS_TOKEN, or WECHAT_TOKEN."
         )
         await client.close()
         return
@@ -171,6 +184,8 @@ async def main():
             await line_server.stop()
         if whatsapp_server:
             await whatsapp_server.stop()
+        if wechat_server:
+            await wechat_server.stop()
         if poller:
             await poller.stop()
         await client.close()
