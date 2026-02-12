@@ -1,5 +1,5 @@
 """
-S30 — ComfyUI-Aware Security Doctor.
+S30 + S32 — ComfyUI-Aware Security Doctor.
 
 Deploy-time and runtime security diagnostics specific to ComfyUI extension operations.
 Read-only checks by default; optional guarded remediation for safe/local actions only.
@@ -12,6 +12,7 @@ Checks:
 - Redaction drift: verify redaction patterns cover known sensitive keys
 - ComfyUI runtime mode: Desktop/portable/venv compatibility
 - Feature flag posture: high-risk features default-off check
+- S32 connector security posture: token, allowlist, callback, DM policy
 
 Usage:
     from services.security_doctor import run_security_doctor
@@ -699,6 +700,134 @@ def check_api_key_posture(report: SecurityReport) -> None:
 
 
 # ---------------------------------------------------------------------------
+# Security checks — S32 Connector security posture
+# ---------------------------------------------------------------------------
+
+# Environment variables checked by S32
+_S32_CONNECTOR_TOKEN_VARS = [
+    "OPENCLAW_CONNECTOR_ADMIN_TOKEN",
+    "OPENCLAW_CONNECTOR_TELEGRAM_TOKEN",
+    "OPENCLAW_CONNECTOR_DISCORD_TOKEN",
+    "OPENCLAW_CONNECTOR_LINE_CHANNEL_SECRET",
+    "OPENCLAW_CONNECTOR_LINE_CHANNEL_ACCESS_TOKEN",
+    "OPENCLAW_CONNECTOR_WHATSAPP_ACCESS_TOKEN",
+    "OPENCLAW_CONNECTOR_WHATSAPP_APP_SECRET",
+]
+
+_S32_ALLOWLIST_VARS = [
+    "OPENCLAW_CONNECTOR_TELEGRAM_ALLOWED_USERS",
+    "OPENCLAW_CONNECTOR_DISCORD_ALLOWED_USERS",
+    "OPENCLAW_CONNECTOR_DISCORD_ALLOWED_CHANNELS",
+    "OPENCLAW_CONNECTOR_LINE_ALLOWED_USERS",
+    "OPENCLAW_CONNECTOR_WHATSAPP_ALLOWED_USERS",
+]
+
+
+def check_connector_security_posture(report: SecurityReport) -> None:
+    """S32: Check connector security posture for internet-exposed deployments."""
+    # --- Token presence ---
+    active_tokens = []
+    missing_tokens = []
+    for var in _S32_CONNECTOR_TOKEN_VARS:
+        val = os.environ.get(var, "").strip()
+        if val:
+            active_tokens.append(var)
+        else:
+            missing_tokens.append(var)
+
+    if active_tokens:
+        report.add(
+            SecurityCheckResult(
+                name="s32_connector_tokens",
+                severity=SecuritySeverity.PASS.value,
+                message=f"{len(active_tokens)} connector token(s) configured",
+                category="connector",
+                detail="Active: " + ", ".join(active_tokens),
+            )
+        )
+    else:
+        report.add(
+            SecurityCheckResult(
+                name="s32_connector_tokens",
+                severity=SecuritySeverity.INFO.value,
+                message="No connector tokens configured (connectors not enabled)",
+                category="connector",
+            )
+        )
+
+    # --- Allowlist coverage ---
+    configured_allowlists = []
+    for var in _S32_ALLOWLIST_VARS:
+        val = os.environ.get(var, "").strip()
+        if val:
+            configured_allowlists.append(var)
+
+    # Only warn if tokens are configured but allowlists are empty
+    if active_tokens and not configured_allowlists:
+        report.add(
+            SecurityCheckResult(
+                name="s32_allowlist_coverage",
+                severity=SecuritySeverity.WARN.value,
+                message="Connector tokens active but no user/channel allowlists configured",
+                category="connector",
+                detail="Without allowlists, connectors may accept messages from any user.",
+                remediation=("Set at least one of: " + ", ".join(_S32_ALLOWLIST_VARS)),
+            )
+        )
+    elif configured_allowlists:
+        report.add(
+            SecurityCheckResult(
+                name="s32_allowlist_coverage",
+                severity=SecuritySeverity.PASS.value,
+                message=f"{len(configured_allowlists)} connector allowlist(s) configured",
+                category="connector",
+            )
+        )
+
+    # --- Webhook signature verification posture ---
+    wa_token = os.environ.get("OPENCLAW_CONNECTOR_WHATSAPP_ACCESS_TOKEN", "").strip()
+    wa_secret = os.environ.get("OPENCLAW_CONNECTOR_WHATSAPP_APP_SECRET", "").strip()
+    line_secret = os.environ.get("OPENCLAW_CONNECTOR_LINE_CHANNEL_SECRET", "").strip()
+    line_token = os.environ.get(
+        "OPENCLAW_CONNECTOR_LINE_CHANNEL_ACCESS_TOKEN", ""
+    ).strip()
+
+    if wa_token and not wa_secret:
+        report.add(
+            SecurityCheckResult(
+                name="s32_whatsapp_sig_missing",
+                severity=SecuritySeverity.WARN.value,
+                message="WhatsApp access token set but app_secret missing — webhook signature verification disabled",
+                category="connector",
+                remediation="Set OPENCLAW_CONNECTOR_WHATSAPP_APP_SECRET for production webhook security.",
+            )
+        )
+    if line_token and not line_secret:
+        report.add(
+            SecurityCheckResult(
+                name="s32_line_sig_missing",
+                severity=SecuritySeverity.WARN.value,
+                message="LINE access token set but channel_secret missing — webhook signature verification disabled",
+                category="connector",
+                remediation="Set OPENCLAW_CONNECTOR_LINE_CHANNEL_SECRET for production webhook security.",
+            )
+        )
+
+    # --- DM policy open warning ---
+    dev_mode = os.environ.get("MOLTBOT_DEV_MODE", "").strip().lower()
+    if dev_mode in ("1", "true", "yes", "on") and active_tokens:
+        report.add(
+            SecurityCheckResult(
+                name="s32_dev_mode_with_connectors",
+                severity=SecuritySeverity.WARN.value,
+                message="Dev mode enabled with active connectors — auth bypass risk",
+                category="connector",
+                remediation="Disable MOLTBOT_DEV_MODE when connectors are internet-exposed.",
+            )
+        )
+
+
+# ---------------------------------------------------------------------------
 # Guarded remediation — safe/local-only actions
 # ---------------------------------------------------------------------------
 
@@ -848,6 +977,7 @@ def run_security_doctor(
     check_comfyui_runtime(report)
     check_feature_flags(report)
     check_api_key_posture(report)
+    check_connector_security_posture(report)  # S32
 
     # Optional guarded remediation
     if remediate:

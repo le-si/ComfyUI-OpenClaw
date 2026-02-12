@@ -4,6 +4,7 @@ __pycache__/
 .planning/
 .env
 .venv/
+.venv-wsl/
 venv/
 env/
 .pytest_cache/
