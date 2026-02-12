@@ -210,6 +210,11 @@ class CommandRouter:
                 return True
             return False
 
+        if platform == "kakao":
+            if sender_id in self.config.kakao_allowed_users:
+                return True
+            return False
+
         # Unknown platform: trust only admins
         return False
 

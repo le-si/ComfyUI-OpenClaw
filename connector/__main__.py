@@ -10,6 +10,7 @@ import sys
 from .config import load_config
 from .openclaw_client import OpenClawClient
 from .platforms.discord_gateway import DiscordGateway
+from .platforms.kakao_webhook import KakaoWebhookServer
 from .platforms.line_webhook import LINEWebhookServer
 from .platforms.telegram_polling import TelegramPolling
 from .platforms.wechat_webhook import WeChatWebhookServer
@@ -40,6 +41,7 @@ def _print_security_banner(config):
         or config.line_allowed_groups
         or config.whatsapp_allowed_users
         or config.wechat_allowed_users
+        or config.kakao_allowed_users
     )
     has_admins = bool(config.admin_users)
 
@@ -101,6 +103,7 @@ async def main():
     line_server = None
     whatsapp_server = None
     wechat_server = None
+    kakao_server = None
 
     # 3. Platforms
     if config.telegram_bot_token:
@@ -159,9 +162,24 @@ async def main():
     else:
         logger.info("WeChat not configured (OPENCLAW_CONNECTOR_WECHAT_TOKEN missing)")
 
-    if not tasks and not line_server and not whatsapp_server and not wechat_server:
+    if config.kakao_enabled:
+        kakao_server = KakaoWebhookServer(config, router)
+        platforms["kakao"] = kakao_server
+        await kakao_server.start()
+        if not tasks:
+            tasks.append(asyncio.create_task(asyncio.sleep(3600 * 24 * 365)))
+    else:
+        logger.info("Kakao adapter disabled.")
+
+    if (
+        not tasks
+        and not line_server
+        and not whatsapp_server
+        and not wechat_server
+        and not kakao_server
+    ):
         logger.error(
-            "No platforms configured! Set TELEGRAM_TOKEN, DISCORD_TOKEN, LINE_SECRET, WHATSAPP_ACCESS_TOKEN, or WECHAT_TOKEN."
+            "No platforms configured! Set TELEGRAM_TOKEN, DISCORD_TOKEN, LINE_SECRET, WHATSAPP_ACCESS_TOKEN, WECHAT_TOKEN or KAKAO_ENABLED."
         )
         await client.close()
         return
@@ -186,6 +204,8 @@ async def main():
             await whatsapp_server.stop()
         if wechat_server:
             await wechat_server.stop()
+        if kakao_server:
+            await kakao_server.stop()
         if poller:
             await poller.stop()
         await client.close()

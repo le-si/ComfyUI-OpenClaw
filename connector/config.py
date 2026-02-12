@@ -59,6 +59,13 @@ class ConnectorConfig:
     wechat_bind_port: int = 8097
     wechat_webhook_path: str = "/wechat/webhook"
 
+    # KakaoTalk (F44 Phase A)
+    kakao_enabled: bool = False
+    kakao_bind_host: str = "127.0.0.1"
+    kakao_bind_port: int = 8096
+    kakao_webhook_path: str = "/kakao/webhook"
+    kakao_allowed_users: List[str] = field(default_factory=list)
+
     # Privileged Access (ID match across platforms; Telegram Int vs Discord Str handled by router)
     admin_users: List[str] = field(default_factory=list)
 
@@ -179,6 +186,20 @@ def load_config() -> ConnectorConfig:
     cfg.wechat_webhook_path = os.environ.get(
         "OPENCLAW_CONNECTOR_WECHAT_PATH", "/wechat/webhook"
     )
+
+    # KakaoTalk (F44)
+    if os.environ.get("OPENCLAW_CONNECTOR_KAKAO_ENABLED", "").lower() == "true":
+        cfg.kakao_enabled = True
+
+    cfg.kakao_bind_host = os.environ.get("OPENCLAW_CONNECTOR_KAKAO_BIND", "127.0.0.1")
+    if kp := os.environ.get("OPENCLAW_CONNECTOR_KAKAO_PORT"):
+        if kp.isdigit():
+            cfg.kakao_bind_port = int(kp)
+    cfg.kakao_webhook_path = os.environ.get(
+        "OPENCLAW_CONNECTOR_KAKAO_PATH", "/kakao/webhook"
+    )
+    if ku := os.environ.get("OPENCLAW_CONNECTOR_KAKAO_ALLOWED_USERS"):
+        cfg.kakao_allowed_users = [u.strip() for u in ku.split(",") if u.strip()]
 
     # Admin
     if admins := os.environ.get("OPENCLAW_CONNECTOR_ADMIN_USERS"):
