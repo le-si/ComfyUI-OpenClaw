@@ -5,12 +5,15 @@ Tests cover:
 - WP2: Composite ingress gate (fail-closed ordering), error envelope mapping
 - WP3: Security Doctor integration (check_connector_security_posture)
 - WP4: Regression — existing transport contract unaffected
+- WP5: Adapter wiring integration (LINE base64 sig, WhatsApp hex sig,
+       replay guard adoption, AllowlistPolicy soft-deny)
 - Runtime primitives integration (R75 transport contract wiring)
 - Serialization safety for result types
 """
 
 from __future__ import annotations
 
+import base64 as base64_mod
 import hashlib
 import hmac as hmac_mod
 import os
@@ -739,6 +742,144 @@ class TestResultSerialization(unittest.TestCase):
         d = r.to_dict()
         self.assertEqual(d["decision"], "allow")
         self.assertEqual(d["matched_entry"], "user-a")
+
+
+# =========================================================================
+# WP5 — Adapter Wiring Integration Tests
+# =========================================================================
+
+
+class TestAdapterWiringIntegration(unittest.TestCase):
+    """Verify shared S32 primitives work with adapter-specific formats."""
+
+    # -- LINE: base64-encoded HMAC-SHA256 ---------------------------------
+
+    def _make_line_sig(self, body: bytes, secret: str) -> str:
+        """Produce a LINE-style base64-encoded HMAC-SHA256 signature."""
+        mac = hmac_mod.new(secret.encode("utf-8"), body, hashlib.sha256)
+        return base64_mod.b64encode(mac.digest()).decode("utf-8")
+
+    def test_line_base64_signature_accepted(self):
+        """Shared verifier with digest_encoding='base64' accepts LINE sigs."""
+        body = b'{"events":[{"type":"message"}]}'
+        secret = "line-channel-secret"
+        sig = self._make_line_sig(body, secret)
+        result = verify_hmac_signature(
+            body,
+            signature_header=sig,
+            secret=secret,
+            algorithm="sha256",
+            digest_encoding="base64",
+        )
+        self.assertTrue(result.ok)
+        self.assertEqual(result.scheme, AuthScheme.HMAC_SHA256.value)
+
+    def test_line_base64_signature_mismatch_rejected(self):
+        """Wrong body → signature mismatch even with base64 encoding."""
+        body = b'{"events":[]}'
+        secret = "line-channel-secret"
+        sig = self._make_line_sig(b"different-body", secret)
+        result = verify_hmac_signature(
+            body,
+            signature_header=sig,
+            secret=secret,
+            algorithm="sha256",
+            digest_encoding="base64",
+        )
+        self.assertFalse(result.ok)
+        self.assertEqual(result.error, "signature_mismatch")
+
+    def test_line_base64_missing_secret_rejected(self):
+        """LINE sig check with empty secret → fail-closed."""
+        result = verify_hmac_signature(
+            b"body",
+            signature_header="sig",
+            secret="",
+            digest_encoding="base64",
+        )
+        self.assertFalse(result.ok)
+        self.assertEqual(result.error, "missing_secret")
+
+    # -- WhatsApp: hex-encoded HMAC-SHA256 with sha256= prefix ----------
+
+    def _make_wa_sig(self, body: bytes, secret: str) -> str:
+        """Produce a WhatsApp-style sha256=<hex> signature."""
+        return (
+            "sha256="
+            + hmac_mod.new(secret.encode("utf-8"), body, hashlib.sha256).hexdigest()
+        )
+
+    def test_whatsapp_hex_signature_accepted(self):
+        """Shared verifier with digest_encoding='hex' accepts WA sigs."""
+        body = b'{"object":"whatsapp_business_account"}'
+        secret = "wa-app-secret"
+        sig = self._make_wa_sig(body, secret)
+        result = verify_hmac_signature(
+            body,
+            signature_header=sig,
+            secret=secret,
+            algorithm="sha256",
+            digest_encoding="hex",
+        )
+        self.assertTrue(result.ok)
+
+    def test_whatsapp_hex_signature_mismatch_rejected(self):
+        """Wrong secret → WA sig mismatch."""
+        body = b'{"object":"whatsapp_business_account"}'
+        sig = self._make_wa_sig(body, "correct-secret")
+        result = verify_hmac_signature(
+            body,
+            signature_header=sig,
+            secret="wrong-secret",
+            algorithm="sha256",
+            digest_encoding="hex",
+        )
+        self.assertFalse(result.ok)
+        self.assertEqual(result.error, "signature_mismatch")
+
+    # -- Replay guard with adapter-like flows ---------------------------
+
+    def test_replay_guard_line_event_dedup(self):
+        """Simulates LINE multi-event body: same webhookEventId rejected."""
+        guard = ReplayGuard(window_sec=300, max_entries=1000)
+        event_id = "ev-abc-123"
+        self.assertTrue(guard.check_and_record(event_id))
+        self.assertFalse(guard.check_and_record(event_id))  # duplicate
+
+    def test_replay_guard_whatsapp_message_dedup(self):
+        """Simulates WhatsApp message: same message_id rejected."""
+        guard = ReplayGuard(window_sec=300, max_entries=1000)
+        msg_id = "wamid.HBdeJN..."
+        self.assertTrue(guard.check_and_record(msg_id))
+        self.assertFalse(guard.check_and_record(msg_id))
+
+    def test_replay_guard_different_adapters_independent(self):
+        """Different guard instances don't share state."""
+        line_guard = ReplayGuard(window_sec=300)
+        wa_guard = ReplayGuard(window_sec=300)
+        key = "shared-key-123"
+        self.assertTrue(line_guard.check_and_record(key))
+        self.assertTrue(wa_guard.check_and_record(key))  # independent instance
+
+    # -- AllowlistPolicy soft-deny (adapter behavior) -------------------
+
+    def test_allowlist_soft_deny_empty_skips(self):
+        """strict=False + empty list → SKIP (pass-through, not deny)."""
+        policy = AllowlistPolicy([], strict=False)
+        result = policy.evaluate("any-user")
+        self.assertEqual(result.decision, ScopeDecision.SKIP.value)
+
+    def test_allowlist_soft_deny_matching_allows(self):
+        """strict=False + user in list → ALLOW."""
+        policy = AllowlistPolicy(["user-a", "user-b"], strict=False)
+        result = policy.evaluate("user-a")
+        self.assertEqual(result.decision, ScopeDecision.ALLOW.value)
+
+    def test_allowlist_soft_deny_non_matching_denies(self):
+        """strict=False + user NOT in non-empty list → DENY."""
+        policy = AllowlistPolicy(["user-a"], strict=False)
+        result = policy.evaluate("unknown-user")
+        self.assertEqual(result.decision, ScopeDecision.DENY.value)
 
 
 if __name__ == "__main__":

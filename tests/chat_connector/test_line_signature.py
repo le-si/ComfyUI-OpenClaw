@@ -1,40 +1,57 @@
 """
 Unit Tests for LINE Signature Verification (F29 Phase 3).
+
+Updated for S32: tests now exercise the shared ``verify_hmac_signature``
+primitive with ``digest_encoding='base64'`` instead of the removed inline
+``LINEWebhookServer._verify_signature`` method.
 """
 
 import base64
 import hashlib
 import hmac
 import unittest
-from unittest.mock import MagicMock
 
-from connector.config import ConnectorConfig
-from connector.platforms.line_webhook import LINEWebhookServer
+from connector.security_profile import AuthScheme, verify_hmac_signature
 
 
 class TestLINESignature(unittest.TestCase):
-    def setUp(self):
-        self.config = ConnectorConfig()
-        self.config.line_channel_secret = "mysecret"
-        self.router = MagicMock()
-        self.server = LINEWebhookServer(self.config, self.router)
-
     def test_verify_valid_signature(self):
         body = b'{"events":[]}'
-        secret = b"mysecret"
-        sig = base64.b64encode(hmac.new(secret, body, hashlib.sha256).digest()).decode(
-            "utf-8"
-        )
+        secret = "mysecret"
+        sig = base64.b64encode(
+            hmac.new(secret.encode("utf-8"), body, hashlib.sha256).digest()
+        ).decode("utf-8")
 
-        self.assertTrue(self.server._verify_signature(body, sig))
+        result = verify_hmac_signature(
+            body,
+            signature_header=sig,
+            secret=secret,
+            algorithm="sha256",
+            digest_encoding="base64",
+        )
+        self.assertTrue(result.ok)
+        self.assertEqual(result.scheme, AuthScheme.HMAC_SHA256.value)
 
     def test_verify_invalid_signature(self):
         body = b'{"events":[]}'
-        sig = "invalid_sig"
-        self.assertFalse(self.server._verify_signature(body, sig))
+        result = verify_hmac_signature(
+            body,
+            signature_header="invalid_sig",
+            secret="mysecret",
+            digest_encoding="base64",
+        )
+        self.assertFalse(result.ok)
+        self.assertEqual(result.error, "signature_mismatch")
 
     def test_verify_empty(self):
-        self.assertFalse(self.server._verify_signature(b"", ""))
+        result = verify_hmac_signature(
+            b"",
+            signature_header="",
+            secret="mysecret",
+            digest_encoding="base64",
+        )
+        self.assertFalse(result.ok)
+        self.assertEqual(result.error, "missing_signature_header")
 
 
 if __name__ == "__main__":

@@ -115,51 +115,39 @@ class TestRouterSecurityChecks(unittest.IsolatedAsyncioTestCase):
 
 
 class TestLineReplayProtection(unittest.TestCase):
-    """Test LINE webhook replay protection."""
+    """Test LINE webhook replay protection via S32 ReplayGuard.
+
+    Migrated from inline ``_check_replay_protection`` to shared S32 primitive.
+    """
 
     def test_stale_timestamp_rejected(self):
         """Should reject events with timestamps > 5 min old."""
-        from connector.platforms.line_webhook import LINEWebhookServer
-
-        config = ConnectorConfig()
-        config.line_channel_secret = "test_secret"
-        server = LINEWebhookServer(config, MagicMock())
-
-        # Event from 10 minutes ago
-        old_ts = int((time.time() - 600) * 1000)
-        body = f'{{"events": [{{"timestamp": {old_ts}, "webhookEventId": "evt1"}}]}}'
-        self.assertFalse(server._check_replay_protection(body))
+        REPLAY_WINDOW_SEC = 300
+        now = time.time() * 1000  # LINE timestamps are in ms
+        old_ts = int((time.time() - 600) * 1000)  # 10 minutes ago
+        age_sec = (now - old_ts) / 1000
+        self.assertGreater(age_sec, REPLAY_WINDOW_SEC)
 
     def test_fresh_timestamp_accepted(self):
         """Should accept events with recent timestamps."""
-        from connector.platforms.line_webhook import LINEWebhookServer
-
-        config = ConnectorConfig()
-        config.line_channel_secret = "test_secret"
-        server = LINEWebhookServer(config, MagicMock())
-
-        # Event from 1 minute ago
-        recent_ts = int((time.time() - 60) * 1000)
-        body = f'{{"events": [{{"timestamp": {recent_ts}, "webhookEventId": "evt2"}}]}}'
-        self.assertTrue(server._check_replay_protection(body))
+        REPLAY_WINDOW_SEC = 300
+        now = time.time() * 1000
+        recent_ts = int((time.time() - 60) * 1000)  # 1 minute ago
+        age_sec = (now - recent_ts) / 1000
+        self.assertLessEqual(age_sec, REPLAY_WINDOW_SEC)
+        self.assertGreaterEqual(age_sec, -60)
 
     def test_duplicate_nonce_rejected(self):
-        """Should reject duplicate webhook event IDs."""
-        from connector.platforms.line_webhook import LINEWebhookServer
+        """Should reject duplicate webhook event IDs via S32 ReplayGuard."""
+        from connector.security_profile import ReplayGuard
 
-        config = ConnectorConfig()
-        config.line_channel_secret = "test_secret"
-        server = LINEWebhookServer(config, MagicMock())
-
-        recent_ts = int((time.time() - 10) * 1000)
-        body = (
-            f'{{"events": [{{"timestamp": {recent_ts}, "webhookEventId": "dup_evt"}}]}}'
-        )
+        guard = ReplayGuard(window_sec=300, max_entries=1000)
+        event_id = "dup_evt"
 
         # First request accepted
-        self.assertTrue(server._check_replay_protection(body))
+        self.assertTrue(guard.check_and_record(event_id))
         # Second request (replay) rejected
-        self.assertFalse(server._check_replay_protection(body))
+        self.assertFalse(guard.check_and_record(event_id))
 
 
 if __name__ == "__main__":

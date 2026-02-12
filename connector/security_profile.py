@@ -17,6 +17,7 @@ request.  Permissive modes require explicit operator opt-in.
 
 from __future__ import annotations
 
+import base64 as base64_mod
 import hashlib
 import hmac
 import logging
@@ -114,11 +115,15 @@ def verify_hmac_signature(
     signature_header: str,
     secret: str,
     algorithm: str = "sha256",
+    digest_encoding: str = "hex",
 ) -> AuthVerifyResult:
     """
     Verify an HMAC signature over the raw request body.
 
     Used by webhook platforms (WhatsApp, LINE, Kakao) that sign payloads.
+
+    Args:
+        digest_encoding: 'hex' (default, WhatsApp/Kakao) or 'base64' (LINE).
 
     Fail-closed: missing secret / header / mismatch → reject.
     """
@@ -147,11 +152,12 @@ def verify_hmac_signature(
             error=f"unsupported_algorithm:{algorithm}",
         )
 
-    expected = hmac.new(
-        secret.encode("utf-8"),
-        body,
-        hash_fn,
-    ).hexdigest()
+    mac = hmac.new(secret.encode("utf-8"), body, hash_fn)
+
+    if digest_encoding == "base64":
+        expected = base64_mod.b64encode(mac.digest()).decode("utf-8")
+    else:
+        expected = mac.hexdigest()
 
     # Strip common prefixes (e.g. "sha256=")
     sig = signature_header.strip()
@@ -160,7 +166,7 @@ def verify_hmac_signature(
             sig = sig[len(prefix) :]
             break
 
-    if not hmac.compare_digest(sig.lower(), expected.lower()):
+    if not hmac.compare_digest(sig, expected):
         return AuthVerifyResult(
             ok=False,
             scheme=AuthScheme.HMAC_SHA256.value,

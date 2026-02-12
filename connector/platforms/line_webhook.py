@@ -1,11 +1,11 @@
 """
 LINE Webhook Platform Adapter (F29).
 Receives webhooks from LINE, verifies signature, and routes commands.
+
+Security: uses shared S32 primitives (verify_hmac_signature, ReplayGuard,
+AllowlistPolicy) instead of inline implementations.
 """
 
-import base64
-import hashlib
-import hmac
 import json
 import logging
 import time
@@ -14,6 +14,7 @@ from typing import Optional
 from ..config import ConnectorConfig
 from ..contract import CommandRequest, CommandResponse
 from ..router import CommandRouter
+from ..security_profile import AllowlistPolicy, ReplayGuard, verify_hmac_signature
 
 logger = logging.getLogger(__name__)
 
@@ -34,7 +35,7 @@ def _import_aiohttp_web():
 
 
 class LINEWebhookServer:
-    # F32 WP2: Replay protection config
+    # Replay protection config — shared via S32 ReplayGuard
     REPLAY_WINDOW_SEC = 300  # 5 minutes
     NONCE_CACHE_SIZE = 1000
 
@@ -45,8 +46,19 @@ class LINEWebhookServer:
         self.runner = None
         self.site = None
         self.session = None
-        # F32 WP2: LRU nonce cache (event_id -> timestamp)
-        self._nonce_cache: dict = {}
+
+        # S32: shared replay guard (replaces inline F32 nonce cache)
+        self._replay_guard = ReplayGuard(
+            window_sec=self.REPLAY_WINDOW_SEC,
+            max_entries=self.NONCE_CACHE_SIZE,
+        )
+
+        # S32: shared allowlist policies (soft-deny: strict=False)
+        self._user_allowlist = AllowlistPolicy(config.line_allowed_users, strict=False)
+        self._group_allowlist = AllowlistPolicy(
+            config.line_allowed_groups, strict=False
+        )
+
         # F33 Media Store
         from ..media_store import MediaStore
 
@@ -100,19 +112,21 @@ class LINEWebhookServer:
         if aiohttp is None or web is None:
             raise RuntimeError("aiohttp not available")
 
-        # 1. Signature Verification
+        # 1. Signature Verification — S32 shared verifier (base64 digest)
         body_bytes = await request.read()
         body_text = body_bytes.decode("utf-8")
         signature = request.headers.get("X-Line-Signature", "")
 
-        if not self._verify_signature(body_bytes, signature):
-            logger.warning("Invalid LINE Signature")
+        auth_result = verify_hmac_signature(
+            body_bytes,
+            signature_header=signature,
+            secret=self.config.line_channel_secret or "",
+            algorithm="sha256",
+            digest_encoding="base64",
+        )
+        if not auth_result.ok:
+            logger.warning(f"Invalid LINE Signature: {auth_result.error}")
             return web.Response(status=401, text="Invalid Signature")
-
-        # F32 WP2: Replay protection (timestamp + nonce)
-        if not self._check_replay_protection(body_text):
-            logger.warning("Replay attack detected or stale request")
-            return web.Response(status=403, text="Replay Rejected")
 
         # 2. Parse Event
         try:
@@ -121,6 +135,25 @@ class LINEWebhookServer:
             return web.Response(status=400, text="Bad JSON")
 
         events = payload.get("events", [])
+
+        # 3. Per-event replay + timestamp check — S32 ReplayGuard
+        now = time.time() * 1000  # LINE timestamps are in ms
+        for event in events:
+            # Timestamp freshness
+            ts = event.get("timestamp", 0)
+            age_sec = (now - ts) / 1000
+            if age_sec > self.REPLAY_WINDOW_SEC or age_sec < -60:
+                logger.debug(f"Stale or future event: age={age_sec:.1f}s")
+                logger.warning("Replay attack detected or stale request")
+                return web.Response(status=403, text="Replay Rejected")
+
+            # Nonce dedup via S32 ReplayGuard
+            nonce = event.get("webhookEventId") or event.get("replyToken")
+            if nonce and not self._replay_guard.check_and_record(nonce):
+                logger.warning("Replay attack detected or stale request")
+                return web.Response(status=403, text="Replay Rejected")
+
+        # 4. Process events
         for event in events:
             if (
                 event.get("type") == "message"
@@ -141,65 +174,6 @@ class LINEWebhookServer:
 
         return web.FileResponse(path)
 
-    def _verify_signature(self, body: bytes, signature: str) -> bool:
-        """Verify X-Line-Signature using HMAC-SHA256."""
-        if not signature or not self.config.line_channel_secret:
-            return False
-
-        secret = self.config.line_channel_secret.encode("utf-8")
-        generated = base64.b64encode(
-            hmac.new(secret, body, hashlib.sha256).digest()
-        ).decode("utf-8")
-
-        return hmac.compare_digest(generated, signature)
-
-    def _check_replay_protection(self, body_text: str) -> bool:
-        """
-        F32 WP2: Replay protection using timestamp + nonce.
-        Returns False if request should be rejected.
-        """
-        try:
-            payload = json.loads(body_text)
-        except json.JSONDecodeError:
-            return False  # Will be caught later as Bad JSON
-
-        events = payload.get("events", [])
-        if not events:
-            return True  # No events to process
-
-        now = time.time() * 1000  # LINE timestamps are in ms
-
-        for event in events:
-            # Check timestamp freshness
-            ts = event.get("timestamp", 0)
-            age_sec = (now - ts) / 1000
-            if age_sec > self.REPLAY_WINDOW_SEC or age_sec < -60:
-                # Allow 60s clock skew in the future
-                logger.debug(f"Stale or future event: age={age_sec:.1f}s")
-                return False
-
-            # Check nonce (use replyToken or webhookEventId as unique identifier)
-            nonce = event.get("webhookEventId") or event.get("replyToken")
-            if nonce:
-                if nonce in self._nonce_cache:
-                    logger.debug(f"Duplicate nonce: {nonce}")
-                    return False
-                # Add to cache with timestamp
-                self._nonce_cache[nonce] = ts
-                # Evict old entries if cache is full
-                self._evict_old_nonces()
-
-        return True
-
-    def _evict_old_nonces(self):
-        """Remove old entries from nonce cache."""
-        if len(self._nonce_cache) <= self.NONCE_CACHE_SIZE:
-            return
-
-        now = time.time() * 1000
-        cutoff = now - (self.REPLAY_WINDOW_SEC * 1000)
-        self._nonce_cache = {k: v for k, v in self._nonce_cache.items() if v > cutoff}
-
     async def _process_event(self, event: dict):
         """Convert LINE event to CommandRequest and route."""
         source = event.get("source", {})
@@ -215,18 +189,20 @@ class LINEWebhookServer:
         text = event["message"]["text"]
         reply_token = event.get("replyToken")
 
-        # Security allowlist
+        # Security allowlist — S32 AllowlistPolicy (soft-deny: strict=False)
         is_allowed = False
-        # Check User
-        if user_id and user_id in self.config.line_allowed_users:
-            is_allowed = True
-        # Check Group/Room
-        if group_id and group_id in self.config.line_allowed_groups:
-            is_allowed = True
-        if (
-            room_id and room_id in self.config.line_allowed_groups
-        ):  # Treat room as group
-            is_allowed = True
+        if user_id:
+            user_result = self._user_allowlist.evaluate(user_id)
+            if user_result.decision == "allow":
+                is_allowed = True
+        if group_id:
+            group_result = self._group_allowlist.evaluate(group_id)
+            if group_result.decision == "allow":
+                is_allowed = True
+        if room_id:
+            room_result = self._group_allowlist.evaluate(room_id)
+            if room_result.decision == "allow":
+                is_allowed = True
 
         if not is_allowed:
             # Informational only: untrusted messages are accepted but will require approval.

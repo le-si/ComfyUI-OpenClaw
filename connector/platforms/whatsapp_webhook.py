@@ -2,14 +2,15 @@
 WhatsApp Cloud API Platform Adapter (F36).
 Receives webhooks from WhatsApp Cloud API, verifies signature, and routes commands.
 
+Security: uses shared S32 primitives (verify_hmac_signature, ReplayGuard,
+AllowlistPolicy) instead of inline implementations.
+
 Setup:
 1. Create a Meta App → WhatsApp → Add a phone number.
 2. Set env vars: OPENCLAW_CONNECTOR_WHATSAPP_ACCESS_TOKEN, VERIFY_TOKEN, PHONE_NUMBER_ID.
 3. Configure webhook URL: https://<public>/whatsapp/webhook
 """
 
-import hashlib
-import hmac
 import json
 import logging
 import time
@@ -18,6 +19,7 @@ from typing import Optional
 from ..config import ConnectorConfig
 from ..contract import CommandRequest, CommandResponse
 from ..router import CommandRouter
+from ..security_profile import AllowlistPolicy, ReplayGuard, verify_hmac_signature
 
 logger = logging.getLogger(__name__)
 
@@ -49,7 +51,7 @@ class WhatsAppWebhookServer:
     POST /whatsapp/webhook  →  message handling + signature check
     """
 
-    # F32 WP2: Replay protection
+    # Replay protection config — shared via S32 ReplayGuard
     REPLAY_WINDOW_SEC = 300
     NONCE_CACHE_SIZE = 1000
 
@@ -60,8 +62,18 @@ class WhatsAppWebhookServer:
         self.runner = None
         self.site = None
         self.session = None
-        # F32 WP2: LRU nonce cache (message_id -> timestamp)
-        self._nonce_cache: dict = {}
+
+        # S32: shared replay guard (replaces inline F32 nonce cache)
+        self._replay_guard = ReplayGuard(
+            window_sec=self.REPLAY_WINDOW_SEC,
+            max_entries=self.NONCE_CACHE_SIZE,
+        )
+
+        # S32: shared allowlist policy (soft-deny: strict=False)
+        self._user_allowlist = AllowlistPolicy(
+            config.whatsapp_allowed_users, strict=False
+        )
+
         # F33 Media Store
         from ..media_store import MediaStore
 
@@ -150,11 +162,20 @@ class WhatsAppWebhookServer:
 
         body_bytes = await request.read()
 
-        # Signature verification (if app secret is configured)
+        # Signature verification — S32 shared verifier (hex digest)
         if self.config.whatsapp_app_secret:
             signature = request.headers.get("X-Hub-Signature-256", "")
-            if not self._verify_signature(body_bytes, signature):
-                logger.warning("Invalid WhatsApp webhook signature")
+            auth_result = verify_hmac_signature(
+                body_bytes,
+                signature_header=signature,
+                secret=self.config.whatsapp_app_secret,
+                algorithm="sha256",
+                digest_encoding="hex",
+            )
+            if not auth_result.ok:
+                logger.warning(
+                    f"Invalid WhatsApp webhook signature: {auth_result.error}"
+                )
                 return web.Response(status=401, text="Invalid Signature")
 
         try:
@@ -198,60 +219,6 @@ class WhatsAppWebhookServer:
         return web.FileResponse(path)
 
     # ------------------------------------------------------------------
-    # Signature Verification
-    # ------------------------------------------------------------------
-
-    def _verify_signature(self, body: bytes, signature_header: str) -> bool:
-        """
-        Verify X-Hub-Signature-256 using HMAC-SHA256 with app secret.
-
-        Header format: sha256=<hex_digest>
-        """
-        if not signature_header or not self.config.whatsapp_app_secret:
-            return False
-
-        if not signature_header.startswith("sha256="):
-            return False
-
-        expected_sig = signature_header[7:]  # Strip "sha256=" prefix
-        secret = self.config.whatsapp_app_secret.encode("utf-8")
-        computed = hmac.new(secret, body, hashlib.sha256).hexdigest()
-
-        return hmac.compare_digest(computed, expected_sig)
-
-    # ------------------------------------------------------------------
-    # Replay Protection (F32 WP2)
-    # ------------------------------------------------------------------
-
-    def _check_replay_protection(self, message_id: str, timestamp: int) -> bool:
-        """
-        Returns False if the message should be rejected (replay or stale).
-        """
-        now = time.time()
-        age_sec = now - timestamp
-
-        if age_sec > self.REPLAY_WINDOW_SEC or age_sec < -60:
-            logger.debug(f"Stale or future WhatsApp message: age={age_sec:.1f}s")
-            return False
-
-        if message_id in self._nonce_cache:
-            logger.debug(f"Duplicate WhatsApp message: {message_id}")
-            return False
-
-        self._nonce_cache[message_id] = timestamp
-        self._evict_old_nonces()
-        return True
-
-    def _evict_old_nonces(self):
-        """Remove old entries from nonce cache."""
-        if len(self._nonce_cache) <= self.NONCE_CACHE_SIZE:
-            return
-
-        now = time.time()
-        cutoff = now - self.REPLAY_WINDOW_SEC
-        self._nonce_cache = {k: v for k, v in self._nonce_cache.items() if v > cutoff}
-
-    # ------------------------------------------------------------------
     # Message Processing
     # ------------------------------------------------------------------
 
@@ -272,8 +239,15 @@ class WhatsAppWebhookServer:
         if not text or not sender_id:
             return
 
-        # Replay protection
-        if not self._check_replay_protection(message_id, timestamp):
+        # Replay protection — S32 ReplayGuard (replaces inline F32 nonce cache)
+        now = time.time()
+        age_sec = now - timestamp
+        if age_sec > self.REPLAY_WINDOW_SEC or age_sec < -60:
+            logger.debug(f"Stale or future WhatsApp message: age={age_sec:.1f}s")
+            logger.warning(f"Replay rejected for WhatsApp message {message_id}")
+            return
+
+        if not self._replay_guard.check_and_record(message_id):
             logger.warning(f"Replay rejected for WhatsApp message {message_id}")
             return
 
@@ -285,10 +259,9 @@ class WhatsAppWebhookServer:
                 username = profile.get("name", username)
                 break
 
-        # Security: Allowlist check
-        is_allowed = False
-        if sender_id in self.config.whatsapp_allowed_users:
-            is_allowed = True
+        # Security: Allowlist — S32 AllowlistPolicy (soft-deny: strict=False)
+        user_result = self._user_allowlist.evaluate(sender_id)
+        is_allowed = user_result.decision == "allow"
 
         if not is_allowed:
             msg_info = f"Untrusted WhatsApp message from user={sender_id}."
