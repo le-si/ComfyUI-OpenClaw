@@ -57,16 +57,19 @@ def _atomic_write(path: str, data: Dict) -> None:
         raise
 
 
+from ..integrity import IntegrityError, load_verified, save_verified
+
+
 def load_approvals() -> Dict[str, ApprovalRequest]:
-    """Load approvals from disk."""
+    """Load approvals from disk with integrity check."""
     path = _get_approvals_path()
 
     if not os.path.exists(path):
         return {}
 
     try:
-        with open(path, "r", encoding="utf-8") as f:
-            data = json.load(f)
+        # R77: Load verification
+        data = load_verified(path, expected_version=1, migrate=True)
 
         result = {}
         if isinstance(data, dict) and "approvals" in data:
@@ -79,13 +82,20 @@ def load_approvals() -> Dict[str, ApprovalRequest]:
 
         logger.info(f"Loaded {len(result)} approval records")
         return result
-    except (json.JSONDecodeError, OSError) as e:
+    except IntegrityError as e:
+        # R77: Fail-closed logic with escalation
+        logger.critical(
+            f"R77: Integrity violation detected in approvals file {path}: {e}"
+        )
+        # Return empty (deny all pending approvals) which is safe fail-state
+        return {}
+    except Exception as e:
         logger.error(f"Failed to load approvals: {e}")
         return {}
 
 
 def save_approvals(approvals: Dict[str, ApprovalRequest]) -> bool:
-    """Save approvals to disk."""
+    """Save approvals to disk with integrity envelope."""
     path = _get_approvals_path()
 
     try:
@@ -94,7 +104,8 @@ def save_approvals(approvals: Dict[str, ApprovalRequest]) -> bool:
             "saved_at": datetime.now(timezone.utc).isoformat(),
             "approvals": [a.to_dict() for a in approvals.values()],
         }
-        _atomic_write(path, data)
+        # R77: Atomic verified save
+        save_verified(path, data, version=1)
         return True
     except Exception as e:
         logger.error(f"Failed to save approvals: {e}")

@@ -11,6 +11,7 @@ Every implementation plan must include the **full test validation procedure** in
 - Python 3.10+ (CI uses 3.10/3.11)
 - Node.js 18+ (CI uses 20)
 - `pre-commit` installed: `python -m pip install pre-commit`
+- Backend test deps available in the same interpreter (`numpy`, `pillow`, `aiohttp`)
 - Frontend deps installed: `npm install`
 
 ## Environment Sanity (Required Guardrails)
@@ -18,11 +19,13 @@ Every implementation plan must include the **full test validation procedure** in
 - **Python interpreter must be consistent** for all test commands.
   - Verify: `python -c "import sys; print(sys.executable)"`
   - If you use conda or venv, ensure the same interpreter runs unit tests and connector tests.
-- **Project venv recommended**: use `.venv` when possible to avoid mixed dependencies.
-  - Create: `python -m venv .venv`
-  - Activate (bash): `source .venv/bin/activate`
+- **Project venv recommended**: use an OS-specific local venv to avoid mixed dependencies.
+  - Linux/WSL recommended path: `.venv-wsl` (especially when Windows also uses `.venv` in the same repo)
+  - Other environments: `.venv`
+  - Create: `python -m venv .venv-wsl` (WSL) or `python -m venv .venv`
+  - Activate (bash): `source .venv-wsl/bin/activate` (or `.venv/bin/activate`)
   - Activate (pwsh): `.\.venv\Scripts\Activate.ps1`
-  - If tests fail due to missing deps in CI parity, **rerun in `.venv` and record that in the implementation record**.
+  - If tests fail due to missing deps in CI parity, rerun in the project venv used by scripts and record that in the implementation record.
 - **Node version must be 18+** before E2E:
   - Verify: `node -v`
   - If mismatch in WSL, use the Node 18 path specified below.
@@ -121,8 +124,9 @@ Use these checks before assuming the hook runner is broken:
 ### Optional: One-Command Full Test Scripts (Fastest)
 
 Use these if you want a single command that runs **all required steps** (detect-secrets, pre-commit, unit tests, E2E). These scripts also handle the most common environment issues (Windows cache locks, Black cache, Node 18).
-Both scripts enforce a project-local `.venv` and will bootstrap missing test tooling (`pre-commit`, and `aiohttp` where needed for imports).
-If `.venv` exists but is invalid for the current OS (for example created in WSL then reused in Windows), rerun via the script so it can recreate the environment.
+Scripts enforce a project-local venv and will bootstrap missing test tooling (`pre-commit`, and `aiohttp` where needed for imports).
+On WSL, scripts prefer `.venv-wsl`; on Windows they use `.venv`.
+If the selected venv exists but is invalid for the current OS/interpreter, rerun via the script so it can recreate that venv.
 Linux script includes an explicit offline fail-fast guard: if dependency bootstrap fails (for example `aiohttp` / `pre-commit` install), it stops with remediation hints instead of continuing with partial state.
 
 - Linux/WSL:
@@ -143,6 +147,16 @@ Then every `git push` will run:
 ```bash
 bash scripts/pre_push_checks.sh
 ```
+
+`scripts/pre_push_checks.sh` is the CI-parity guard and must include all 4 stages:
+1) `detect-secrets`
+2) all `pre-commit` hooks
+3) backend unit tests (`scripts/run_unittests.py --pattern "test_*.py"`)
+4) frontend E2E (`npm test`)
+
+IMPORTANT:
+- Do not remove stage (3). If pre-push skips backend unit tests, local pushes can pass while GitHub CI fails later.
+- Keep dependency bootstrap in this script aligned with `.github/workflows/ci.yml` unit-test dependencies.
 
 1) Detect Secrets (baseline-based)
 

@@ -47,6 +47,35 @@ def _import_aiohttp_web():
     return aiohttp, web
 
 
+class _CompatResponse:
+    """Minimal response shim for unit tests when aiohttp is unavailable."""
+
+    def __init__(
+        self,
+        *,
+        status: int = 200,
+        text: str = "",
+        content_type: str = "text/plain",
+        body: Optional[bytes] = None,
+    ):
+        self.status = status
+        self.text = text
+        self.content_type = content_type
+        self.body = body if body is not None else text.encode("utf-8")
+
+
+def _make_response(
+    web,
+    *,
+    status: int = 200,
+    text: str = "",
+    content_type: str = "text/plain",
+):
+    if web is not None:
+        return web.Response(status=status, text=text, content_type=content_type)
+    return _CompatResponse(status=status, text=text, content_type=content_type)
+
+
 # ---------------------------------------------------------------------------
 # R74 — Protocol constants
 # ---------------------------------------------------------------------------
@@ -343,8 +372,9 @@ class WeChatWebhookServer:
         Must return echostr as plain text if signature is valid.
         """
         _, web = _import_aiohttp_web()
-        if web is None:
-            raise RuntimeError("aiohttp not available")
+        # IMPORTANT:
+        # CI unit tests invoke handler logic directly without aiohttp installed.
+        # Do not hard-raise here; return compat responses so security logic remains testable.
 
         signature = request.query.get("signature", "")
         timestamp = request.query.get("timestamp", "")
@@ -355,10 +385,10 @@ class WeChatWebhookServer:
 
         if verify_wechat_signature(token, timestamp, nonce, signature):
             logger.info("WeChat webhook verification succeeded")
-            return web.Response(text=echostr, content_type="text/plain")
+            return _make_response(web, text=echostr, content_type="text/plain")
 
         logger.warning("WeChat webhook verification failed")
-        return web.Response(status=403, text="Verification failed")
+        return _make_response(web, status=403, text="Verification failed")
 
     # ------------------------------------------------------------------
     # POST — Inbound Messages (R74 + S31)
@@ -367,8 +397,9 @@ class WeChatWebhookServer:
     async def handle_webhook(self, request):
         """POST handler for WeChat XML messages/events."""
         _, web = _import_aiohttp_web()
-        if web is None:
-            raise RuntimeError("aiohttp not available")
+        # IMPORTANT:
+        # Keep handler behavior testable in environments without aiohttp.
+        # Server startup still requires aiohttp, but direct handler unit tests should not crash.
 
         # S31: Signature verification
         signature = request.query.get("signature", "")
@@ -378,12 +409,12 @@ class WeChatWebhookServer:
 
         if not verify_wechat_signature(token, timestamp, nonce, signature):
             logger.warning("Invalid WeChat POST signature")
-            return web.Response(status=401, text="Invalid Signature")
+            return _make_response(web, status=401, text="Invalid Signature")
 
         # S31: Replay protection — nonce dedup
         if nonce and not self._replay_guard.check_and_record(nonce):
             logger.warning(f"Replay rejected for WeChat nonce: {nonce}")
-            return web.Response(status=403, text="Replay Rejected")
+            return _make_response(web, status=403, text="Replay Rejected")
 
         # S31: Timestamp freshness
         try:
@@ -394,7 +425,7 @@ class WeChatWebhookServer:
         age_sec = now - ts_val
         if age_sec > self.REPLAY_WINDOW_SEC or age_sec < -60:
             logger.warning(f"Stale WeChat request: age={age_sec}s")
-            return web.Response(status=403, text="Stale Request")
+            return _make_response(web, status=403, text="Stale Request")
 
         # Read and parse XML with S31 budgets
         body_bytes = await request.read()
@@ -403,13 +434,13 @@ class WeChatWebhookServer:
             fields = parse_wechat_xml(body_bytes)
         except XMLBudgetExceeded as e:
             logger.warning(f"WeChat XML budget exceeded: {e}")
-            return web.Response(status=400, text="Bad Request")
+            return _make_response(web, status=400, text="Bad Request")
 
         # R74: Normalize to canonical event
         event = normalize_wechat_event(fields)
         if event is None:
             # Unsupported message type — return empty success to WeChat
-            return web.Response(text="success", content_type="text/plain")
+            return _make_response(web, text="success", content_type="text/plain")
 
         # S31: Allowlist check (soft-deny)
         sender_id = event["sender_id"]
@@ -429,7 +460,7 @@ class WeChatWebhookServer:
         # Per-message dedup (MsgId-based, distinct from nonce-based replay)
         if message_id and not self._replay_guard.check_and_record(f"msg:{message_id}"):
             logger.debug(f"Duplicate WeChat MsgId: {message_id}")
-            return web.Response(text="success", content_type="text/plain")
+            return _make_response(web, text="success", content_type="text/plain")
 
         req = CommandRequest(
             platform="wechat",
@@ -448,14 +479,15 @@ class WeChatWebhookServer:
                 to_user = event["sender_id"]
                 from_user = event["to_user"]
                 reply_xml = build_text_reply_xml(to_user, from_user, resp.text)
-                return web.Response(
+                return _make_response(
+                    web,
                     text=reply_xml,
                     content_type="application/xml",
                 )
         except Exception as e:
             logger.exception(f"Error handling WeChat command: {e}")
 
-        return web.Response(text="success", content_type="text/plain")
+        return _make_response(web, text="success", content_type="text/plain")
 
     # ------------------------------------------------------------------
     # Outbound: Text (Customer Service Message API)

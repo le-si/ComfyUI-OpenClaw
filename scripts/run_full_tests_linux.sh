@@ -22,6 +22,25 @@ require_cmd() {
   fi
 }
 
+is_wsl() {
+  grep -qiE "(microsoft|wsl)" /proc/version 2>/dev/null
+}
+
+select_venv_dir() {
+  # Explicit override for advanced/local setups.
+  if [ -n "${OPENCLAW_TEST_VENV:-}" ]; then
+    echo "$OPENCLAW_TEST_VENV"
+    return 0
+  fi
+  # IMPORTANT:
+  # In WSL, prefer dedicated Linux venv to avoid clashing with Windows .venv.
+  if is_wsl; then
+    echo "$ROOT_DIR/.venv-wsl"
+  else
+    echo "$ROOT_DIR/.venv"
+  fi
+}
+
 pip_install_or_fail() {
   local why="$1"
   shift
@@ -30,7 +49,7 @@ pip_install_or_fail() {
   fi
   echo "[tests] ERROR: failed to install dependency ($why): $*" >&2
   echo "[tests] HINT: check internet/proxy, then retry the script." >&2
-  echo "[tests] HINT: if offline, pre-install into .venv manually: $VENV_PY -m pip install $*" >&2
+  echo "[tests] HINT: if offline, pre-install into venv manually: $VENV_PY -m pip install $*" >&2
   exit 1
 }
 
@@ -38,13 +57,14 @@ require_cmd node
 require_cmd npm
 
 # Always use project-local venv to avoid global interpreter / tool drift.
-VENV_PY="$ROOT_DIR/.venv/bin/python"
+VENV_DIR="$(select_venv_dir)"
+VENV_PY="$VENV_DIR/bin/python"
 if [ ! -x "$VENV_PY" ]; then
-  echo "[tests] Creating project venv at $ROOT_DIR/.venv ..."
+  echo "[tests] Creating project venv at $VENV_DIR ..."
   if command -v python3 >/dev/null 2>&1; then
-    python3 -m venv "$ROOT_DIR/.venv"
+    python3 -m venv "$VENV_DIR"
   elif command -v python >/dev/null 2>&1; then
-    python -m venv "$ROOT_DIR/.venv"
+    python -m venv "$VENV_DIR"
   else
     echo "[tests] ERROR: no bootstrap Python found (need python3 or python)" >&2
     exit 1
@@ -52,12 +72,12 @@ if [ ! -x "$VENV_PY" ]; then
 fi
 
 if ! "$VENV_PY" -m pre_commit --version >/dev/null 2>&1; then
-  echo "[tests] Installing pre-commit into project venv ..."
+  echo "[tests] Installing pre-commit into project venv ($VENV_DIR) ..."
   pip_install_or_fail "required for detect-secrets and hook validation" -U pip pre-commit
 fi
 
 if ! "$VENV_PY" -c "import aiohttp" >/dev/null 2>&1; then
-  echo "[tests] Installing aiohttp into project venv ..."
+  echo "[tests] Installing aiohttp into project venv ($VENV_DIR) ..."
   pip_install_or_fail "required by import paths used in unit tests" aiohttp
 fi
 

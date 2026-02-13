@@ -18,6 +18,8 @@ except ImportError:
     # Fallback for tests or decoupled run
     DATA_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "data")
 
+from .integrity import IntegrityError, load_verified, save_verified
+
 logger = logging.getLogger("ComfyUI-OpenClaw.services.checkpoints")
 
 CHECKPOINTS_DIR = os.path.join(DATA_DIR, "checkpoints")
@@ -45,9 +47,14 @@ def list_checkpoints() -> List[Dict[str, Any]]:
             for entry in it:
                 if entry.name.endswith(".meta.json") and entry.is_file():
                     try:
-                        with open(entry.path, "r", encoding="utf-8") as f:
-                            meta = json.load(f)
-                            checkpoints.append(meta)
+
+                        meta = load_verified(entry.path, migrate=True)
+                        checkpoints.append(meta)
+                    except IntegrityError as e:
+                        logger.critical(
+                            f"R77: Integrity violation in checkpoint {entry.name}: {e}"
+                        )
+                        # Skip this file (fail-closed for this item)
                     except Exception:
                         logger.warning(f"Failed to read checkpoint meta: {entry.name}")
     except OSError:
@@ -66,12 +73,14 @@ def get_checkpoint(checkpoint_id: str) -> Optional[Dict[str, Any]]:
         return None
 
     try:
-        with open(meta_path, "r", encoding="utf-8") as f:
-            meta = json.load(f)
-        with open(payload_path, "r", encoding="utf-8") as f:
-            workflow = json.load(f)
+
+        meta = load_verified(meta_path, migrate=True)
+        workflow = load_verified(payload_path, migrate=True)
 
         return {"id": checkpoint_id, "meta": meta, "workflow": workflow}
+    except IntegrityError as e:
+        logger.critical(f"R77: Integrity violation in checkpoint {checkpoint_id}: {e}")
+        return None
     except Exception as e:
         logger.error(f"Error reading checkpoint {checkpoint_id}: {e}")
         return None
@@ -148,8 +157,8 @@ def create_checkpoint(
     meta_path, payload_path = _get_paths(cid)
 
     try:
-        _atomic_write(meta_path, json.dumps(meta, indent=2))
-        _atomic_write(payload_path, workflow_json)
+        save_verified(meta_path, meta)
+        save_verified(payload_path, workflow)
     except Exception as e:
         # Cleanup on fail (although atomic write minimizes this risk for individual files)
         if os.path.exists(meta_path):

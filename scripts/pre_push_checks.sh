@@ -40,13 +40,50 @@ require_cmd() {
   fi
 }
 
+pip_install_or_fail() {
+  local why="$1"
+  shift
+  if "$VENV_PY" -m pip install "$@"; then
+    return 0
+  fi
+  echo "[pre-push] ERROR: failed to install dependency ($why): $*" >&2
+  exit 1
+}
+
+is_wsl() {
+  grep -qiE "(microsoft|wsl)" /proc/version 2>/dev/null
+}
+
+select_venv_dir() {
+  # Explicit override for advanced/local setups.
+  if [ -n "${OPENCLAW_TEST_VENV:-}" ]; then
+    echo "$OPENCLAW_TEST_VENV"
+    return 0
+  fi
+
+  case "$UNAME_S" in
+    MINGW*|MSYS*|CYGWIN*)
+      echo "$ROOT_DIR/.venv"
+      ;;
+    *)
+      # IMPORTANT:
+      # In WSL, prefer dedicated Linux venv to avoid mixing with Windows .venv.
+      if is_wsl; then
+        echo "$ROOT_DIR/.venv-wsl"
+      else
+        echo "$ROOT_DIR/.venv"
+      fi
+      ;;
+  esac
+}
+
 resolve_venv_python() {
   case "$UNAME_S" in
     MINGW*|MSYS*|CYGWIN*)
-      echo "$ROOT_DIR/.venv/Scripts/python.exe"
+      echo "$VENV_DIR/Scripts/python.exe"
       ;;
     *)
-      echo "$ROOT_DIR/.venv/bin/python"
+      echo "$VENV_DIR/bin/python"
       ;;
   esac
 }
@@ -70,24 +107,24 @@ bootstrap_venv() {
   fi
 
   if [ -e "$venv_py" ]; then
-    echo "[pre-push] WARN: existing .venv is invalid; recreating with a Windows-native Python." >&2
-    rm -rf "$ROOT_DIR/.venv"
+    echo "[pre-push] WARN: existing venv is invalid; recreating: $VENV_DIR" >&2
+    rm -rf "$VENV_DIR"
   fi
 
-  echo "[pre-push] INFO: creating project .venv ..." >&2
+  echo "[pre-push] INFO: creating project venv at $VENV_DIR ..." >&2
   case "$UNAME_S" in
     MINGW*|MSYS*|CYGWIN*)
       # CRITICAL: on Git Bash, `python3` may resolve to MSYS `/usr/bin/python`,
       # which creates a broken Windows venv (`No Python at "/usr/bin\python.exe"`).
       # Always prefer Windows-native launchers/interpreters.
       if command -v py.exe >/dev/null 2>&1; then
-        py.exe -3 -m venv "$ROOT_DIR/.venv"
+        py.exe -3 -m venv "$VENV_DIR"
       elif [ -x "/c/Windows/py.exe" ]; then
-        /c/Windows/py.exe -3 -m venv "$ROOT_DIR/.venv"
+        /c/Windows/py.exe -3 -m venv "$VENV_DIR"
       elif command -v python.exe >/dev/null 2>&1; then
-        python.exe -m venv "$ROOT_DIR/.venv"
+        python.exe -m venv "$VENV_DIR"
       elif command -v py >/dev/null 2>&1; then
-        py -3 -m venv "$ROOT_DIR/.venv"
+        py -3 -m venv "$VENV_DIR"
       else
         echo "[pre-push] ERROR: no Windows Python launcher found (py.exe/python.exe)." >&2
         exit 1
@@ -95,9 +132,9 @@ bootstrap_venv() {
       ;;
     *)
       if command -v python3 >/dev/null 2>&1; then
-        python3 -m venv "$ROOT_DIR/.venv"
+        python3 -m venv "$VENV_DIR"
       elif command -v python >/dev/null 2>&1; then
-        python -m venv "$ROOT_DIR/.venv"
+        python -m venv "$VENV_DIR"
       else
         echo "[pre-push] ERROR: no bootstrap Python found (python3/python)." >&2
         exit 1
@@ -106,7 +143,7 @@ bootstrap_venv() {
   esac
 
   if ! is_venv_python_healthy "$venv_py"; then
-    echo "[pre-push] ERROR: failed to initialize project .venv." >&2
+    echo "[pre-push] ERROR: failed to initialize project venv: $VENV_DIR" >&2
     exit 1
   fi
   echo "$venv_py"
@@ -116,19 +153,33 @@ pre_commit_cmd() {
   "$VENV_PY" -m pre_commit "$@"
 }
 
-# CRITICAL: pre-push must always run pre-commit from project .venv.
+# CRITICAL: pre-push must always run pre-commit from project venv.
 # Do not switch this back to global `pre-commit` command lookup.
 # This prevents mixed global/user installs from hijacking hook execution.
+VENV_DIR="$(select_venv_dir)"
 VENV_PY="$(bootstrap_venv)"
 if ! "$VENV_PY" -m pre_commit --version >/dev/null 2>&1; then
-  echo "[pre-push] INFO: installing pre-commit into project .venv ..." >&2
-  "$VENV_PY" -m pip install -U pip pre-commit
+  echo "[pre-push] INFO: installing pre-commit into project venv ($VENV_DIR) ..." >&2
+  pip_install_or_fail "required for pre-commit hooks" -U pip pre-commit
 fi
 if ! "$VENV_PY" -c "import black" >/dev/null 2>&1; then
   # Keep black in the same interpreter used by local black-single hook.
-  echo "[pre-push] INFO: installing black into project .venv ..." >&2
-  "$VENV_PY" -m pip install black==24.1.1
+  echo "[pre-push] INFO: installing black into project venv ($VENV_DIR) ..." >&2
+  pip_install_or_fail "required by black-single hook" black==24.1.1
 fi
+
+# IMPORTANT:
+# Pre-push now runs backend unit tests. Keep minimal runtime deps aligned with
+# CI unit-test job to avoid "passes locally, fails on GitHub" drift.
+if ! "$VENV_PY" -c "import numpy, PIL" >/dev/null 2>&1; then
+  echo "[pre-push] INFO: installing numpy/pillow into project venv ($VENV_DIR) ..." >&2
+  pip_install_or_fail "required by unit tests" numpy pillow
+fi
+if ! "$VENV_PY" -c "import aiohttp" >/dev/null 2>&1; then
+  echo "[pre-push] INFO: installing aiohttp into project venv ($VENV_DIR) ..." >&2
+  pip_install_or_fail "required by unit tests/import paths" aiohttp
+fi
+
 require_cmd npm
 
 run_pre_commit_safe() {
@@ -225,13 +276,17 @@ if [ "$NODE_MAJOR" -lt 18 ]; then
 fi
 
 echo "[pre-push] Node version: $(node -v)"
-echo "[pre-push] 1/3 detect-secrets"
+echo "[pre-push] 1/4 detect-secrets"
 run_pre_commit_safe run detect-secrets --all-files
 
-echo "[pre-push] 2/3 pre-commit all hooks"
+echo "[pre-push] 2/4 pre-commit all hooks"
 run_pre_commit_safe run --all-files
 
-echo "[pre-push] 3/3 npm test (Playwright)"
+echo "[pre-push] 3/4 backend unit tests"
+MOLTBOT_STATE_DIR="$ROOT_DIR/moltbot_state/_pre_push_unit" \
+  "$VENV_PY" scripts/run_unittests.py --start-dir tests --pattern "test_*.py"
+
+echo "[pre-push] 4/4 npm test (Playwright)"
 npm test
 
 echo "[pre-push] PASS"

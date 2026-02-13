@@ -43,6 +43,20 @@ class TestRuntimeConfig(unittest.TestCase):
         patcher.start()
         self.addCleanup(patcher.stop)
 
+        # IMPORTANT:
+        # runtime_config._get_env_value caches legacy-warning emission in a function
+        # attribute (`_warned_legacy`). Without resetting it here, test order can
+        # suppress expected warning logs and produce false negatives in CI.
+        try:
+            for mod_name, mod in list(sys.modules.items()):
+                if not mod_name.endswith("runtime_config"):
+                    continue
+                fn = getattr(mod, "_get_env_value", None)
+                if callable(fn):
+                    setattr(fn, "_warned_legacy", set())
+        except Exception:
+            pass
+
         for key in [
             "MOLTBOT_LLM_PROVIDER",
             "MOLTBOT_LLM_MODEL",

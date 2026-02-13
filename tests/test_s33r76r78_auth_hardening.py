@@ -25,9 +25,16 @@ from services.csrf_protection import is_same_origin_request
 # classified here, otherwise tests fail.
 AUTH_CLASS_BY_ROUTE = {
     ("GET", "/health"): "public-safe",
-    ("GET", "/logs/tail"): "observability",
+    # IMPORTANT:
+    # `/logs/tail` was hardened to admin-only because log payload can expose
+    # high-sensitivity prompt/runtime context (S34). Keep this auth class in
+    # sync with api/logs_tail.py to avoid accidental privilege regression.
+    ("GET", "/logs/tail"): "admin",
     ("GET", "/jobs"): "public-safe",
-    ("GET", "/trace/{prompt_id}"): "observability",
+    # IMPORTANT:
+    # Trace endpoint now returns high-sensitivity execution context and is
+    # intentionally admin-only (S34). Keep as admin to prevent data leakage.
+    ("GET", "/trace/{prompt_id}"): "admin",
     ("POST", "/webhook"): "webhook-auth",
     ("POST", "/webhook/submit"): "webhook-auth",
     ("POST", "/webhook/validate"): "webhook-auth",

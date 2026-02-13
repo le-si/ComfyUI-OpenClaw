@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 """
 S26+: Same-Origin CSRF Protection for Localhost Convenience Mode
 
@@ -7,16 +9,38 @@ when no admin token is configured (convenience mode).
 Purpose: Prevent cross-origin requests from abusing localhost-only admin endpoints.
 """
 
+import json
 import logging
 import os
 from typing import Optional
 
-from aiohttp import web
+try:
+    from aiohttp import web  # type: ignore
+except ModuleNotFoundError:  # pragma: no cover - CI/minimal env path
+    web = None  # type: ignore
 
-# NOTE FOR CALLERS:
-# This module has an import-time aiohttp dependency. If a caller must remain
-# importable in minimal test/CI environments without aiohttp, guard the import
-# at the caller boundary (see `api/config.py` for the required pattern).
+# IMPORTANT:
+# Keep this module importable even when aiohttp is unavailable (CI/minimal env).
+# Tests import `is_same_origin_request` directly; a hard import error here causes
+# unrelated auth-hardening suites to fail before skip guards can apply.
+
+
+class _CompatResponse:
+    """Minimal fallback response when aiohttp is unavailable."""
+
+    def __init__(self, *, status: int, body: bytes, content_type: str):
+        self.status = status
+        self.body = body
+        self.text = body.decode("utf-8", errors="replace")
+        self.content_type = content_type
+
+
+def _json_response(payload: dict, *, status: int):
+    if web is not None:
+        return web.json_response(payload, status=status)
+    body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
+    return _CompatResponse(status=status, body=body, content_type="application/json")
+
 
 logger = logging.getLogger("ComfyUI-OpenClaw.services.csrf_protection")
 
@@ -117,7 +141,7 @@ def require_same_origin_if_no_token(
         logger.warning(
             f"S26+: CSRF protection denied cross-origin request to {request.path}"
         )
-        return web.json_response(
+        return _json_response(
             {
                 "ok": False,
                 "error": "csrf_protection",

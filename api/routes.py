@@ -67,7 +67,10 @@ if web is not None:
         # CRITICAL: These imports MUST remain present.
         # If edited out, module-level placeholders stay as None and handlers raise at runtime
         # (e.g., TypeError: 'NoneType' object is not callable), producing noisy aiohttp tracebacks.
-        from ..services.access_control import require_observability_access
+        from ..services.access_control import (
+            require_admin_token,
+            require_observability_access,
+        )
         from ..services.log_tail import tail_log
         from ..services.metrics import metrics
         from ..services.rate_limit import check_rate_limit
@@ -109,6 +112,7 @@ if web is not None:
 
         # IMPORTANT: keep PACK_* imports aligned with config.py (VERSION/config_path do not exist).
         from config import LOG_FILE, PACK_NAME, PACK_START_TIME, PACK_VERSION
+        from services.access_control import require_admin_token  # type: ignore
         from services.access_control import require_observability_access  # type: ignore
         from services.log_tail import tail_log  # type: ignore
         from services.metrics import metrics  # type: ignore
@@ -261,8 +265,8 @@ async def logs_tail_handler(request: web.Request) -> web.Response:
     ok, init_error = _ensure_observability_deps_ready()
     if not ok:
         return web.json_response({"ok": False, "error": init_error}, status=500)
-    # S14: Access Control
-    allowed, error = require_observability_access(request)
+    # S34: Trace/Log data is high sensitivity -> Require Admin Token
+    allowed, error = require_admin_token(request)
     if not allowed:
         return web.json_response({"ok": False, "error": error}, status=403)
 
@@ -364,7 +368,8 @@ async def trace_handler(request: web.Request) -> web.Response:
     ok, init_error = _ensure_observability_deps_ready()
     if not ok:
         return web.json_response({"ok": False, "error": init_error}, status=500)
-    allowed, error = require_observability_access(request)
+    # S34: Trace/Log data is high sensitivity -> Require Admin Token
+    allowed, error = require_admin_token(request)
     if not allowed:
         return web.json_response({"ok": False, "error": error}, status=403)
 

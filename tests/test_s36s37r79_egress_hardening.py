@@ -19,8 +19,27 @@ from unittest.mock import ANY, MagicMock, patch
 import services.safe_io as safe_io
 import services.webhook_auth as webhook_auth
 
-# Disable logging during tests to avoid noise
-logging.disable(logging.CRITICAL)
+# IMPORTANT:
+# Do NOT disable logging at import time. unittest discovery imports all modules
+# before test execution, so import-time logging.disable() leaks globally and
+# breaks unrelated assertLogs tests.
+_PREV_LOG_DISABLE_LEVEL = None
+
+
+def setUpModule():
+    """Disable noisy logs only while this module's tests are running."""
+    global _PREV_LOG_DISABLE_LEVEL
+    _PREV_LOG_DISABLE_LEVEL = logging.root.manager.disable
+    logging.disable(logging.CRITICAL)
+
+
+def tearDownModule():
+    """Restore global logging state for downstream modules."""
+    global _PREV_LOG_DISABLE_LEVEL
+    if _PREV_LOG_DISABLE_LEVEL is None:
+        logging.disable(logging.NOTSET)
+    else:
+        logging.disable(_PREV_LOG_DISABLE_LEVEL)
 
 
 class TestS36WebhookReplay(unittest.TestCase):

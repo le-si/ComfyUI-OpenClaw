@@ -145,6 +145,12 @@ SCHEDULER_ENV_MAPPINGS = {
     "skip_missed_intervals": ("OPENCLAW_SCHEDULER_SKIP_MISSED", ""),
 }
 
+# IMPORTANT:
+# Keep effective-config merge order deterministic.
+# Using a set iteration here makes legacy warning assertions flaky because the
+# first env key read can vary per process/hash seed.
+LLM_KEY_ORDER = tuple(ENV_MAPPINGS.keys())
+
 
 def _clamp(value: int, min_val: int, max_val: int) -> int:
     """Clamp an integer to a range."""
@@ -271,7 +277,11 @@ def get_effective_config() -> Tuple[Dict[str, Any], Dict[str, str]]:
     effective = {}
     sources = {}
 
-    for key in ALLOWED_LLM_KEYS:
+    ordered_keys = list(LLM_KEY_ORDER) + [
+        k for k in sorted(ALLOWED_LLM_KEYS) if k not in ENV_MAPPINGS
+    ]
+
+    for key in ordered_keys:
         # 1. Check ENV override
         env_val = _get_env_value(key)
         if env_val is not None:
