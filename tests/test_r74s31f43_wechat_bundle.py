@@ -12,6 +12,7 @@ Covers:
 import hashlib
 import time
 import unittest
+import xml.parsers.expat  # noqa: F401 - ensure patch("xml.parsers.expat") target exists
 from unittest.mock import AsyncMock, MagicMock, patch
 
 from connector.platforms.wechat_webhook import (
@@ -626,3 +627,90 @@ class TestCrossModuleRegression(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+# ===========================================================================
+# S31 — XML Runtime Security Gate
+# ===========================================================================
+
+
+class TestWeChatXMLSecurityGate(unittest.TestCase):
+    """S31: Verify XML runtime gate logic."""
+
+    def test_safe_expat_version_passes(self):
+        """expat_2.4.1 should pass."""
+        from connector.platforms.wechat_webhook import _check_xml_security
+
+        with patch("xml.parsers.expat") as mock_expat:
+            mock_expat.EXPAT_VERSION = "expat_2.4.1"
+            # Should not raise
+            _check_xml_security()
+
+    def test_unsafe_expat_version_fails(self):
+        """expat_2.3.0 should fail."""
+        from connector.platforms.wechat_webhook import _check_xml_security
+
+        with patch("xml.parsers.expat") as mock_expat:
+            mock_expat.EXPAT_VERSION = "expat_2.3.0"
+            with self.assertRaises(RuntimeError) as cm:
+                _check_xml_security()
+            self.assertIn("Unsafe Expat version", str(cm.exception))
+
+    def test_bare_version_string_passes(self):
+        """2.4.1 (no prefix) should pass."""
+        from connector.platforms.wechat_webhook import _check_xml_security
+
+        with patch("xml.parsers.expat") as mock_expat:
+            mock_expat.EXPAT_VERSION = "2.4.1"
+            _check_xml_security()
+
+    def test_missing_dependency_fails_closed(self):
+        """ImportError should fail closed."""
+        from connector.platforms.wechat_webhook import _check_xml_security
+
+        with patch.dict("sys.modules", {"xml.parsers.expat": None}):
+            with self.assertRaises(RuntimeError):
+                _check_xml_security()
+
+    def test_server_startup_enforces_gate(self):
+        """Server.start() must call the gate."""
+        from connector.platforms.wechat_webhook import WeChatWebhookServer
+
+        # We need to mock _check_xml_security to verify it's called
+        with patch(
+            "connector.platforms.wechat_webhook._check_xml_security"
+        ) as mock_gate:
+            # Also mock aiohttp to proceed past gate
+            with patch(
+                "connector.platforms.wechat_webhook._import_aiohttp_web"
+            ) as mock_import:
+                # Mock web module
+                mock_web = MagicMock()
+                mock_runner = MagicMock()
+                mock_runner.setup = AsyncMock()
+                mock_runner.cleanup = AsyncMock()
+                mock_web.AppRunner.return_value = mock_runner
+
+                mock_site = MagicMock()
+                mock_site.start = AsyncMock()
+                mock_web.TCPSite.return_value = mock_site
+
+                # Mock aiohttp module
+                mock_aiohttp = MagicMock()
+                mock_session = MagicMock()
+                mock_session.close = AsyncMock()
+                mock_aiohttp.ClientSession.return_value = mock_session
+
+                mock_import.return_value = (mock_aiohttp, mock_web)
+
+                # Config mock
+                config = MagicMock()
+                config.wechat_token = "token"
+                router = MagicMock()
+
+                server = WeChatWebhookServer(config, router)
+
+                # Run start (async)
+                import asyncio
+
+                asyncio.run(server.start())
+
+                mock_gate.assert_called_once()

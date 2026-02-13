@@ -66,6 +66,40 @@ SUPPORTED_EVENT_TYPES = {"subscribe"}
 
 
 # ---------------------------------------------------------------------------
+# S31 — XML Runtime Security Gate
+# ---------------------------------------------------------------------------
+
+
+def _check_xml_security() -> None:
+    """
+    S31: Verify underlying XML parser security baseline.
+    Must fail closed if Expat version is strictly < 2.4.1 (CVE-2021-45960).
+    """
+    try:
+        import xml.parsers.expat
+
+        ver_str = getattr(xml.parsers.expat, "EXPAT_VERSION", "")
+        # Format can be "expat_2.4.1" or just "2.4.1"
+        if ver_str.lower().startswith("expat_"):
+            clean_ver = ver_str[6:]
+        else:
+            clean_ver = ver_str
+
+        # Parse version tuple
+        parts = [int(p) for p in clean_ver.split(".") if p.isdigit()]
+
+        # Tuple comparison (major, minor, patch)
+        # S31 Baseline: 2.4.1 (released 2022-01)
+        if tuple(parts) < (2, 4, 1):
+            raise RuntimeError(
+                f"Unsafe Expat version {ver_str}. Upgrade Python/libexpat to >= 2.4.1."
+            )
+    except (ImportError, AttributeError, ValueError) as e:
+        # Fail closed on any check failure
+        raise RuntimeError(f"XML Security Gate Failed: {e}") from e
+
+
+# ---------------------------------------------------------------------------
 # S31 — WeChat signature verification
 # ---------------------------------------------------------------------------
 
@@ -257,6 +291,9 @@ class WeChatWebhookServer:
 
     async def start(self):
         """Start the webhook server."""
+        # S31: Fail-closed XML security gate check
+        _check_xml_security()
+
         aiohttp, web = _import_aiohttp_web()
         if aiohttp is None or web is None:
             logger.warning("aiohttp not installed. Skipping WeChat adapter.")
