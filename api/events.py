@@ -60,9 +60,9 @@ async def events_stream_handler(request: web.Request) -> web.StreamResponse:
         )
 
     # Access control (same as logs/tail)
-    denied = require_observability_access(request)
-    if denied:
-        return denied
+    allowed, error = require_observability_access(request)
+    if not allowed:
+        return web.json_response({"ok": False, "error": error}, status=403)
 
     store = get_job_event_store()
 
@@ -154,9 +154,9 @@ async def events_poll_handler(request: web.Request) -> web.Response:
         )
 
     # Access control
-    denied = require_observability_access(request)
-    if denied:
-        return denied
+    allowed, error = require_observability_access(request)
+    if not allowed:
+        return web.json_response({"ok": False, "error": error}, status=403)
 
     store = get_job_event_store()
 

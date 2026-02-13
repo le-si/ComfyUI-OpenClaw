@@ -90,15 +90,27 @@ class TestS28ChatCSRFGuard(unittest.IsolatedAsyncioTestCase):
     @patch("api.config.get_admin_token", return_value="")
     @patch("api.config.check_rate_limit", return_value=True)
     @patch("api.config.require_admin_token", return_value=(True, None))
-    async def test_no_origin_header_allowed_backwards_compat(
+    async def test_no_origin_header_denied_by_default_s33(
         self, _admin, _rate, _get_token
     ):
-        """No Origin/Sec-Fetch-Site header: allowed for backwards compat."""
+        """S33: No Origin/Sec-Fetch-Site header: Denied by default (strict)."""
         request = _make_request(
             body={"user_message": "hello"},
         )
         resp = await llm_chat_handler(request)
-        self.assertNotEqual(resp.status, 403, "No-header should be allowed")
+        self.assertEqual(resp.status, 403, "No-header should be denined by S33 default")
+
+    @patch("api.config.get_admin_token", return_value="")
+    @patch("api.config.check_rate_limit", return_value=True)
+    @patch("api.config.require_admin_token", return_value=(True, None))
+    @patch.dict("os.environ", {"OPENCLAW_LOCALHOST_ALLOW_NO_ORIGIN": "true"})
+    async def test_no_origin_allowed_with_legacy_flag(self, _admin, _rate, _get_token):
+        """S33: No Origin allowed if OPENCLAW_LOCALHOST_ALLOW_NO_ORIGIN=true."""
+        request = _make_request(
+            body={"user_message": "hello"},
+        )
+        resp = await llm_chat_handler(request)
+        self.assertNotEqual(resp.status, 403, "Legacy flag should allow no-origin")
 
 
 @unittest.skipIf(web is None, "aiohttp not installed")

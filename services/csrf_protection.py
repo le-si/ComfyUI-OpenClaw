@@ -70,12 +70,22 @@ def is_same_origin_request(request: web.Request) -> bool:
         logger.debug(f"S26+: Disallowed origin: {origin}")
         return False
 
-    # No Origin/Sec-Fetch-Site header (old browser or direct tool)
-    # Allow for backwards compat, but log
-    logger.debug(
-        "S26+: No Origin or Sec-Fetch-Site header; allowing (backwards compat)"
+    # No Origin/Sec-Fetch-Site header (old browser or direct tool like curl)
+    # S33: Strict default. explicit fallback required.
+    allow_no_origin = (
+        os.environ.get("OPENCLAW_LOCALHOST_ALLOW_NO_ORIGIN", "").lower() == "true"
     )
-    return True
+
+    if allow_no_origin:
+        logger.debug(
+            "S26+: No Origin or Sec-Fetch-Site header; allowing (OPENCLAW_LOCALHOST_ALLOW_NO_ORIGIN=true)"
+        )
+        return True
+
+    logger.debug(
+        "S33: No Origin or Sec-Fetch-Site header; denying (strict localhost mode)."
+    )
+    return False
 
 
 def require_same_origin_if_no_token(

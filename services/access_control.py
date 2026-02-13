@@ -126,7 +126,7 @@ def require_admin_token(request) -> Tuple[bool, Optional[str]]:
         if not is_same_origin_request(request):
             return (
                 False,
-                "Cross-origin request denied in convenience mode (S27). Set OPENCLAW_ADMIN_TOKEN to use token-based auth.",
+                "Cross-origin request denied (S33). Set OPENCLAW_ADMIN_TOKEN to use token-based auth.",
             )
         return True, None
 

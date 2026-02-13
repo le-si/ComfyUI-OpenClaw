@@ -26,6 +26,7 @@ class TestAccessControl(unittest.TestCase):
         req.remote = "127.0.0.1"
         req.headers = {}
 
+        # S33 (Relaxed): Observability allows simple loopback for monitoring apps
         allowed, error = require_observability_access(req)
         self.assertTrue(allowed)
         self.assertIsNone(error)
