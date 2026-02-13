@@ -1,19 +1,19 @@
 # OpenClaw Connector
 
-The **OpenClaw Connector** (`connector`) is a standalone process that allows you to control your local ComfyUI instance remotely via chat platforms like **Telegram**, **Discord**, **LINE**, and **WhatsApp**.
+The **OpenClaw Connector** (`connector`) is a standalone process that allows you to control your local ComfyUI instance remotely via chat platforms like **Telegram**, **Discord**, **LINE**, **WhatsApp**, and **WeChat Official Account**.
 
 ## How It Works
 
 The connector runs alongside ComfyUI on your machine.
 
 1. It connects outbound to Telegram/Discord (polling/gateway).
-2. LINE/WhatsApp use inbound webhooks (HTTPS required).
+2. LINE/WhatsApp/WeChat use inbound webhooks (HTTPS required).
 3. It talks to ComfyUI via `localhost`.
 4. It relays commands and status updates securely.
 
 **Security**:
 
-- **Outbound Only**: No inbound ports required.
+- **Transport Model**: Telegram/Discord are outbound. LINE/WhatsApp/WeChat require inbound HTTPS webhook endpoints.
 - **Allowlist**: Only users/chats you explicitly allow can send commands.
 - **Local Secrets**: Bot tokens are stored in your local environment, never sent to ComfyUI.
 - **Admin Boundary**: Control-plane actions call admin endpoints on the local ComfyUI instance. See `OPENCLAW_CONNECTOR_ADMIN_TOKEN` below.
@@ -24,6 +24,7 @@ The connector runs alongside ComfyUI on your machine.
 - **Discord**: Gateway WebSocket (instant response).
 - **LINE**: Webhook (requires inbound HTTPS).
 - **WhatsApp**: Webhook (requires inbound HTTPS).
+- **WeChat Official Account**: Webhook (requires inbound HTTPS).
 
 ## Setup
 
@@ -85,6 +86,18 @@ Set the following environment variables (or put them in a `.env` file if you use
 - `OPENCLAW_CONNECTOR_WHATSAPP_PORT`: Port (default `8098`).
 - `OPENCLAW_CONNECTOR_WHATSAPP_PATH`: Webhook path (default `/whatsapp/webhook`).
 
+**WeChat Official Account:**
+
+*(Requires Inbound Connectivity - see below)*
+
+- `OPENCLAW_CONNECTOR_WECHAT_TOKEN`: WeChat server verification token (**required** for adapter startup).
+- `OPENCLAW_CONNECTOR_WECHAT_APP_ID`: Official Account AppID (required for proactive outbound message API calls).
+- `OPENCLAW_CONNECTOR_WECHAT_APP_SECRET`: Official Account AppSecret (required for proactive outbound message API calls).
+- `OPENCLAW_CONNECTOR_WECHAT_ALLOWED_USERS`: Comma-separated OpenID allowlist. Non-allowlisted users are treated as untrusted and routed through approval semantics for sensitive actions.
+- `OPENCLAW_CONNECTOR_WECHAT_BIND`: Host to bind (default `127.0.0.1`).
+- `OPENCLAW_CONNECTOR_WECHAT_PORT`: Port (default `8097`).
+- `OPENCLAW_CONNECTOR_WECHAT_PATH`: Webhook path (default `/wechat/webhook`).
+
 **Image Delivery (F33):**
 
 - `OPENCLAW_CONNECTOR_PUBLIC_BASE_URL`: Public HTTPS URL of your connector (e.g. `https://your-tunnel.example.com`). Required for sending images.
@@ -95,6 +108,7 @@ Set the following environment variables (or put them in a `.env` file if you use
 > **Note:** Media URLs are signed with a secret derived from `OPENCLAW_CONNECTOR_ADMIN_TOKEN` or a random key.
 > To ensure URLs remain valid after connector restarts, **you must set `OPENCLAW_CONNECTOR_ADMIN_TOKEN`**.
 > LINE and WhatsApp also **require** `public_base_url` to be HTTPS.
+> WeChat currently supports text-first control. Image/media upload delivery is not implemented in phase 1.
 
 ### 3. Usage
 
@@ -134,6 +148,61 @@ WhatsApp Cloud API delivers webhooks to your connector. You must expose it via H
 6. Ensure `OPENCLAW_CONNECTOR_PUBLIC_BASE_URL` is an HTTPS URL so media can be delivered.
 
 If you run locally, use a secure tunnel (Cloudflare Tunnel or ngrok) and point it to `http://127.0.0.1:8098`.
+
+#### WeChat Official Account Webhook Setup (Detailed)
+
+WeChat Official Account pushes webhook requests to your connector. You must expose the WeChat endpoint publicly over HTTPS.
+
+1. Prepare the required environment variables:
+
+   ```bash
+   OPENCLAW_CONNECTOR_WECHAT_TOKEN=replace-with-your-wechat-token
+   OPENCLAW_CONNECTOR_WECHAT_APP_ID=wx1234567890abcdef
+   OPENCLAW_CONNECTOR_WECHAT_APP_SECRET=replace-with-app-secret
+   OPENCLAW_CONNECTOR_WECHAT_ALLOWED_USERS=openid_1,openid_2
+   OPENCLAW_CONNECTOR_WECHAT_BIND=127.0.0.1
+   OPENCLAW_CONNECTOR_WECHAT_PORT=8097
+   OPENCLAW_CONNECTOR_WECHAT_PATH=/wechat/webhook
+   ```
+
+2. Start the connector:
+
+   ```bash
+   python -m connector
+   ```
+
+3. Expose the local webhook service to HTTPS (Cloudflare Tunnel or reverse proxy):
+   - local upstream: `http://127.0.0.1:8097`
+   - public path: `/wechat/webhook`
+   - expected public URL: `https://<your-public-host>/wechat/webhook`
+
+4. In WeChat Official Account backend (Developer settings / server config), configure:
+   - URL: `https://<your-public-host>/wechat/webhook`
+   - Token: same value as `OPENCLAW_CONNECTOR_WECHAT_TOKEN`
+   - EncodingAESKey: set according to your WeChat backend requirement
+   - Message encryption mode: use plaintext/compatible mode for this adapter path
+
+5. Save/submit server config. WeChat will call your endpoint with verification query parameters.
+   - expected success behavior: connector returns `echostr` and logs verification success
+   - expected failure behavior: `403 Verification failed` if token/signature mismatches
+
+6. Functional test:
+   - follow your Official Account with a test user
+   - send `/help` or `/status`
+   - verify connector receives command and returns text reply
+
+7. Verify trusted/untrusted behavior:
+   - if sender OpenID is in `OPENCLAW_CONNECTOR_WECHAT_ALLOWED_USERS`, `/run` can execute directly (subject to admin rules)
+   - if not allowlisted, sensitive actions are routed to approval flow
+
+**WeChat-specific notes:**
+
+- The adapter validates WeChat signature on every request and applies replay/timestamp checks.
+- Timestamp skew outside policy window is rejected (`403 Stale Request`).
+- XML payload parsing is bounded (size/depth/field caps) and fails closed on parser budget violations.
+- Runtime XML security gate is fail-closed: unsafe/missing parser baseline blocks ingress startup.
+- Current command surface is text-first. Unsupported message/event types are ignored with success response.
+- Proactive outbound API messaging requires both `OPENCLAW_CONNECTOR_WECHAT_APP_ID` and `OPENCLAW_CONNECTOR_WECHAT_APP_SECRET`.
 
 ## Commands
 
