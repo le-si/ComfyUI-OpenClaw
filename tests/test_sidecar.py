@@ -7,6 +7,7 @@ import unittest
 from services.sidecar.bridge_client import BridgeClient, BridgeClientConfig
 from services.sidecar.bridge_contract import (
     BRIDGE_ENDPOINTS,
+    REQUIRED_WORKER_SCOPES,
     BridgeDeliveryRequest,
     BridgeHealthResponse,
     BridgeJobRequest,
@@ -64,6 +65,34 @@ class TestBridgeContract(unittest.TestCase):
         self.assertEqual(submit["path"], "/bridge/submit")
         self.assertEqual(submit["scope"], BridgeScope.JOB_SUBMIT)
 
+    # --- F46 contract alignment ---
+
+    def test_worker_endpoints_defined(self):
+        """F46: Worker-facing endpoints must exist in contract."""
+        for key in ("worker_poll", "worker_result", "worker_heartbeat"):
+            self.assertIn(key, BRIDGE_ENDPOINTS, f"Missing worker endpoint: {key}")
+
+    def test_worker_endpoint_paths(self):
+        """F46: Worker endpoints use /bridge/worker/* path convention."""
+        self.assertEqual(BRIDGE_ENDPOINTS["worker_poll"]["path"], "/bridge/worker/poll")
+        self.assertEqual(
+            BRIDGE_ENDPOINTS["worker_result"]["path"], "/bridge/worker/result"
+        )
+        self.assertEqual(
+            BRIDGE_ENDPOINTS["worker_heartbeat"]["path"], "/bridge/worker/heartbeat"
+        )
+
+    def test_worker_endpoint_methods(self):
+        """F46: Worker endpoints use correct HTTP methods."""
+        self.assertEqual(BRIDGE_ENDPOINTS["worker_poll"]["method"], "GET")
+        self.assertEqual(BRIDGE_ENDPOINTS["worker_result"]["method"], "POST")
+        self.assertEqual(BRIDGE_ENDPOINTS["worker_heartbeat"]["method"], "POST")
+
+    def test_required_worker_scopes(self):
+        """F46: Required scopes for sidecar startup are defined."""
+        self.assertIn(BridgeScope.JOB_SUBMIT, REQUIRED_WORKER_SCOPES)
+        self.assertIn(BridgeScope.JOB_STATUS, REQUIRED_WORKER_SCOPES)
+
 
 class TestBridgeClient(unittest.TestCase):
     """Tests for R13 sidecar bridge client."""
@@ -92,6 +121,34 @@ class TestBridgeClient(unittest.TestCase):
             template_id="test", inputs={}, idempotency_key="key123", device_id="dev456"
         )
         self.assertEqual(req.device_id, "dev456")
+
+    # --- F46 client endpoint alignment ---
+
+    def test_endpoint_resolver(self):
+        """F46: Client resolves contract paths correctly."""
+        client = BridgeClient("https://bridge.example.com", "t", "w")
+        self.assertEqual(
+            client._endpoint("worker_poll"),
+            "https://bridge.example.com/bridge/worker/poll",
+        )
+        self.assertEqual(
+            client._endpoint("health"),
+            "https://bridge.example.com/bridge/health",
+        )
+
+    def test_endpoint_resolver_strips_trailing_slash(self):
+        """F46: Client strips trailing slash from base URL."""
+        client = BridgeClient("https://bridge.example.com/", "t", "w")
+        self.assertEqual(
+            client._endpoint("health"),
+            "https://bridge.example.com/bridge/health",
+        )
+
+    def test_endpoint_resolver_unknown_raises(self):
+        """F46: Unknown endpoint name raises ValueError."""
+        client = BridgeClient("https://bridge.example.com", "t", "w")
+        with self.assertRaises(ValueError):
+            client._endpoint("nonexistent")
 
 
 if __name__ == "__main__":

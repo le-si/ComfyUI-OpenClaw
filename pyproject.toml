@@ -1,13 +1,17 @@
 [project]
 name = "comfyui-openclaw"
 description = "Your own personal AIGC Factory. Any picture. Any reel. The Comfy way.©️"
-version = "0.2.9"
+version = "0.3.0"
 license = {text = "MIT"}
 readme = "README.md"
 requires-python = ">=3.10"
 
 # No external dependencies required - uses only Python stdlib + ComfyUI's bundled packages
 dependencies = []
+
+[project.optional-dependencies]
+# WeChat AES encrypted ingress mode (R82) — lazy-imported, only needed when encrypt_type=aes
+wechat-aes = ["pycryptodomex>=3.20"]
 
 [project.urls]
 Repository = "https://github.com/rookiestar28/ComfyUI-OpenClaw"

@@ -38,9 +38,11 @@ function New-ProjectVenv {
   Write-Host "[tests] Creating project venv at $root\.venv ..."
   if (Get-Command py -ErrorAction SilentlyContinue) {
     & py -3 -m venv .venv
-  } elseif (Get-Command python -ErrorAction SilentlyContinue) {
+  }
+  elseif (Get-Command python -ErrorAction SilentlyContinue) {
     & python -m venv .venv
-  } else {
+  }
+  else {
     throw "[tests] ERROR: no bootstrap Python found (need py or python)"
   }
 }
@@ -53,7 +55,8 @@ function Test-VenvPython {
   try {
     & $PythonExe -c "import sys; print(sys.executable)" | Out-Null
     return $true
-  } catch {
+  }
+  catch {
     return $false
   }
 }
@@ -70,18 +73,21 @@ function Test-VenvCfgWindowsCompatible {
       return $false
     }
     return $true
-  } catch {
+  }
+  catch {
     return $false
   }
 }
 
 if (-not (Test-Path $venvPython)) {
   New-ProjectVenv
-} elseif (-not (Test-VenvCfgWindowsCompatible)) {
+}
+elseif (-not (Test-VenvCfgWindowsCompatible)) {
   Write-Host "[tests] WARN: existing .venv was created from non-Windows interpreter; recreating ..."
   Remove-Item -Recurse -Force ".venv"
   New-ProjectVenv
-} elseif (-not (Test-VenvPython -PythonExe $venvPython)) {
+}
+elseif (-not (Test-VenvPython -PythonExe $venvPython)) {
   Write-Host "[tests] WARN: existing .venv is invalid for current OS/interpreter; recreating ..."
   Remove-Item -Recurse -Force ".venv"
   New-ProjectVenv
@@ -109,6 +115,16 @@ if ($LASTEXITCODE -ne 0) {
 if (-not $hasAiohttp) {
   Write-Host "[tests] Installing aiohttp into project venv ..."
   Invoke-Checked "pip install aiohttp" { & $venvPython -m pip install aiohttp }
+}
+
+$hasCrypto = $true
+& $venvPython -c "import Cryptodome" | Out-Null
+if ($LASTEXITCODE -ne 0) {
+  $hasCrypto = $false
+}
+if (-not $hasCrypto) {
+  Write-Host "[tests] Installing pycryptodomex into project venv (R82 AES) ..."
+  Invoke-Checked "pip install pycryptodomex" { & $venvPython -m pip install pycryptodomex }
 }
 
 # Ensure Node >= 18

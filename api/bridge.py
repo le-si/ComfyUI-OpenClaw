@@ -1,6 +1,6 @@
 """
-F10/F13 — Bridge API Endpoints.
-Sidecar-facing endpoints for job submission and delivery.
+F10/F13/F46 — Bridge API Endpoints.
+Sidecar-facing endpoints for job submission, delivery, and worker polling.
 """
 
 from __future__ import annotations
@@ -22,6 +22,7 @@ try:
     from ..services.rate_limit import check_rate_limit
     from ..services.sidecar.auth import is_bridge_enabled, require_bridge_auth
     from ..services.sidecar.bridge_contract import (
+        BRIDGE_ENDPOINTS,
         BridgeDeliveryRequest,
         BridgeHealthResponse,
         BridgeJobRequest,
@@ -37,6 +38,7 @@ except ImportError:
     from services.rate_limit import check_rate_limit
     from services.sidecar.auth import is_bridge_enabled, require_bridge_auth
     from services.sidecar.bridge_contract import (
+        BRIDGE_ENDPOINTS,
         BridgeDeliveryRequest,
         BridgeHealthResponse,
         BridgeJobRequest,
@@ -72,6 +74,12 @@ class BridgeHandlers:
         self._idempotency_store = TTLCache[dict](
             max_size=1000, ttl_sec=86400
         )  # 24h retention
+        # F46: Worker job queue (in-memory stub, production would use persistent store)
+        self._worker_job_queue: list = []
+        # F46: Worker result store
+        self._worker_results: dict = {}
+        # F46: Worker heartbeats
+        self._worker_heartbeats: dict = {}
 
     async def health_handler(self, request: web.Request) -> web.Response:
         """
@@ -289,18 +297,137 @@ class BridgeHandlers:
             logger.exception("Bridge deliver failed")
             return web.json_response({"error": "Internal server error"}, status=500)
 
+    # ------------------------------------------------------------------
+    # F46 — Worker-facing endpoints
+    # ------------------------------------------------------------------
+
+    async def worker_poll_handler(self, request: web.Request) -> web.Response:
+        """
+        GET /bridge/worker/poll
+        Worker polls for pending jobs. Returns available jobs or 204 if none.
+        """
+        is_valid, error_resp, device_id = require_bridge_auth(
+            request, BridgeScope.JOB_STATUS
+        )
+        if not is_valid:
+            return error_resp
+
+        # Return pending jobs (FIFO, up to 5 per poll)
+        try:
+            batch_size = max(1, min(int(request.query.get("batch", "1")), 5))
+        except (ValueError, TypeError):
+            return web.json_response(
+                {"error": "batch must be an integer (1-5)"}, status=400
+            )
+        jobs = []
+        for _ in range(batch_size):
+            if self._worker_job_queue:
+                jobs.append(self._worker_job_queue.pop(0))
+            else:
+                break
+
+        if not jobs:
+            return web.Response(status=204)
+
+        return web.json_response({"jobs": jobs})
+
+    async def worker_result_handler(self, request: web.Request) -> web.Response:
+        """
+        POST /bridge/worker/result/{job_id}
+        Worker submits completed job result.
+        """
+        is_valid, error_resp, device_id = require_bridge_auth(
+            request, BridgeScope.JOB_SUBMIT
+        )
+        if not is_valid:
+            return error_resp
+
+        job_id = request.match_info.get("job_id", "")
+        if not job_id:
+            return web.json_response({"error": "job_id required"}, status=400)
+
+        # Idempotency check
+        idempotency_key = request.headers.get("X-Idempotency-Key", "")
+        if idempotency_key:
+            cached = self._idempotency_store.get(f"wr:{idempotency_key}")
+            if cached:
+                logger.info(f"Duplicate worker result suppressed: {idempotency_key}")
+                return web.json_response(cached)
+
+        try:
+            data = await request.json()
+        except Exception:
+            return web.json_response({"error": "Invalid JSON"}, status=400)
+
+        # Store result
+        self._worker_results[job_id] = {
+            "status": data.get("status", "completed"),
+            "outputs": data.get("outputs", {}),
+            "worker_id": device_id,
+            "timestamp": time.time(),
+        }
+
+        response_data = {"ok": True, "job_id": job_id, "status": "accepted"}
+
+        if idempotency_key:
+            self._idempotency_store.put(f"wr:{idempotency_key}", response_data)
+
+        logger.info(f"F46: Worker result accepted for job={job_id} from={device_id}")
+        return web.json_response(response_data, status=201)
+
+    async def worker_heartbeat_handler(self, request: web.Request) -> web.Response:
+        """
+        POST /bridge/worker/heartbeat
+        Worker reports its status. Lightweight, no scope required.
+        """
+        # Basic auth only (no scope enforcement for heartbeat)
+        is_valid, error_resp, device_id = require_bridge_auth(request, None)
+        if not is_valid:
+            return error_resp
+
+        try:
+            data = await request.json()
+        except Exception:
+            data = {}
+
+        self._worker_heartbeats[device_id] = {
+            "status": data.get("status", "alive"),
+            "details": data.get("details", {}),
+            "timestamp": time.time(),
+        }
+
+        return web.json_response({"ok": True})
+
 
 def register_bridge_routes(
     app: web.Application, handlers: Optional[BridgeHandlers] = None
 ):
     """
     Register bridge routes with the aiohttp app.
+    Uses contract-defined paths from BRIDGE_ENDPOINTS.
     """
     if handlers is None:
         handlers = BridgeHandlers()
 
-    app.router.add_get("/bridge/health", handlers.health_handler)
-    app.router.add_post("/bridge/submit", handlers.submit_handler)
-    app.router.add_post("/bridge/deliver", handlers.deliver_handler)
+    # Server-facing endpoints
+    app.router.add_get(BRIDGE_ENDPOINTS["health"]["path"], handlers.health_handler)
+    app.router.add_post(BRIDGE_ENDPOINTS["submit"]["path"], handlers.submit_handler)
+    app.router.add_post(BRIDGE_ENDPOINTS["deliver"]["path"], handlers.deliver_handler)
 
-    logger.info("Bridge routes registered: /bridge/{health,submit,deliver}")
+    # F46: Worker-facing endpoints
+    app.router.add_get(
+        BRIDGE_ENDPOINTS["worker_poll"]["path"], handlers.worker_poll_handler
+    )
+    app.router.add_post(
+        BRIDGE_ENDPOINTS["worker_result"]["path"] + "/{job_id}",
+        handlers.worker_result_handler,
+    )
+    app.router.add_post(
+        BRIDGE_ENDPOINTS["worker_heartbeat"]["path"],
+        handlers.worker_heartbeat_handler,
+    )
+
+    logger.info(
+        "Bridge routes registered: /bridge/{health,submit,deliver} "
+        "+ /bridge/worker/{poll,result,heartbeat}"
+    )

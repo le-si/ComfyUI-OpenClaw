@@ -85,6 +85,7 @@ class BridgeHealthResponse:
 # --- Sidecar-facing endpoint contracts (future implementation) ---
 
 BRIDGE_ENDPOINTS = {
+    # Server-facing (push model)
     "submit": {
         "method": "POST",
         "path": "/bridge/submit",
@@ -105,4 +106,26 @@ BRIDGE_ENDPOINTS = {
         "response": BridgeHealthResponse,
         "auth": None,  # Health check is public
     },
+    # Worker-facing (poll model — F46)
+    "worker_poll": {
+        "method": "GET",
+        "path": "/bridge/worker/poll",
+        "auth": "worker_token",
+        "scope": BridgeScope.JOB_STATUS,
+    },
+    "worker_result": {
+        "method": "POST",
+        "path": "/bridge/worker/result",  # /{job_id} appended at call site
+        "auth": "worker_token",
+        "scope": BridgeScope.JOB_SUBMIT,
+    },
+    "worker_heartbeat": {
+        "method": "POST",
+        "path": "/bridge/worker/heartbeat",
+        "auth": "worker_token",
+        "scope": None,  # Heartbeat is unauthenticated at scope level
+    },
 }
+
+# Minimum scopes required for sidecar worker startup
+REQUIRED_WORKER_SCOPES = {BridgeScope.JOB_SUBMIT, BridgeScope.JOB_STATUS}

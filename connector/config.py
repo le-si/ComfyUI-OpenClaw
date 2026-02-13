@@ -77,6 +77,7 @@ class ConnectorConfig:
     wechat_token: Optional[str] = None
     wechat_app_id: Optional[str] = None
     wechat_app_secret: Optional[str] = None
+    wechat_encoding_aes_key: Optional[str] = None  # R82: AES encrypted mode
     wechat_allowed_users: List[str] = field(default_factory=list)
     wechat_bind_host: str = "127.0.0.1"
     wechat_bind_port: int = 8097
@@ -203,6 +204,9 @@ def load_config() -> ConnectorConfig:
     cfg.wechat_token = os.environ.get("OPENCLAW_CONNECTOR_WECHAT_TOKEN")
     cfg.wechat_app_id = os.environ.get("OPENCLAW_CONNECTOR_WECHAT_APP_ID")
     cfg.wechat_app_secret = os.environ.get("OPENCLAW_CONNECTOR_WECHAT_APP_SECRET")
+    cfg.wechat_encoding_aes_key = os.environ.get(
+        "OPENCLAW_CONNECTOR_WECHAT_ENCODING_AES_KEY"
+    )
     if wc_users := os.environ.get("OPENCLAW_CONNECTOR_WECHAT_ALLOWED_USERS"):
         cfg.wechat_allowed_users = [u.strip() for u in wc_users.split(",") if u.strip()]
     cfg.wechat_bind_host = os.environ.get("OPENCLAW_CONNECTOR_WECHAT_BIND", "127.0.0.1")

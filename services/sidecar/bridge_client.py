@@ -6,15 +6,18 @@ Handles communication with the central OpenClaw Bridge/Server.
 - Job Fetching (Polling)
 - Result Delivery
 - Health Reporting
+
+F46 Closeout: Uses contract-defined paths from bridge_contract.BRIDGE_ENDPOINTS.
 """
 
-import asyncio
-import json
 import logging
+import uuid
 from dataclasses import dataclass
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
 
 import aiohttp
+
+from .bridge_contract import BRIDGE_ENDPOINTS
 
 logger = logging.getLogger(__name__)
 
@@ -36,6 +39,13 @@ class BridgeClient:
         self.worker_id = worker_id
         self.session: Optional[aiohttp.ClientSession] = None
 
+    def _endpoint(self, name: str) -> str:
+        """Resolve endpoint path from contract."""
+        ep = BRIDGE_ENDPOINTS.get(name)
+        if not ep:
+            raise ValueError(f"Unknown endpoint: {name}")
+        return f"{self.bridge_url}{ep['path']}"
+
     async def start(self):
         if not self.session:
             self.session = aiohttp.ClientSession(
@@ -43,7 +53,8 @@ class BridgeClient:
                     "Authorization": f"Bearer {self.token}",
                     "X-Worker-ID": self.worker_id,
                     "User-Agent": "OpenClaw-Sidecar/1.0",
-                }
+                },
+                timeout=aiohttp.ClientTimeout(total=30),
             )
 
     async def stop(self):
@@ -51,20 +62,23 @@ class BridgeClient:
             await self.session.close()
 
     async def get_health(self) -> bool:
-        """Check if bridge is reachable."""
+        """Check if bridge is reachable via contract health endpoint."""
         try:
-            async with self.session.get(f"{self.bridge_url}/health", timeout=5) as resp:
+            url = self._endpoint("health")
+            async with self.session.get(
+                url, timeout=aiohttp.ClientTimeout(total=5)
+            ) as resp:
                 return resp.status == 200
         except Exception as e:
             logger.error(f"Bridge health check failed: {e}")
             return False
 
     async def fetch_jobs(self) -> list:
-        """Poll for pending jobs assigned to this worker (or generic queue)."""
+        """Poll for pending jobs via contract worker_poll endpoint."""
         try:
-            # Endpoint hypothetical: /worker/jobs/poll
+            url = self._endpoint("worker_poll")
             async with self.session.get(
-                f"{self.bridge_url}/worker/jobs/poll", timeout=10
+                url, timeout=aiohttp.ClientTimeout(total=10)
             ) as resp:
                 if resp.status == 200:
                     data = await resp.json()
@@ -79,10 +93,16 @@ class BridgeClient:
             return []
 
     async def submit_result(self, job_id: str, result: Dict[str, Any]) -> bool:
-        """Upload job result to bridge."""
+        """Upload job result via contract worker_result endpoint."""
         try:
-            url = f"{self.bridge_url}/worker/jobs/{job_id}/result"
-            async with self.session.post(url, json=result, timeout=30) as resp:
+            url = f"{self._endpoint('worker_result')}/{job_id}"
+            idempotency_key = str(uuid.uuid4())
+            async with self.session.post(
+                url,
+                json=result,
+                headers={"X-Idempotency-Key": idempotency_key},
+                timeout=aiohttp.ClientTimeout(total=30),
+            ) as resp:
                 if resp.status in (200, 201):
                     return True
                 else:
@@ -95,11 +115,14 @@ class BridgeClient:
             return False
 
     async def report_status(self, status: str, details: Dict = None):
-        """Send heartbeat/status."""
+        """Send heartbeat via contract worker_heartbeat endpoint."""
         try:
+            url = self._endpoint("worker_heartbeat")
             payload = {"status": status, "details": details or {}}
             async with self.session.post(
-                f"{self.bridge_url}/worker/heartbeat", json=payload, timeout=5
+                url,
+                json=payload,
+                timeout=aiohttp.ClientTimeout(total=5),
             ) as resp:
                 pass
         except Exception:

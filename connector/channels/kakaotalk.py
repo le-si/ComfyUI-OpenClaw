@@ -28,6 +28,7 @@ class KakaoTalkChannel:
     # Kakao constants
     MAX_TEXT_LENGTH = 1000
     MAX_OUTPUTS = 3  # Max bubbles per response (SkillResponse restriction)
+    MAX_QUICK_REPLIES = 10  # Kakao QuickReply cap per response
 
     def __init__(self, config: Optional[Any] = None):
         self.config = config
@@ -83,6 +84,10 @@ class KakaoTalkChannel:
                 if "simpleText" in last_output:
                     last_output["simpleText"]["text"] += "\n...(more)"
 
+        # Empty-output guard: Kakao requires at least one output
+        if not outputs:
+            outputs.append({"simpleText": {"text": f"{self.prefix}(empty response)"}})
+
         response = {"version": "2.0", "template": {"outputs": outputs}}
 
         # 3. QuickReplies (defensive: skip malformed entries)
@@ -105,6 +110,11 @@ class KakaoTalkChannel:
                     }
                 )
             if qr_payloads:
+                if len(qr_payloads) > self.MAX_QUICK_REPLIES:
+                    logger.warning(
+                        f"QuickReplies truncated: {len(qr_payloads)} -> {self.MAX_QUICK_REPLIES}"
+                    )
+                    qr_payloads = qr_payloads[: self.MAX_QUICK_REPLIES]
                 response["template"]["quickReplies"] = qr_payloads
 
         return response

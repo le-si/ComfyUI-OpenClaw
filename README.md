@@ -7,7 +7,7 @@ ComfyUI-OpenClaw is a **security-first** ComfyUI custom node pack that adds:
 - **LLM-assisted nodes** (planner/refiner/vision/batch variants)
 - **A built-in extension UI** (`OpenClaw` panel)
 - **A secure-by-default HTTP API** for automation (webhooks, triggers, schedules, approvals, presets)
-- **Now supports major messaging platforms, including Discord, Telegram, WhatsApp, LINE, WeChat and KaKaoTalk(pending).**
+- **Now supports major messaging platforms, including Discord, Telegram, WhatsApp, LINE, WeChat and KaKaoTalk.**
 - **And more exciting features being added continuously**
 
 ---

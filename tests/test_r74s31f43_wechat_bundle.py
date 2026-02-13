@@ -200,7 +200,7 @@ class TestWeChatEventNormalization(unittest.TestCase):
     def test_unsupported_event_type_returns_none(self):
         fields = {
             "MsgType": "event",
-            "Event": "unsubscribe",
+            "Event": "LOCATION",  # Not in R82 expanded coverage
             "FromUserName": "u4",
             "ToUserName": "bot",
             "CreateTime": "1700000000",

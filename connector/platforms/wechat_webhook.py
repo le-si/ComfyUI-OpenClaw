@@ -1,11 +1,14 @@
 """
-WeChat Official Account Webhook Adapter (R74 + S31 + F43).
+WeChat Official Account Webhook Adapter (R74 + S31 + F43 + R82).
 
 Implements:
 - R74: GET verification handshake + POST XML normalization into CommandRequest.
 - S31: Fail-closed ingress security — signature verification, replay/nonce
         dedup, XML parser budgets, allowlist enforcement via S32 primitives.
 - F43: Adapter wiring into connector command router with text-first delivery.
+- R82: AES encrypted ingress (encrypt_type=aes), expanded event normalization
+       (unsubscribe, CLICK, VIEW, SCAN), 5s ack guard with deferred processing,
+       no-MsgId dedupe keys.
 
 Setup:
 1. Configure a WeChat Official Account (subscription or service account).
@@ -13,14 +16,18 @@ Setup:
    - OPENCLAW_CONNECTOR_WECHAT_TOKEN          (verification token)
    - OPENCLAW_CONNECTOR_WECHAT_APP_ID         (AppID)
    - OPENCLAW_CONNECTOR_WECHAT_APP_SECRET     (AppSecret)
+   - OPENCLAW_CONNECTOR_WECHAT_ENCODING_AES_KEY (R82: AES key, optional)
 3. Configure webhook URL in WeChat MP admin:
    https://<public-host>/wechat/webhook
 """
 
+import asyncio
+import base64
 import hashlib
 import hmac
 import json
 import logging
+import struct
 import time
 from typing import Optional
 from xml.etree import ElementTree as ET
@@ -91,7 +98,8 @@ WECHAT_API_BASE = "https://api.weixin.qq.com/cgi-bin"
 
 # Supported message/event types for command extraction
 SUPPORTED_MSG_TYPES = {"text"}
-SUPPORTED_EVENT_TYPES = {"subscribe"}
+# R82: expanded event type coverage
+SUPPORTED_EVENT_TYPES = {"subscribe", "unsubscribe", "click", "view", "scan"}
 
 
 # ---------------------------------------------------------------------------
@@ -142,12 +150,91 @@ def verify_wechat_signature(
     WeChat signs with: sort([token, timestamp, nonce]) → join → SHA1.
     Returns True if valid, False otherwise.
     """
-    if not all([token, timestamp, nonce, signature]):
-        return False
-    parts = sorted([token, timestamp, nonce])
-    computed = hashlib.sha1("".join(parts).encode("utf-8")).hexdigest()
-    # Constant-time comparison to prevent timing attacks
-    return hmac.compare_digest(computed, signature.lower())
+    check_list = sorted([token, timestamp, nonce])
+    check_str = "".join(check_list)
+    expected = hashlib.sha1(check_str.encode("utf-8")).hexdigest()
+    return hmac.compare_digest(expected, signature.lower())
+
+
+# ---------------------------------------------------------------------------
+# R82 — Encrypted message signature verification
+# ---------------------------------------------------------------------------
+
+
+def verify_msg_signature(token: str, timestamp: str, nonce: str, encrypt: str) -> str:
+    """
+    Verify msg_signature for WeChat AES encrypted mode.
+
+    WeChat signs with: sort([token, timestamp, nonce, encrypt]) → join → SHA1.
+    Returns the expected signature string.
+    """
+    check_list = sorted([token, timestamp, nonce, encrypt])
+    check_str = "".join(check_list)
+    return hashlib.sha1(check_str.encode("utf-8")).hexdigest()
+
+
+# ---------------------------------------------------------------------------
+# R82 — AES decrypt for encrypted mode
+# ---------------------------------------------------------------------------
+
+
+def decrypt_wechat_message(
+    encoding_aes_key: str, app_id: str, ciphertext_b64: str
+) -> bytes:
+    """
+    Decrypt WeChat AES-CBC-256 encrypted message.
+
+    WeChat uses:
+    - Key: base64decode(EncodingAESKey + "=") → 32 bytes
+    - IV: first 16 bytes of key
+    - Padding: PKCS#7
+    - Plaintext format: random(16) + msg_len(4, network byte order) + msg + app_id
+
+    Returns the decrypted XML message bytes.
+    Raises ValueError on any failure (fail-closed).
+    """
+    try:
+        from Cryptodome.Cipher import AES
+    except ImportError:
+        try:
+            from Crypto.Cipher import AES
+        except ImportError:
+            raise ValueError(
+                "R82: pycryptodomex or pycryptodome required for AES decrypt. "
+                "Install with: pip install pycryptodomex"
+            )
+
+    # Derive key (32 bytes) and IV (first 16 bytes)
+    key = base64.b64decode(encoding_aes_key + "=")
+    if len(key) != 32:
+        raise ValueError(f"R82: AES key must be 32 bytes, got {len(key)}")
+    iv = key[:16]
+
+    # Decrypt
+    ciphertext = base64.b64decode(ciphertext_b64)
+    cipher = AES.new(key, AES.MODE_CBC, iv)
+    plaintext = cipher.decrypt(ciphertext)
+
+    # Remove PKCS#7 padding
+    pad_len = plaintext[-1]
+    if not (1 <= pad_len <= 32):
+        raise ValueError("R82: Invalid PKCS#7 padding")
+    plaintext = plaintext[:-pad_len]
+
+    # Parse: random(16) + msg_len(4) + msg + app_id
+    # Skip 16 bytes random prefix
+    content = plaintext[16:]
+    msg_len = struct.unpack("!I", content[:4])[0]
+    msg = content[4 : 4 + msg_len]
+    from_app_id = content[4 + msg_len :].decode("utf-8")
+
+    if from_app_id != app_id:
+        raise ValueError(
+            f"R82: AppID mismatch in decrypted message: "
+            f"expected={app_id}, got={from_app_id}"
+        )
+
+    return msg
 
 
 # ---------------------------------------------------------------------------
@@ -217,8 +304,11 @@ def normalize_wechat_event(fields: dict) -> Optional[dict]:
     Map WeChat XML fields to a canonical event dict.
 
     Returns dict with keys: msg_type, event_type, sender_id, text,
-    message_id, timestamp, create_time.
+    message_id, timestamp, create_time, dedupe_key.
     Returns None for unsupported/empty events.
+
+    R82: Expanded event coverage — unsubscribe, CLICK, VIEW, SCAN.
+    R82: Generates dedupe_key for events without MsgId.
     """
     msg_type = fields.get("MsgType", "").lower()
     sender_id = fields.get("FromUserName", "")
@@ -237,18 +327,48 @@ def normalize_wechat_event(fields: dict) -> Optional[dict]:
         "message_id": fields.get("MsgId", ""),
         "timestamp": int(create_time) if create_time.isdigit() else 0,
         "create_time": create_time,
+        "dedupe_key": "",  # R82: populated for no-MsgId events
     }
 
     if msg_type == "text":
         event["text"] = fields.get("Content", "").strip()
     elif msg_type == "event":
         sub_event = event["event_type"]
+        event_key = fields.get("EventKey", "")
+
         if sub_event == "subscribe":
-            event["text"] = "/help"  # Map subscribe to help command
+            if event_key:
+                # QR code scan + subscribe (R82)
+                event["text"] = f"/qr {event_key}"
+            else:
+                event["text"] = "/help"  # Map subscribe to help command
+        elif sub_event == "unsubscribe":
+            # R82: log-only, no text routing
+            event["text"] = ""
+            event["_log_only"] = True
+        elif sub_event == "click":
+            # R82: menu CLICK → route EventKey as command
+            event["text"] = event_key if event_key else ""
+        elif sub_event == "view":
+            # R82: menu VIEW → log redirect URL, no routing
+            event["text"] = ""
+            event["_log_only"] = True
+            event["_url"] = event_key
+        elif sub_event == "scan":
+            # R82: QR scan (already subscribed)
+            event["text"] = f"/qr {event_key}" if event_key else ""
         else:
             return None  # Unsupported event
+
+        # R82: No-MsgId dedupe key for events
+        if not event["message_id"]:
+            event["dedupe_key"] = f"{sender_id}:{create_time}:{sub_event}:{event_key}"
     else:
         return None  # Unsupported message type
+
+    # Allow log-only events to pass through (R82)
+    if event.get("_log_only"):
+        return event
 
     if not event["text"]:
         return None
@@ -395,7 +515,7 @@ class WeChatWebhookServer:
     # ------------------------------------------------------------------
 
     async def handle_webhook(self, request):
-        """POST handler for WeChat XML messages/events."""
+        """POST handler for WeChat XML messages/events (R74 + S31 + R82)."""
         _, web = _import_aiohttp_web()
         # IMPORTANT:
         # Keep handler behavior testable in environments without aiohttp.
@@ -427,9 +547,49 @@ class WeChatWebhookServer:
             logger.warning(f"Stale WeChat request: age={age_sec}s")
             return _make_response(web, status=403, text="Stale Request")
 
-        # Read and parse XML with S31 budgets
+        # Read body
         body_bytes = await request.read()
 
+        # R82: Detect encrypted mode
+        encrypt_type = request.query.get("encrypt_type", "")
+        if encrypt_type == "aes":
+            encoding_aes_key = self.config.wechat_encoding_aes_key
+            app_id = self.config.wechat_app_id
+            if not encoding_aes_key or not app_id:
+                logger.error(
+                    "R82: AES mode requested but encoding_aes_key/app_id missing"
+                )
+                return _make_response(web, status=500, text="AES config missing")
+
+            try:
+                # Parse outer XML to get <Encrypt>
+                outer_fields = parse_wechat_xml(body_bytes)
+                encrypted_content = outer_fields.get("Encrypt", "")
+                if not encrypted_content:
+                    logger.warning("R82: encrypt_type=aes but no <Encrypt> in body")
+                    return _make_response(web, status=400, text="Bad Request")
+
+                # R82: Verify msg_signature (fail-closed)
+                msg_signature = request.query.get("msg_signature", "")
+                expected_sig = verify_msg_signature(
+                    token, timestamp, nonce, encrypted_content
+                )
+                if not hmac.compare_digest(expected_sig, msg_signature):
+                    logger.warning("R82: msg_signature verification failed")
+                    return _make_response(web, status=401, text="Invalid msg_signature")
+
+                # R82: Decrypt
+                body_bytes = decrypt_wechat_message(
+                    encoding_aes_key, app_id, encrypted_content
+                )
+            except XMLBudgetExceeded as e:
+                logger.warning(f"R82: Outer XML budget exceeded: {e}")
+                return _make_response(web, status=400, text="Bad Request")
+            except ValueError as e:
+                logger.warning(f"R82: Decrypt failed (fail-closed): {e}")
+                return _make_response(web, status=400, text="Decrypt Failed")
+
+        # Parse XML with S31 budgets
         try:
             fields = parse_wechat_xml(body_bytes)
         except XMLBudgetExceeded as e:
@@ -440,6 +600,14 @@ class WeChatWebhookServer:
         event = normalize_wechat_event(fields)
         if event is None:
             # Unsupported message type — return empty success to WeChat
+            return _make_response(web, text="success", content_type="text/plain")
+
+        # R82: Log-only events (unsubscribe, VIEW) — ack without routing
+        if event.get("_log_only"):
+            sub_event = event.get("event_type", "")
+            sender_id = event["sender_id"]
+            url_info = f" url={event.get('_url', '')}" if event.get("_url") else ""
+            logger.info(f"R82: Log-only event={sub_event} from={sender_id}{url_info}")
             return _make_response(web, text="success", content_type="text/plain")
 
         # S31: Allowlist check (soft-deny)
@@ -455,12 +623,14 @@ class WeChatWebhookServer:
                 msg_info += " (Not in allowlist; approval required)"
             logger.warning(msg_info)
 
-        # F43: Build CommandRequest and route
+        # F43: Dedup — MsgId-based or R82 dedupe_key
         message_id = event.get("message_id", "")
-        # Per-message dedup (MsgId-based, distinct from nonce-based replay)
-        if message_id and not self._replay_guard.check_and_record(f"msg:{message_id}"):
-            logger.debug(f"Duplicate WeChat MsgId: {message_id}")
-            return _make_response(web, text="success", content_type="text/plain")
+        dedupe_key = event.get("dedupe_key", "")
+        dedup_value = f"msg:{message_id}" if message_id else f"evt:{dedupe_key}"
+        if dedup_value and dedup_value not in ("msg:", "evt:"):
+            if not self._replay_guard.check_and_record(dedup_value):
+                logger.debug(f"Duplicate WeChat message/event: {dedup_value}")
+                return _make_response(web, text="success", content_type="text/plain")
 
         req = CommandRequest(
             platform="wechat",
@@ -472,8 +642,9 @@ class WeChatWebhookServer:
             timestamp=float(event["timestamp"]),
         )
 
+        # R82: 5s ack discipline — try fast reply, defer if slow
         try:
-            resp = await self.router.handle(req)
+            resp = await asyncio.wait_for(self.router.handle(req), timeout=4.5)
             if resp.text:
                 # Passive reply (within 5-second window)
                 to_user = event["sender_id"]
@@ -484,10 +655,23 @@ class WeChatWebhookServer:
                     text=reply_xml,
                     content_type="application/xml",
                 )
+        except asyncio.TimeoutError:
+            # R82: Defer processing — ack immediately, send result via Customer Service API
+            logger.info(f"R82: 5s ack timeout, deferring response for {sender_id}")
+            asyncio.create_task(self._deferred_reply(req, event))
         except Exception as e:
             logger.exception(f"Error handling WeChat command: {e}")
 
         return _make_response(web, text="success", content_type="text/plain")
+
+    async def _deferred_reply(self, req: CommandRequest, event: dict):
+        """R82: Handle deferred processing after 5s ack window."""
+        try:
+            resp = await self.router.handle(req)
+            if resp.text:
+                await self.send_message(event["sender_id"], resp.text)
+        except Exception as e:
+            logger.exception(f"R82: Deferred reply error: {e}")
 
     # ------------------------------------------------------------------
     # Outbound: Text (Customer Service Message API)
