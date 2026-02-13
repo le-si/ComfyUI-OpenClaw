@@ -40,12 +40,13 @@ class TestCallbackUrlPolicy(unittest.TestCase):
             mock_dns.return_value = [
                 (2, 1, 6, "", ("93.184.216.34", 443))  # Public IP for example.com
             ]
-            scheme, host, port = validate_outbound_url(
+            scheme, host, port, ips = validate_outbound_url(
                 "https://example.com/hook", allow_hosts={"example.com"}
             )
             self.assertEqual(scheme, "https")
             self.assertEqual(host, "example.com")
             self.assertEqual(port, 443)
+            self.assertEqual(ips, ["93.184.216.34"])
             mock_dns.assert_called_once()
 
     def test_private_ip_blocked(self):

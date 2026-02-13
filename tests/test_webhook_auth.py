@@ -101,7 +101,13 @@ class TestVerifyHmac(unittest.TestCase):
         body = b'{"test": "data"}'
         expected_sig = hmac.new(secret.encode(), body, hashlib.sha256).hexdigest()
 
-        with patch.dict(os.environ, {"MOLTBOT_WEBHOOK_HMAC_SECRET": secret}):
+        with patch.dict(
+            os.environ,
+            {
+                "MOLTBOT_WEBHOOK_HMAC_SECRET": secret,
+                "MOLTBOT_WEBHOOK_REQUIRE_REPLAY_PROTECTION": "0",  # Disable S36 strict default
+            },
+        ):
             request = MockRequest(
                 headers={"X-Moltbot-Signature": f"sha256={expected_sig}"}
             )
@@ -159,6 +165,7 @@ class TestRequireAuth(unittest.TestCase):
             {
                 "MOLTBOT_WEBHOOK_AUTH_MODE": "hmac",
                 "MOLTBOT_WEBHOOK_HMAC_SECRET": secret,
+                "MOLTBOT_WEBHOOK_REQUIRE_REPLAY_PROTECTION": "0",  # Disable S36 strict default
             },
         ):
             request = MockRequest(headers={"X-Moltbot-Signature": f"sha256={sig}"})

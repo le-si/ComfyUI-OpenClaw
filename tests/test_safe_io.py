@@ -168,7 +168,7 @@ class TestURLSafety(unittest.TestCase):
         result = validate_outbound_url(
             "https://example.com", allow_hosts={"example.com"}
         )
-        self.assertEqual(result, ("https", "example.com", 443))
+        self.assertEqual(result, ("https", "example.com", 443, ["93.184.216.34"]))
 
     @patch("socket.getaddrinfo")
     def test_reject_private_ip_from_dns(self, mock_dns):

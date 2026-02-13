@@ -5,11 +5,13 @@ Implements S4: File/path/URL safety (deny-by-default).
 Any module that touches filesystem or outbound HTTP MUST use this layer.
 """
 
+import http.client
 import ipaddress
 import logging
 import os
 import socket
 import tempfile
+import urllib.request
 from typing import Any, Optional, Set, Tuple
 from urllib.parse import urlparse
 
@@ -243,17 +245,17 @@ def validate_outbound_url(
     *,
     allow_hosts: Optional[Set[str]] = None,
     allow_any_public_host: bool = False,
-) -> Tuple[str, str, int]:
+) -> Tuple[str, str, int, list[str]]:
     """
-    Validate a URL for safe outbound fetching.
+    Validate a URL and resolve it for safe outbound fetching.
 
     Args:
         url: URL to validate.
         allow_hosts: If provided, only these hosts are allowed.
-        allow_any_public_host: If True, allow any host that resolves to a public IP (skips allowlist check).
+        allow_any_public_host: If True, allow any host that resolves to a public IP.
 
     Returns:
-        Tuple of (scheme, host, port).
+        Tuple of (scheme, host, port, resolved_ips).
 
     Raises:
         SSRFError: If URL is invalid or blocked.
@@ -287,7 +289,6 @@ def validate_outbound_url(
     # Check allowlist if provided or enforced
     if not allow_any_public_host:
         if allow_hosts is None:
-            # Should be caught by check above, but for typing...
             raise SSRFError("No allow_hosts allowed")
 
         normalized_allowlist = {_normalize_host(h) for h in allow_hosts}
@@ -295,6 +296,7 @@ def validate_outbound_url(
             raise SSRFError(f"Host not in allowlist: {host}")
 
     # DNS resolution + IP check
+    resolved_ips = []
     try:
         addr_infos = socket.getaddrinfo(
             host, port, socket.AF_UNSPEC, socket.SOCK_STREAM
@@ -303,10 +305,85 @@ def validate_outbound_url(
             ip = sockaddr[0]
             if is_private_ip(ip):
                 raise SSRFError(f"Private/reserved IP blocked: {ip}")
+            if ip not in resolved_ips:
+                resolved_ips.append(ip)
     except socket.gaierror as e:
         raise SSRFError(f"DNS resolution failed: {e}")
 
-    return (parsed.scheme, host, port)
+    if not resolved_ips:
+        raise SSRFError(f"No IP resolved for {host}")
+
+    return (parsed.scheme, host, port, resolved_ips)
+
+
+def _build_pinned_opener(pinned_ips: list[str]) -> urllib.request.OpenerDirector:
+    """Build a safe opener pinned to specific IPs, trying them in order."""
+
+    class PinnedHTTPConnection(http.client.HTTPConnection):
+        def connect(self):
+            last_err = None
+            for ip in pinned_ips:
+                try:
+                    self.sock = socket.create_connection(
+                        (ip, self.port), self.timeout, self.source_address
+                    )
+                    return
+                except OSError as e:
+                    last_err = e
+            if last_err:
+                raise last_err
+            raise OSError("No resolved IPs to connect to")
+
+    class PinnedHTTPSConnection(http.client.HTTPSConnection):
+        def connect(self):
+            last_err = None
+            for ip in pinned_ips:
+                try:
+                    sock = socket.create_connection(
+                        (ip, self.port), self.timeout, self.source_address
+                    )
+                    self.sock = self._context.wrap_socket(
+                        sock, server_hostname=self.host
+                    )
+                    return
+                except OSError as e:
+                    last_err = e
+            if last_err:
+                raise last_err
+            raise OSError("No resolved IPs to connect to")
+
+    class PinnedHTTPHandler(urllib.request.HTTPHandler):
+        def http_open(self, req):
+            return self.do_open(PinnedHTTPConnection, req)
+
+    class PinnedHTTPSHandler(urllib.request.HTTPSHandler):
+        def https_open(self, req):
+            kwargs = {}
+            if getattr(self, "_context", None) is not None:
+                kwargs["context"] = self._context
+            if getattr(self, "_check_hostname", None) is not None:
+                kwargs["check_hostname"] = self._check_hostname
+
+            return self.do_open(PinnedHTTPSConnection, req, **kwargs)
+
+    class NoRedirectHandler(urllib.request.HTTPRedirectHandler):
+        """Stop redirects so we can handle them manually with re-validation/pinning."""
+
+        def http_error_302(self, req, fp, code, msg, headers):
+            return fp
+
+        http_error_301 = http_error_303 = http_error_307 = http_error_308 = (
+            http_error_302
+        )
+
+    handlers = [
+        PinnedHTTPHandler(),
+        PinnedHTTPSHandler(),
+        NoRedirectHandler(),
+        urllib.request.ProxyHandler({}),
+    ]
+
+    return urllib.request.build_opener(*handlers)
 
 
 def safe_fetch(
@@ -315,76 +392,66 @@ def safe_fetch(
     allow_hosts: Optional[Set[str]] = None,
     max_bytes: int = 10_000_000,
     timeout_sec: int = 10,
-    max_redirects: int = 0,  # Default: no redirects (safest)
+    max_redirects: int = 0,
 ) -> bytes:
     """
-    Safely fetch a URL with SSRF protections.
-
-    Args:
-        url: URL to fetch.
-        allow_hosts: Allowed hosts (required, deny-by-default).
-        max_bytes: Maximum response size.
-        timeout_sec: Request timeout.
-        max_redirects: Maximum redirects to follow (0 = none).
-
-    Returns:
-        Response body as bytes.
-
-    Raises:
-        SSRFError: If URL or resolved IP is blocked.
-
-    Note:
-        - System proxies are disabled to prevent SSRF bypass.
-        - Each redirect hop is re-validated against allowlist.
+    Safely fetch a URL with SSRF protections and IP pinning.
     """
     import urllib.error
-    import urllib.request
+    import urllib.parse
 
-    # Validate initial URL
-    validate_outbound_url(url, allow_hosts=allow_hosts)
+    current_url = url
+    redirects_followed = 0
 
-    # Build request
-    request = urllib.request.Request(url)
-    try:
-        from ..config import PACK_VERSION
-    except ImportError:  # pragma: no cover
-        from config import PACK_VERSION  # type: ignore
-    request.add_header("User-Agent", f"ComfyUI-OpenClaw/{PACK_VERSION}")
+    while True:
+        # Validate initial URL and resolve IPs
+        scheme, host, port, pinned_ips = validate_outbound_url(
+            current_url, allow_hosts=allow_hosts
+        )
 
-    # Track redirect count for validation
-    redirect_count = [0]  # Use list for mutability in nested class
-
-    class SafeRedirectHandler(urllib.request.HTTPRedirectHandler):
-        """Redirect handler that re-validates each hop."""
-
-        def redirect_request(self, req, fp, code, msg, headers, newurl):
-            if max_redirects == 0:
-                raise SSRFError(f"Redirects disabled. Redirect to: {newurl}")
-
-            redirect_count[0] += 1
-            if redirect_count[0] > max_redirects:
-                raise SSRFError(f"Too many redirects (max {max_redirects})")
-
-            # Re-validate the redirect URL (SSRF check on each hop)
+        # Build request
+        request = urllib.request.Request(current_url)
+        try:
+            from ..config import PACK_VERSION
+        except ImportError:  # pragma: no cover
             try:
-                validate_outbound_url(newurl, allow_hosts=allow_hosts)
-            except SSRFError as e:
-                raise SSRFError(f"Redirect blocked: {e}")
+                from config import PACK_VERSION  # type: ignore
+            except ImportError:
+                PACK_VERSION = "0.0.0"
 
-            return super().redirect_request(req, fp, code, msg, headers, newurl)
+        request.add_header("User-Agent", f"ComfyUI-OpenClaw/{PACK_VERSION}")
 
-    # Build opener with:
-    # 1. No proxies (prevent SSRF bypass via system proxy)
-    # 2. Safe redirect handler
-    opener = urllib.request.build_opener(
-        urllib.request.ProxyHandler({}), SafeRedirectHandler()  # Disable all proxies
-    )
+        # Build S37-hardened pinned opener
+        opener = _build_pinned_opener(pinned_ips)
 
-    try:
-        with opener.open(request, timeout=timeout_sec) as response:
-            return response.read(max_bytes)
-    except urllib.error.URLError as e:
-        raise SSRFError(f"Fetch failed: {e}")
+        try:
+            with opener.open(request, timeout=timeout_sec) as response:
+                code = response.getcode()
+
+                # Handle redirects manually (NoRedirectHandler returns a 3xx response object).
+                if code in (301, 302, 303, 307, 308):
+                    if max_redirects > 0 and redirects_followed < max_redirects:
+                        redirects_followed += 1
+                        new_loc = response.headers.get("Location")
+                        if not new_loc:
+                            raise SSRFError(f"Redirect without Location header: {code}")
+
+                        # Resolve relative URL
+                        current_url = urllib.parse.urljoin(current_url, new_loc)
+                        continue
+                    raise SSRFError(
+                        f"Steps limit exceeded or redirects disabled: {max_redirects}"
+                    )
+
+                return response.read(max_bytes)
+
+        except urllib.error.HTTPError as e:
+            # Should mostly catch 4xx/5xx only
+            raise SSRFError(f"Fetch failed: {e}")
+        except urllib.error.URLError as e:
+            if isinstance(e.reason, SSRFError):
+                raise e.reason
+            raise SSRFError(f"Fetch failed: {e}")
 
 
 def safe_request_json(
@@ -400,83 +467,83 @@ def safe_request_json(
 ) -> dict:
     """
     Perform a safe HTTP request with JSON body (e.g., POST callback).
-
-    Args:
-        method: HTTP method (GET, POST, etc.).
-        url: Target URL.
-        json_body: JSON-serializable body (will be encoded).
-        allow_hosts: Allowed hosts (required).
-        headers: Optional headers (only safe ones allowed).
-        timeout_sec: Request timeout.
-        max_response_bytes: Max response size.
-        max_redirects: Max redirects to follow.
-
-    Returns:
-        Parsed JSON response dict or empty dict on non-JSON response.
-
-    Raises:
-        SSRFError: If URL or resolved IP is blocked.
     """
     import json
     import urllib.error
-    import urllib.request
+    import urllib.parse
 
-    # Validate URL
-    validate_outbound_url(url, allow_hosts=allow_hosts)
+    current_url = url
+    current_method = method
+    current_body = json.dumps(json_body).encode("utf-8") if json_body else None
+    redirects_followed = 0
 
-    # Prepare body
-    body_bytes = json.dumps(json_body).encode("utf-8") if json_body else None
+    while True:
+        # Validate URL + Pin IPs
+        scheme, host, port, pinned_ips = validate_outbound_url(
+            current_url, allow_hosts=allow_hosts
+        )
 
-    # Build request
-    request = urllib.request.Request(url, data=body_bytes, method=method)
-    try:
-        from ..config import PACK_VERSION
-    except ImportError:  # pragma: no cover
-        from config import PACK_VERSION  # type: ignore
-    request.add_header("User-Agent", f"ComfyUI-OpenClaw/{PACK_VERSION}")
-    request.add_header("Content-Type", "application/json")
-
-    # Add safe headers (allowlist prefixes)
-    ALLOWED_HEADER_PREFIXES = ("x-", "content-type")
-    if headers:
-        for key, value in headers.items():
-            key_lower = key.lower()
-            if any(key_lower.startswith(p) for p in ALLOWED_HEADER_PREFIXES):
-                request.add_header(key, value)
-            else:
-                logger.debug(f"Skipping disallowed header: {key}")
-
-    # Track redirects
-    redirect_count = [0]
-
-    class SafeRedirectHandler(urllib.request.HTTPRedirectHandler):
-        def redirect_request(self, req, fp, code, msg, hdrs, newurl):
-            if max_redirects == 0:
-                raise SSRFError(f"Redirects disabled. Redirect to: {newurl}")
-            redirect_count[0] += 1
-            if redirect_count[0] > max_redirects:
-                raise SSRFError(f"Too many redirects (max {max_redirects})")
+        # Build request
+        request = urllib.request.Request(
+            current_url, data=current_body, method=current_method
+        )
+        try:
+            from ..config import PACK_VERSION
+        except ImportError:  # pragma: no cover
             try:
-                validate_outbound_url(newurl, allow_hosts=allow_hosts)
-            except SSRFError as e:
-                raise SSRFError(f"Redirect blocked: {e}")
-            return super().redirect_request(req, fp, code, msg, hdrs, newurl)
+                from config import PACK_VERSION  # type: ignore
+            except ImportError:
+                PACK_VERSION = "0.0.0"
 
-    opener = urllib.request.build_opener(
-        urllib.request.ProxyHandler({}),
-        SafeRedirectHandler(),
-    )
+        request.add_header("User-Agent", f"ComfyUI-OpenClaw/{PACK_VERSION}")
+        request.add_header("Content-Type", "application/json")
 
-    try:
-        with opener.open(request, timeout=timeout_sec) as response:
-            data = response.read(max_response_bytes)
-            try:
-                return json.loads(data.decode("utf-8"))
-            except (json.JSONDecodeError, UnicodeDecodeError):
-                return {"raw_response": data.decode("utf-8", errors="replace")[:1000]}
-    except urllib.error.HTTPError as e:
-        # HTTP errors are not SSRF; keep SSRFError only for validation/redirect blocks
-        raise RuntimeError(f"HTTP error {e.code}: {e.reason}")
-    except urllib.error.URLError as e:
-        # Network errors are not SSRF; allow caller to retry
-        raise RuntimeError(f"Request failed: {e}")
+        # Add safe headers
+        ALLOWED_HEADER_PREFIXES = ("x-", "content-type")
+        if headers:
+            for key, value in headers.items():
+                key_lower = key.lower()
+                if any(key_lower.startswith(p) for p in ALLOWED_HEADER_PREFIXES):
+                    request.add_header(key, value)
+                else:
+                    logger.debug(f"Skipping disallowed header: {key}")
+
+        # Build Pinned Opener
+        opener = _build_pinned_opener(pinned_ips)
+
+        try:
+            with opener.open(request, timeout=timeout_sec) as response:
+                code = response.getcode()
+
+                if code in (301, 302, 303, 307, 308):
+                    if max_redirects > 0 and redirects_followed < max_redirects:
+                        redirects_followed += 1
+                        new_loc = response.headers.get("Location")
+                        if not new_loc:
+                            raise RuntimeError(f"Redirect without Location: {code}")
+
+                        current_url = urllib.parse.urljoin(current_url, new_loc)
+
+                        # Handle Method/Body transformation rules
+                        if code in (301, 302, 303):
+                            current_method = "GET"
+                            current_body = None
+
+                        continue
+                    raise RuntimeError(f"Too many redirects: {max_redirects}")
+
+                data = response.read(max_response_bytes)
+                try:
+                    return json.loads(data.decode("utf-8"))
+                except (json.JSONDecodeError, UnicodeDecodeError):
+                    return {
+                        "raw_response": data.decode("utf-8", errors="replace")[:1000]
+                    }
+
+        except urllib.error.HTTPError as e:
+            raise RuntimeError(f"HTTP error {e.code}: {e.reason}")
+
+        except urllib.error.URLError as e:
+            if isinstance(e.reason, SSRFError):
+                raise e.reason
+            raise RuntimeError(f"Request failed: {e}")

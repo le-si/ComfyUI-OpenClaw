@@ -86,12 +86,13 @@ def is_auth_configured() -> bool:
 
 
 def should_require_replay_protection() -> bool:
-    """Check if replay protection is strictly required."""
+    """Check if replay protection is strictly required (S36 fail-closed default)."""
+    # S36: Default to strict (1). Use "0" or "false" to opt-out (legacy compat).
     val = (
         _env_get(
-            ENV_REQUIRE_REPLAY_PROTECTION, LEGACY_ENV_REQUIRE_REPLAY_PROTECTION, "0"
+            ENV_REQUIRE_REPLAY_PROTECTION, LEGACY_ENV_REQUIRE_REPLAY_PROTECTION, "1"
         )
-        or "0"
+        or "1"
     ).lower()
     return val in ("1", "true", "yes")
 
@@ -206,13 +207,20 @@ def verify_hmac(request: RequestLike, raw_body: bytes) -> Tuple[bool, str]:
                 pass
 
         if IdempotencyStore:
-            store = IdempotencyStore()
-            # Nonce key
-            nonce_key = f"nonce:{nonce}"
-            # TTL should allow for the drift window (buffer)
-            is_dup, _ = store.check_and_record(nonce_key, ttl=600)
-            if is_dup:
-                return False, "nonce_used"
+            try:
+                store = IdempotencyStore()
+                # Nonce key
+                nonce_key = f"nonce:{nonce}"
+                # TTL should allow for the drift window (buffer)
+                is_dup, _ = store.check_and_record(nonce_key, ttl=600)
+                if is_dup:
+                    return False, "nonce_used"
+            except Exception as e:
+                logger.error(f"Idempotency store check failed: {e}")
+                if should_require_replay_protection():
+                    return False, "internal_error"
+                # Else proceed (allow open in legacy/relaxed mode - risk acceptance)
+                pass
         else:
             logger.warning("IdempotencyStore not available for nonce check")
             # Fail closed if configured to require protection, otherwise warn
