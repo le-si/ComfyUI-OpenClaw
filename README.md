@@ -23,6 +23,33 @@ It is designed to make **ComfyUI a reliable automation target** with an explicit
 ## Latest Updates - Click to expand
 
 <details>
+<summary><strong>Security Hardening: Observability/Auth boundaries, transform isolation, integrity checks, and safe tooling controls</strong></summary>
+
+- Delivered observability tier hardening with explicit sensitivity split:
+  - Public-safe: `/openclaw/health`
+  - Observability token: `/openclaw/config`, `/openclaw/events`, `/openclaw/events/stream`
+  - Admin-only: `/openclaw/logs/tail`, `/openclaw/trace/{prompt_id}`, `/openclaw/secrets/status`, `/openclaw/security/doctor`
+- Delivered constrained transform isolation hardening:
+  - process-boundary execution via `TransformProcessRunner`
+  - timeout/output caps and network-deny worker posture
+  - feature-gated default-off behavior for safer rollout
+- Delivered approval/checkpoint integrity hardening:
+  - canonical JSON + SHA-256 integrity envelopes
+  - tamper detection and fail-closed handling on integrity violations
+  - migration-safe loading behavior for legacy persistence files
+- Delivered external tooling execution policy:
+  - allowlist-driven tool definitions (`data/tools_allowlist.json`)
+  - strict argument validation, bounded timeout/output, and redacted output handling
+  - gated by `OPENCLAW_ENABLE_EXTERNAL_TOOLS` plus admin access policy
+- Extended security doctor coverage with wave-2 checks:
+  - validates transform isolation posture
+  - reports external tooling posture
+  - verifies integrity module availability
+- Auth-coverage contract tests were updated to include new tool routes and prevent future route-auth drift regressions.
+
+</details>
+
+<details>
 <summary><strong>Sprint A: closes out with five concrete reliability and security improvements</strong></summary>
 
 - Configuration save/apply now returns explicit apply metadata, so callers can see what was actually applied, what requires restart, and which effective provider/model is active.

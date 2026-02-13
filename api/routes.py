@@ -56,6 +56,7 @@ if web is not None:
         )
         from ..api.security_doctor import security_doctor_handler  # S30
         from ..api.templates import templates_list_handler
+        from ..api.tools import tools_list_handler, tools_run_handler  # S12
         from ..api.webhook import webhook_handler
         from ..api.webhook_submit import webhook_submit_handler
         from ..api.webhook_validate import webhook_validate_handler
@@ -106,6 +107,7 @@ if web is not None:
         )
         from api.security_doctor import security_doctor_handler  # type: ignore  # S30
         from api.templates import templates_list_handler
+        from api.tools import tools_list_handler, tools_run_handler  # S12
         from api.webhook import webhook_handler
         from api.webhook_submit import webhook_submit_handler
         from api.webhook_validate import webhook_validate_handler
@@ -538,6 +540,16 @@ def register_routes(server) -> None:
                 f"{prefix}/security/doctor",
                 security_doctor_handler,
             ),  # S30: Security Doctor diagnostics
+            (
+                "GET",
+                f"{prefix}/tools",
+                tools_list_handler,
+            ),  # S12: List allowed tools
+            (
+                "POST",
+                f"{prefix}/tools/{{name}}/run",
+                tools_run_handler,
+            ),  # S12: Execute tool (admin only)
         ]
 
         for method, path, handler in core_routes:

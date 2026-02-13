@@ -57,6 +57,8 @@ AUTH_CLASS_BY_ROUTE = {
     ("GET", "/events/stream"): "observability",
     ("GET", "/events"): "observability",
     ("GET", "/security/doctor"): "admin",
+    ("GET", "/tools"): "admin",
+    ("POST", "/tools/{name}/run"): "admin",
 }
 
 OPTIONAL_SUFFIX_PREFIXES = (

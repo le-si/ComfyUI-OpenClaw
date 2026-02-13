@@ -948,6 +948,111 @@ def apply_guarded_remediation(
 
 
 # ---------------------------------------------------------------------------
+# Security checks — Wave 2 Hardening (S35, S12, R77)
+# ---------------------------------------------------------------------------
+
+
+def check_hardening_wave2(report: SecurityReport) -> None:
+    """Verify Security Hardening Wave 2 status."""
+
+    # 1. S35 Transform Isolation
+    try:
+        from .constrained_transforms import get_transform_executor
+        from .transform_common import is_transforms_enabled
+        from .transform_runner import TransformProcessRunner
+
+        if not is_transforms_enabled():
+            report.add(
+                SecurityCheckResult(
+                    name="s35_isolation",
+                    severity=SecuritySeverity.SKIP.value,
+                    message="Transforms disabled (feature flag off)",
+                    category="wave2",
+                )
+            )
+        else:
+            executor = get_transform_executor()
+            if isinstance(executor, TransformProcessRunner):
+                report.add(
+                    SecurityCheckResult(
+                        name="s35_isolation",
+                        severity=SecuritySeverity.PASS.value,
+                        message="S35: Process isolation active",
+                        category="wave2",
+                    )
+                )
+            else:
+                report.add(
+                    SecurityCheckResult(
+                        name="s35_isolation",
+                        severity=SecuritySeverity.FAIL.value,
+                        message="S35: Process isolation NOT active (using thread/unsafe executor)",
+                        category="wave2",
+                        detail=f"Current executor: {type(executor)}",
+                        remediation="Ensure TransformProcessRunner is used.",
+                    )
+                )
+
+    except ImportError:
+        report.add(
+            SecurityCheckResult(
+                name="s35_isolation",
+                severity=SecuritySeverity.FAIL.value,
+                message="S35: Modules not importable",
+                category="wave2",
+            )
+        )
+
+    # 2. S12 Tooling (Opt-in)
+    try:
+        from .tool_runner import is_tools_enabled
+
+        if is_tools_enabled():
+            report.add(
+                SecurityCheckResult(
+                    name="s12_tooling",
+                    severity=SecuritySeverity.WARN.value,
+                    message="S12: External tooling ENABLED (admin-only)",
+                    category="wave2",
+                    detail="Ensure tools_allowlist.json is strict.",
+                )
+            )
+        else:
+            report.add(
+                SecurityCheckResult(
+                    name="s12_tooling",
+                    severity=SecuritySeverity.PASS.value,
+                    message="S12: External tooling disabled (safe default)",
+                    category="wave2",
+                )
+            )
+    except ImportError:
+        pass
+
+    # 3. R77 Integrity (Existence Check)
+    try:
+        from .integrity import load_verified
+
+        report.add(
+            SecurityCheckResult(
+                name="r77_integrity",
+                severity=SecuritySeverity.PASS.value,
+                message="R77: Integrity module loaded",
+                category="wave2",
+            )
+        )
+    except ImportError:
+        report.add(
+            SecurityCheckResult(
+                name="r77_integrity",
+                severity=SecuritySeverity.FAIL.value,
+                message="R77: Integrity module missing",
+                category="wave2",
+            )
+        )
+
+
+# ---------------------------------------------------------------------------
 # Main runner
 # ---------------------------------------------------------------------------
 
@@ -982,6 +1087,7 @@ def run_security_doctor(
     check_feature_flags(report)
     check_api_key_posture(report)
     check_connector_security_posture(report)  # S32
+    check_hardening_wave2(report)  # Wave 2
 
     # Optional guarded remediation
     if remediate:
