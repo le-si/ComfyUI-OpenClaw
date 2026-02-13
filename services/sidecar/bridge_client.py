@@ -1,124 +1,106 @@
 """
-R13 — Sidecar Bridge Client (Stub).
-Thin HTTP client for sidecar communication. Currently a placeholder.
+Bridge Client for OpenClaw Sidecar (F46).
+
+Handles communication with the central OpenClaw Bridge/Server.
+- Authentication (Worker Token)
+- Job Fetching (Polling)
+- Result Delivery
+- Health Reporting
 """
 
+import asyncio
+import json
 import logging
+from dataclasses import dataclass
 from typing import Any, Dict, Optional
 
-from .bridge_contract import (
-    BridgeDeliveryRequest,
-    BridgeHealthResponse,
-    BridgeJobRequest,
-)
+import aiohttp
 
-logger = logging.getLogger("ComfyUI-OpenClaw.sidecar.bridge_client")
+logger = logging.getLogger(__name__)
 
 
+@dataclass
 class BridgeClientConfig:
-    """Configuration for sidecar bridge client."""
+    """Configuration for BridgeClient."""
 
-    def __init__(
-        self,
-        base_url: str = "",
-        device_token: str = "",
-        timeout_sec: int = 30,
-        max_retries: int = 3,
-    ):
-        self.base_url = base_url
-        self.device_token = device_token
-        self.timeout_sec = timeout_sec
-        self.max_retries = max_retries
+    url: str
+    token: str
+    worker_id: str
 
 
 class BridgeClient:
-    """
-    Thin HTTP client for sidecar bridge communication.
+    def __init__(self, bridge_url: str, worker_token: str, worker_id: str):
+        self.bridge_url = bridge_url.rstrip("/")
+        self.config = BridgeClientConfig(bridge_url, worker_token, worker_id)
+        self.token = worker_token
+        self.worker_id = worker_id
+        self.session: Optional[aiohttp.ClientSession] = None
 
-    This is currently a stub/placeholder. Full implementation will:
-    - Use aiohttp/httpx for HTTP
-    - Apply R18 retry logic
-    - Propagate idempotency keys
-    - Handle device token auth
-    """
+    async def start(self):
+        if not self.session:
+            self.session = aiohttp.ClientSession(
+                headers={
+                    "Authorization": f"Bearer {self.token}",
+                    "X-Worker-ID": self.worker_id,
+                    "User-Agent": "OpenClaw-Sidecar/1.0",
+                }
+            )
 
-    def __init__(self, config: Optional[BridgeClientConfig] = None):
-        self.config = config or BridgeClientConfig()
-        self._connected = False
+    async def stop(self):
+        if self.session:
+            await self.session.close()
 
-    async def health(self) -> BridgeHealthResponse:
-        """
-        Check sidecar health.
-
-        Returns:
-            BridgeHealthResponse
-
-        Raises:
-            NotImplementedError: Sidecar not yet implemented
-        """
-        logger.warning("BridgeClient.health() called but sidecar not implemented")
-        raise NotImplementedError("Sidecar bridge not yet implemented")
-
-    async def submit_job(
-        self, request: BridgeJobRequest, timeout: Optional[int] = None
-    ) -> Dict[str, Any]:
-        """
-        Submit job to sidecar.
-
-        Args:
-            request: Job submission request
-            timeout: Optional timeout override
-
-        Returns:
-            Job submission result
-
-        Raises:
-            NotImplementedError: Sidecar not yet implemented
-        """
-        logger.warning(
-            f"BridgeClient.submit_job() called with idempotency_key={request.idempotency_key}"
-        )
-        raise NotImplementedError("Sidecar bridge not yet implemented")
-
-    async def deliver(self, request: BridgeDeliveryRequest) -> bool:
-        """
-        Send delivery message via sidecar.
-
-        Args:
-            request: Delivery request
-
-        Returns:
-            True on success
-
-        Raises:
-            NotImplementedError: Sidecar not yet implemented
-        """
-        logger.warning(f"BridgeClient.deliver() called with target={request.target}")
-        raise NotImplementedError("Sidecar bridge not yet implemented")
-
-    def is_connected(self) -> bool:
-        """Check if sidecar is connected."""
-        return self._connected
-
-    async def connect(self) -> bool:
-        """
-        Attempt to connect to sidecar.
-
-        Returns:
-            True if connected
-        """
-        if not self.config.base_url:
-            logger.info("No sidecar URL configured, skipping connection")
-            return False
-
+    async def get_health(self) -> bool:
+        """Check if bridge is reachable."""
         try:
-            await self.health()
-            self._connected = True
-            return True
-        except NotImplementedError:
-            self._connected = False
-            return False
+            async with self.session.get(f"{self.bridge_url}/health", timeout=5) as resp:
+                return resp.status == 200
         except Exception as e:
-            logger.warning(f"Sidecar connection failed: {e}")
-            self._connected = False
+            logger.error(f"Bridge health check failed: {e}")
             return False
+
+    async def fetch_jobs(self) -> list:
+        """Poll for pending jobs assigned to this worker (or generic queue)."""
+        try:
+            # Endpoint hypothetical: /worker/jobs/poll
+            async with self.session.get(
+                f"{self.bridge_url}/worker/jobs/poll", timeout=10
+            ) as resp:
+                if resp.status == 200:
+                    data = await resp.json()
+                    return data.get("jobs", [])
+                elif resp.status == 204:
+                    return []
+                else:
+                    logger.warning(f"Fetch jobs failed: {resp.status}")
+                    return []
+        except Exception as e:
+            logger.error(f"Fetch jobs error: {e}")
+            return []
+
+    async def submit_result(self, job_id: str, result: Dict[str, Any]) -> bool:
+        """Upload job result to bridge."""
+        try:
+            url = f"{self.bridge_url}/worker/jobs/{job_id}/result"
+            async with self.session.post(url, json=result, timeout=30) as resp:
+                if resp.status in (200, 201):
+                    return True
+                else:
+                    logger.error(
+                        f"Submit result failed {resp.status}: {await resp.text()}"
+                    )
+                    return False
+        except Exception as e:
+            logger.error(f"Submit result error: {e}")
+            return False
+
+    async def report_status(self, status: str, details: Dict = None):
+        """Send heartbeat/status."""
+        try:
+            payload = {"status": status, "details": details or {}}
+            async with self.session.post(
+                f"{self.bridge_url}/worker/heartbeat", json=payload, timeout=5
+            ) as resp:
+                pass
+        except Exception:
+            pass  # Fail silently for heartbeats

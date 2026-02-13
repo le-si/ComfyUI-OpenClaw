@@ -290,6 +290,7 @@ class TestR79EgressCompliance(unittest.TestCase):
             "services/providers/anthropic.py",
             "services/providers/openai_compat.py",
             "services/providers/openai.py",  # Allowed if present
+            "services/sidecar/bridge_client.py",  # F46 Sidecar Client
         }
 
         SKIP_DIRS = [

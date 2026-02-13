@@ -237,6 +237,8 @@ class TestWhatsAppWebhook(unittest.IsolatedAsyncioTestCase):
 
         # Configure allowlist
         self.config.whatsapp_allowed_users = ["999999"]  # Sender is not 999999
+        # Re-init server to pick up new allowlist policy (which snapshots config)
+        self.server = WhatsAppWebhookServer(self.config, self.router)
 
         now_ts = int(time.time())
         payload = {

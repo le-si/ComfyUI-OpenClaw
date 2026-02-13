@@ -55,7 +55,8 @@ class TestKakaoAdapter(unittest.IsolatedAsyncioTestCase):
         body = json.loads(resp.body)
         self.assertEqual(body["version"], "2.0")
         self.assertEqual(
-            body["template"]["outputs"][0]["simpleText"]["text"], "Response text"
+            body["template"]["outputs"][0]["simpleText"]["text"],
+            "[OpenClaw] Response text",
         )
 
     async def test_replay_guard_rejects_duplicate_payload(self):

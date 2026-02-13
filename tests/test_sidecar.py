@@ -70,14 +70,15 @@ class TestBridgeClient(unittest.TestCase):
 
     def test_client_config_defaults(self):
         """Test client config defaults."""
-        config = BridgeClientConfig()
-        self.assertEqual(config.timeout_sec, 30)
-        self.assertEqual(config.max_retries, 3)
+        config = BridgeClientConfig("http://bridge", "token", "worker1")
+        self.assertEqual(config.url, "http://bridge")
+        self.assertEqual(config.token, "token")
+        self.assertEqual(config.worker_id, "worker1")
 
     def test_client_not_connected_by_default(self):
         """Test client starts disconnected."""
-        client = BridgeClient()
-        self.assertFalse(client.is_connected())
+        client = BridgeClient("http://bridge", "token", "worker1")
+        self.assertIsNone(client.session)
 
     def test_idempotency_key_propagation(self):
         """Test idempotency key is required in requests."""

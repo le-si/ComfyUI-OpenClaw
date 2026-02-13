@@ -10,6 +10,7 @@ ComfyUI-OpenClaw is a **security-first** ComfyUI custom node pack that adds:
 - **Now supports major messaging platforms, including Discord, Telegram, WhatsApp, LINE, WeChat and KaKaoTalk(pending).**
 - **And more exciting features being added continuously**
 
+---
 
 This project is intentionally **not** a general-purpose “assistant platform” with broad remote execution surfaces.
 It is designed to make **ComfyUI a reliable automation target** with an explicit admin boundary and hardened defaults.
@@ -384,6 +385,7 @@ Operational notes:
 ### Bridge (sidecar; optional)
 
 Sidecar bridge routes are registered under `/openclaw/bridge/*` and `/moltbot/bridge/*`.
+This repository currently provides the in-process Bridge API surface only; a standalone OpenClaw Gateway sidecar daemon/process is tracked separately and not bundled yet.
 
 Enablement and auth (device token model):
 

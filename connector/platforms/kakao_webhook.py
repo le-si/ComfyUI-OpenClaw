@@ -22,6 +22,7 @@ import logging
 import time
 from typing import Optional
 
+from ..channels.kakaotalk import KakaoTalkChannel
 from ..config import ConnectorConfig
 from ..contract import CommandRequest, CommandResponse
 from ..router import CommandRouter
@@ -101,6 +102,9 @@ class KakaoWebhookServer:
 
         # S32: Allowlist (soft-deny via AllowlistPolicy primitive)
         self._user_allowlist = AllowlistPolicy(config.kakao_allowed_users, strict=False)
+
+        # F45: Output Channel (Policies)
+        self._channel = KakaoTalkChannel(config)
 
     # ------------------------------------------------------------------
     # Lifecycle
@@ -211,31 +215,43 @@ class KakaoWebhookServer:
             resp_text = getattr(resp, "text", "")
             if not isinstance(resp_text, str):
                 resp_text = str(resp_text) if resp_text is not None else ""
-            if resp_text:
-                return self._build_text_response(resp_text)
+
+            # F44: Extract interactive elements
+            # CommandResponse.buttons -> QuickReplies
+            buttons = getattr(resp, "buttons", [])
+
+            # CommandResponse.files -> Image (first one)
+            files = getattr(resp, "files", [])
+            image_url = None
+            # TODO: Handle local file uploads if needed. For now assuming files contain URLs if string startswith http.
+            # In real system, router uploads local files and returns URL?
+            # Or ChatConnector handles it.
+            # If 'files' contains local paths, we can't send them directly in simpleImage without upload.
+            # Skipping complex media upload for F44 scope unless specifically required.
+
+            if resp_text or buttons:
+                return self._build_response(resp_text, quick_replies=buttons)
             else:
                 # No response content (e.g. valid command but no output intended?)
                 # Kakao requires *some* response payload or it treats as error.
                 # We'll return a simple valid JSON to ack.
-                return self._build_text_response("Command processed.")
+                return self._build_response("Command processed.")
         except Exception as e:
             logger.exception(f"Error handling Kakao command: {e}")
             return self._build_error_response("Internal Error")
 
-    def _build_text_response(self, text: str):
-        """Build SkillResponse V2.0 simpleText."""
+    def _build_response(self, text: str, quick_replies: Optional[list] = None):
+        """Build SkillResponse V2.0 using F45 channel policy."""
         _, web = _import_aiohttp_web()
 
-        # Kakao text limits handled here if needed (1000 chars roughly)
-        if len(text) > 1000:
-            text = text[:997] + "..."
-
-        resp_data = {
-            "version": "2.0",
-            "template": {"outputs": [{"simpleText": {"text": text}}]},
-        }
+        # F45/F44: Delegate formatting to channel
+        resp_data = self._channel.format_response(text, quick_replies=quick_replies)
         return _make_json_response(web, resp_data)
+
+    def _build_text_response(self, text: str):
+        """Legacy helper alias."""
+        return self._build_response(text)
 
     def _build_error_response(self, error_msg: str):
         """Build simple error text response."""
-        return self._build_text_response(f"[Error] {error_msg}")
+        return self._build_response(f"[Error] {error_msg}")

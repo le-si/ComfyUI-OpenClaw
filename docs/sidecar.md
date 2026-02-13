@@ -71,11 +71,12 @@ All mutating operations require an `idempotency_key` to prevent duplicate proces
 | Component | Status |
 |-----------|--------|
 | Bridge Contract | ✅ Defined (`services/sidecar/bridge_contract.py`) |
+| Bridge Endpoints (in ComfyUI-OpenClaw) | ✅ Implemented (`/openclaw/bridge/*`, `/moltbot/bridge/*`) |
 | Bridge Client | 🔲 Stub only (`services/sidecar/bridge_client.py`) |
 | Gateway Process | 🔲 Not implemented |
 
 ## Next Steps
 
-1. **F10**: Implement bridge endpoints in ComfyUI-OpenClaw
-2. **F13**: Add delivery adapters for chat platforms
-3. **Gateway**: Implement the sidecar process (separate repo)
+1. ~~**F10**~~ ✅ Implemented: bridge endpoints in ComfyUI-OpenClaw
+2. ~~**F13**~~ ✅ Implemented: delivery adapter contract in ComfyUI-OpenClaw
+3. **F46**: Implement standalone sidecar process/runtime (external deployable service)
