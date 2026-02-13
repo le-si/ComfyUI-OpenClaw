@@ -463,9 +463,12 @@ async def llm_models_handler(request: web.Request) -> web.Response:
             {"ok": False, "error": f"HTTP error {e.code}: {e.reason}"}, status=502
         )
     except Exception as e:
-        logger.exception("Failed to fetch model list")
         stale = _MODEL_LIST_CACHE.get(cache_key)
         if stale:
+            # IMPORTANT:
+            # Test path intentionally injects network failures to verify cache fallback.
+            # Keep this as warning (no traceback) to avoid noisy false-alarm logs.
+            logger.warning("Model list refresh failed, serving cached list: %s", e)
             _ts, models = stale
             warning = f"Using cached list (refresh failed: {str(e)})"
             return web.json_response(
@@ -477,6 +480,7 @@ async def llm_models_handler(request: web.Request) -> web.Response:
                     "warning": warning,
                 }
             )
+        logger.exception("Failed to fetch model list")
         return web.json_response({"ok": False, "error": str(e)}, status=500)
 
 
