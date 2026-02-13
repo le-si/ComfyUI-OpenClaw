@@ -7,23 +7,45 @@ ComfyUI-OpenClaw is a **security-first** ComfyUI custom node pack that adds:
 - **LLM-assisted nodes** (planner/refiner/vision/batch variants)
 - **A built-in extension UI** (`OpenClaw` panel)
 - **A secure-by-default HTTP API** for automation (webhooks, triggers, schedules, approvals, presets)
-- **Now supports major messaging platforms, including Discord, Telegram, WhatsApp, LINE, WeChat and KaKaoTalk.**
+- **Now supports major messaging platforms, including Discord, Telegram, WhatsApp, LINE, WeChat and KakaoTalk.**
 - **And more exciting features being added continuously**
 
 ---
 
-This project is intentionally **not** a general-purpose “assistant platform” with broad remote execution surfaces.
-It is designed to make **ComfyUI a reliable automation target** with an explicit admin boundary and hardened defaults.
+This project is intentionally **not** a general-purpose “assistant platform” with broad remote execution surfaces. It is designed to make **ComfyUI a reliable automation target** with an explicit admin boundary and hardened defaults.
 
 **Security stance (how this project differs from convenience-first automation packs):**
 
 - Localhost-first defaults; remote access is opt-in
 - Explicit **Admin Token** boundary for write actions
 - Webhooks are **deny-by-default** until auth is configured
+- Encrypted webhook mode is **fail-closed** (invalid signature/decrypt/app-id checks are rejected)
 - Strict outbound SSRF policy (callbacks + custom LLM base URLs)
+- Bridge worker endpoints enforce device-token auth, scope checks, and idempotency handling
+- Replay risk is reduced with deterministic dedupe keys for event payloads without message IDs
+- Cryptography dependency is optional and only required when encrypted webhook mode is enabled
 - Secrets are never stored in browser storage (optional server-side key store is local-only convenience)
 
 ## Latest Updates - Click to expand
+
+<details>
+<summary><strong>Connector platform parity and sidecar worker runtime improvements</strong></summary>
+
+- Added stronger KakaoTalk response handling:
+  - strict QuickReply cap with safe truncation
+  - empty-response guard to avoid invalid platform payloads
+  - more predictable output shaping and sanitization behavior
+- Added WeChat Official Account encrypted webhook support:
+  - AES encrypted ingress (`encrypt_type=aes`) with signature verification and fail-closed decrypt/app-id validation
+  - expanded event normalization coverage (`subscribe`, `unsubscribe`, `CLICK`, `VIEW`, `SCAN`)
+  - deterministic dedupe behavior for event payloads without `MsgId`
+  - bounded ACK-first flow with deferred reply handling for slow paths
+- Added sidecar worker bridge alignment end-to-end:
+  - worker poll/result/heartbeat bridge endpoints
+  - contract-driven sidecar client endpoint resolution and idempotency header behavior
+  - dedicated E2E test coverage for worker route registration, auth, and round-trip behavior
+
+</details>
 
 <details>
 <summary><strong>Security Hardening: Auth/Observability boundaries, connector command controls, registry trust policy, transform isolation, integrity checks, and safe tooling controls</strong></summary>
@@ -385,7 +407,18 @@ Operational notes:
 ### Bridge (sidecar; optional)
 
 Sidecar bridge routes are registered under `/openclaw/bridge/*` and `/moltbot/bridge/*`.
-This repository currently provides the in-process Bridge API surface only; a standalone OpenClaw Gateway sidecar daemon/process is tracked separately and not bundled yet.
+This repository provides both bridge API routes and a sidecar worker runtime path.
+
+Bridge route groups:
+
+- Core bridge routes:
+  - `GET /bridge/health`
+  - `POST /bridge/submit`
+  - `POST /bridge/deliver`
+- Worker bridge routes:
+  - `GET /bridge/worker/poll`
+  - `POST /bridge/worker/result/{job_id}`
+  - `POST /bridge/worker/heartbeat`
 
 Enablement and auth (device token model):
 
@@ -396,6 +429,17 @@ Enablement and auth (device token model):
 Callback delivery allowlist (sidecar HTTP adapter):
 
 - `OPENCLAW_BRIDGE_CALLBACK_HOST_ALLOWLIST=example.com`
+
+Standalone worker runtime:
+
+- Entrypoint: `python scripts/start_sidecar.py`
+- Required:
+  - `OPENCLAW_BRIDGE_URL`
+  - `OPENCLAW_WORKER_TOKEN`
+- Optional:
+  - `OPENCLAW_WORKER_ID`
+- Current implementation note:
+  - worker queue/result/heartbeat persistence is in-memory (MVP); use persistent backing for production durability.
 
 ## Templates
 
@@ -537,12 +581,14 @@ python3 -m unittest discover -s tests -p "test_*.py"
 
 ## 🎮 Remote Control (Connector)
 
-OpenClaw includes a standalone **Connector** process that allows you to control your local instance securely via **Telegram**, **Discord**, **LINE**, or **WhatsApp**.
+OpenClaw includes a standalone **Connector** process that allows you to control your local instance securely via **Telegram**, **Discord**, **LINE**, **WhatsApp**, **WeChat**, and **KakaoTalk**.
 
 - **Status & Queue**: Check job progress remotely.
 - **Run Jobs**: Submit templates via chat commands.
 - **Approvals**: Approve/Reject paused workflows from your phone.
-- **Secure**: Outbound-only for Telegram/Discord. LINE/WhatsApp require inbound HTTPS (webhook).
+- **Secure**: Outbound-only for Telegram/Discord. LINE/WhatsApp/WeChat/KakaoTalk require inbound HTTPS (webhook).
+- **WeChat encrypted mode**: Official Account encrypted webhook mode is supported when AES settings are configured.
+- **KakaoTalk response safety**: QuickReply limits and safe fallback handling are enforced for reliable payload behavior.
 
 [👉 **See Setup Guide (docs/connector.md)**](docs/connector.md)
 
