@@ -213,6 +213,14 @@ class TestRegistryQuarantine(unittest.TestCase):
         else:
             os.environ["OPENCLAW_ENABLE_REGISTRY_SYNC"] = self.old_flag
 
+    def _create_dummy_zip(self):
+        import zipfile
+
+        path = os.path.join(self.test_dir, "dummy.zip")
+        with zipfile.ZipFile(path, "w") as zf:
+            zf.writestr("test.txt", "safe")
+        return path
+
     def test_default_off(self):
         """F41: registry sync is disabled by default."""
         from services.registry_quarantine import is_registry_sync_enabled
@@ -256,8 +264,11 @@ class TestRegistryQuarantine(unittest.TestCase):
         self.assertEqual(entry.state, QuarantineState.FETCHED.value)
         self.assertEqual(len(entry.audit_trail), 1)
 
+        self.assertEqual(len(entry.audit_trail), 1)
+
         # Verify (success)
-        ok = store.verify_integrity("my-pack", "1.0.0", "abc123")
+        path = self._create_dummy_zip()
+        ok = store.verify_integrity("my-pack", "1.0.0", "abc123", file_path=path)
         self.assertTrue(ok)
         entry = store.get_entry("my-pack", "1.0.0")
         self.assertEqual(entry.state, QuarantineState.VERIFIED.value)
@@ -278,7 +289,8 @@ class TestRegistryQuarantine(unittest.TestCase):
             "bad-pack", "1.0.0", "https://example.com", "expected_hash"
         )
 
-        ok = store.verify_integrity("bad-pack", "1.0.0", "wrong_hash")
+        path = self._create_dummy_zip()
+        ok = store.verify_integrity("bad-pack", "1.0.0", "wrong_hash", file_path=path)
         self.assertFalse(ok)
 
         entry = store.get_entry("bad-pack", "1.0.0")
@@ -320,7 +332,8 @@ class TestRegistryQuarantine(unittest.TestCase):
 
         store = RegistryQuarantineStore(self.test_dir)
         store.register_fetch("pack", "1.0.0", "https://example.com", "h")
-        store.verify_integrity("pack", "1.0.0", "h")
+        path = self._create_dummy_zip()
+        store.verify_integrity("pack", "1.0.0", "h", file_path=path)
         store.activate("pack", "1.0.0")
 
         entry = store.rollback("pack", "1.0.0", "Security concern")
@@ -350,7 +363,9 @@ class TestRegistryQuarantine(unittest.TestCase):
         store.MAX_ENTRIES = 3  # Override for test
 
         for i in range(3):
-            store.register_fetch(f"pack-{i}", "1.0.0", "https://example.com", f"h{i}")
+            store.register_fetch(
+                f"pack-{i}", "1.0.0", f"https://example.com/{i}", f"h{i}"
+            )
 
         with self.assertRaises(RegistryQuarantineError):
             store.register_fetch("pack-overflow", "1.0.0", "https://example.com", "hx")
@@ -376,9 +391,10 @@ class TestRegistryQuarantine(unittest.TestCase):
         )
 
         store = RegistryQuarantineStore(self.test_dir)
-        store.register_fetch("a", "1.0", "https://example.com", "h1")
-        store.register_fetch("b", "1.0", "https://example.com", "h2")
-        store.verify_integrity("b", "1.0", "h2")
+        store.register_fetch("a", "1.0", "https://example.com/a", "h1")
+        store.register_fetch("b", "1.0", "https://example.com/b", "h2")
+        path = self._create_dummy_zip()
+        store.verify_integrity("b", "1.0", "h2", file_path=path)
 
         fetched = store.list_entries(state_filter=QuarantineState.FETCHED.value)
         self.assertEqual(len(fetched), 1)
@@ -408,13 +424,19 @@ class TestRegistryQuarantine(unittest.TestCase):
 
         store = RegistryQuarantineStore(self.test_dir)
         store.register_fetch("audit-test", "1.0", "https://example.com", "h")
-        store.verify_integrity("audit-test", "1.0", "h")
+        path = self._create_dummy_zip()
+        store.verify_integrity("audit-test", "1.0", "h", file_path=path)
         store.activate("audit-test", "1.0")
 
         entry = store.get_entry("audit-test", "1.0")
-        self.assertEqual(len(entry.audit_trail), 3)
+        entry = store.get_entry("audit-test", "1.0")
+        # S39 adds a policy_warning for missing signature/crypto
+        self.assertEqual(len(entry.audit_trail), 5)
         actions = [a["action"] for a in entry.audit_trail]
-        self.assertEqual(actions, ["fetch", "verify", "activate"])
+        # Actions: fetch -> preflight_scan -> policy_warning -> verify -> activate
+        self.assertEqual(
+            actions, ["fetch", "preflight_scan", "policy_warning", "verify", "activate"]
+        )
 
 
 # ---------------------------------------------------------------------------

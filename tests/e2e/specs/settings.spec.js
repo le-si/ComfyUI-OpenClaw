@@ -88,7 +88,9 @@ test.describe('Settings Tab Stability', () => {
         await clickTab(page, 'Settings');
 
         // Click Save (exact match to avoid "Save Key")
+        const savePromise = page.waitForResponse(resp => resp.url().includes('/config') && resp.status() === 200);
         await page.getByRole('button', { name: 'Save', exact: true }).click();
+        await savePromise;
 
         // Expect success message
         await expect(page.locator('.moltbot-status.ok')).toContainText('Saved!');

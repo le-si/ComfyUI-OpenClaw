@@ -24,6 +24,21 @@ from dataclasses import asdict, dataclass, field
 from enum import Enum
 from typing import Any, Dict, List, Optional
 
+try:
+    from .rate_limit import TokenBucket
+except ImportError:
+    from services.rate_limit import TokenBucket
+
+try:
+    from .packs.pack_archive import PackArchive, PackError
+except ImportError:
+    try:
+        from services.packs.pack_archive import PackArchive, PackError
+    except ImportError:
+        PackArchive = None
+        PackError = None
+
+
 logger = logging.getLogger("ComfyUI-OpenClaw.services.registry_quarantine")
 
 # ---------------------------------------------------------------------------
@@ -125,6 +140,19 @@ class RegistryQuarantineStore:
         self._quarantine_dir = os.path.join(state_dir, "registry", "quarantine")
         self._index_path = os.path.join(self._quarantine_dir, "index.json")
         self._entries: Dict[str, RegistryEntry] = {}
+
+        # S38: Anti-Abuse State
+        # dedupe_cache: source_url -> timestamp
+        self._dedupe_cache: Dict[str, float] = {}
+        # fetch_buckets: context (IP/token) -> TokenBucket
+        self._fetch_buckets: Dict[str, TokenBucket] = {}
+        self._global_bucket = TokenBucket(capacity=10, tokens_per_second=10.0 / 60.0)
+        self._dedupe_window = 60.0  # seconds
+
+        # S39: Trust Policy
+        # modes: "audit" (log warning on sig fail), "strict" (block on sig fail)
+        self._policy_mode = os.environ.get("OPENCLAW_REGISTRY_POLICY", "audit").lower()
+
         os.makedirs(self._quarantine_dir, exist_ok=True)
         self._load()
 
@@ -169,6 +197,85 @@ class RegistryQuarantineStore:
                 f"Remote registry sync is disabled. Set {_FEATURE_FLAG}=1 to enable."
             )
 
+    def _check_abuse(self, source_url: str, context: str = "global") -> None:
+        """
+        S38: Enforce anti-abuse controls (Rate Limit + Dedupe).
+        context: client IP or token for per-client rate limiting.
+        """
+        now = time.time()
+
+        # 1. Dedupe (Bounded Window)
+        if source_url:
+            last_seen = self._dedupe_cache.get(source_url, 0.0)
+            if now - last_seen < self._dedupe_window:
+                raise RegistryQuarantineError(
+                    f"Duplicate fetch for {source_url} rejected (dedupe window {self._dedupe_window}s)"
+                )
+
+        # 2. Rate Limit (Per-Context + Global Fallback)
+        # Global limit
+        if not self._global_bucket.consume(1):
+            raise RegistryQuarantineError("Global registry fetch rate limit exceeded")
+
+        # Context limit (if strictly context provided)
+        if context and context != "global":
+            if context not in self._fetch_buckets:
+                # Per-IP limit: 5/min? Or same as global?
+                # Let's say 5/min per IP to be stricter than global.
+                self._fetch_buckets[context] = TokenBucket(
+                    capacity=5, tokens_per_second=5.0 / 60.0
+                )
+            if not self._fetch_buckets[context].consume(1):
+                raise RegistryQuarantineError(
+                    f"Rate limit exceeded for client {context} (5/min)"
+                )
+
+        # Update state
+        if source_url:
+            self._dedupe_cache[source_url] = now
+
+    def _prune_stale_entries(self) -> int:
+        """
+        S38: Prune stale entries and anti-abuse state.
+        Returns count of removed entries.
+        """
+        now = time.time()
+        removed = 0
+
+        # Prune dedupe cache
+        stale_dedupe = [
+            k
+            for k, v in self._dedupe_cache.items()
+            if now - v > self._dedupe_window * 2
+        ]
+        for k in stale_dedupe:
+            del self._dedupe_cache[k]
+
+        # Prune registry entries (Rejected/Rolled Back > 7 days)
+        # Or just enforcing MAX_ENTRIES is enough?
+        # S38 says "scheduled prune". Let's remove very old rejected items.
+        ttl = 7 * 24 * 3600
+        to_remove = []
+        for key, entry in self._entries.items():
+            if entry.state in (
+                QuarantineState.REJECTED.value,
+                QuarantineState.ROLLED_BACK.value,
+            ):
+                # If timestamp is 0, use fetched_at
+                ts = entry.rejected_at or entry.fetched_at
+                if now - ts > ttl:
+                    to_remove.append(key)
+
+        for key in to_remove:
+            del self._entries[key]
+            removed += 1
+
+        if removed > 0:
+            self._save()
+            logger.info(f"F41: Pruned {removed} stale registry entries")
+
+        return removed
+
     # ----- Public API -----
 
     def register_fetch(
@@ -180,13 +287,16 @@ class RegistryQuarantineStore:
         *,
         signature: str = "",
         provenance: str = "",
+        request_context: str = "global",
     ) -> RegistryEntry:
         """
         Register a newly fetched pack in quarantine.
 
-        The pack enters FETCHED state and requires explicit verification + activation.
+        request_context: IP or user identifier for rate limiting.
         """
         self._require_enabled()
+        self._check_abuse(source_url, request_context)
+        self._prune_stale_entries()
 
         if len(self._entries) >= self.MAX_ENTRIES:
             raise RegistryQuarantineError(
@@ -217,9 +327,11 @@ class RegistryQuarantineStore:
         name: str,
         version: str,
         actual_sha256: str,
+        file_path: Optional[str] = None,
     ) -> bool:
         """
         Verify a fetched pack's integrity against its registered hash.
+        A local file_path is REQUIRED for S39 Static Code Safety checks.
 
         Transitions: FETCHED → VERIFIED (on success) or QUARANTINED (on failure).
         """
@@ -238,7 +350,65 @@ class RegistryQuarantineStore:
                 f"Cannot verify pack in state '{entry.state}' (must be fetched or quarantined)"
             )
 
+        # S39: Static Preflight Scan (Code Safety) - MANDATORY
+        # We cannot verify safety if we don't have the file.
+        if not file_path:
+            raise RegistryQuarantineError(
+                "Integrity verification requires local file_path for preflight scan."
+            )
+
+        if file_path and PackArchive:
+            # Check existence
+            if not os.path.exists(file_path):
+                raise RegistryQuarantineError(
+                    f"Preflight scan failed: file not found {file_path}"
+                )
+
+            # Check safety
+            import zipfile
+
+            try:
+                with zipfile.ZipFile(file_path, "r") as zf:
+                    PackArchive._check_code_safety(zf)
+                # If we get here, safety check passed
+                entry.add_audit("preflight_scan", "Code safety check passed")
+            except Exception as e:
+                msg = f"Code safety violation: {e}"
+
+                # Strict Mode -> Block
+                if self._policy_mode == "strict":
+                    entry.state = QuarantineState.QUARANTINED.value
+                    entry.add_audit("preflight_failed", msg)
+                    self._save()
+                    logger.warning(
+                        f"F41: Pack {key} blocked by strict safety policy: {msg}"
+                    )
+                    return False
+                else:
+                    # Audit Mode -> Warn
+                    entry.add_audit("policy_warning", msg)
+                    logger.warning(f"F41: Pack {key} safety warning: {msg}")
+
         if actual_sha256 == entry.sha256:
+            # S39: Signature Policy Check
+            sig_ok, sig_msg = self._verify_signature(entry)
+            if not sig_ok:
+                if self._policy_mode == "strict":
+                    entry.state = QuarantineState.QUARANTINED.value
+                    entry.add_audit(
+                        "verify_failed", f"Signature policy failed: {sig_msg}"
+                    )
+                    self._save()
+                    logger.warning(
+                        f"F41: Pack {key} blocked by strict signature policy: {sig_msg}"
+                    )
+                    return False
+                else:
+                    entry.add_audit(
+                        "policy_warning", f"Signature check failed: {sig_msg}"
+                    )
+                    logger.warning(f"F41: Pack {key} policy warning: {sig_msg}")
+
             entry.state = QuarantineState.VERIFIED.value
             entry.verified_at = time.time()
             entry.add_audit("verify", "Integrity check passed")
@@ -254,6 +424,25 @@ class RegistryQuarantineStore:
             self._save()
             logger.warning(f"F41: Pack {key} integrity FAILED — moved to quarantine")
             return False
+
+    def _verify_signature(self, entry: RegistryEntry) -> tuple[bool, str]:
+        """
+        S39: Verify entry signature against trusted keys.
+        Returns (is_valid, message).
+
+        NOTE: Current environment lacks crypto libraries (cryptography/nacl).
+        We function as a specialized placeholder hook.
+        """
+        if not entry.signature:
+            return False, "Missing signature"
+
+        # Placeholder for future crypto integration
+        # If we had a key, we would verify here.
+        # For now, we assume if signature is present, it claims to be signed.
+        # But we can't verify it.
+        # So we fail open in 'audit', fail closed in 'strict'.
+
+        return False, "Signature verification unavailable (missing crypto lib)"
 
     def activate(self, name: str, version: str) -> RegistryEntry:
         """

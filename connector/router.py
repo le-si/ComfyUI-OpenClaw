@@ -7,7 +7,7 @@ import logging
 import shlex
 from typing import Any, Dict, List, Optional
 
-from .config import ConnectorConfig
+from .config import CommandClass, ConnectorConfig
 from .contract import CommandRequest, CommandResponse
 from .openclaw_client import OpenClawClient
 from .state import ConnectorState
@@ -107,34 +107,51 @@ class CommandRouter:
 
         # Dispatch Table
         handlers = {
-            ("/status", "status"): (self._handle_status, False),
-            ("/help", "help", "/start"): (self._handle_help, False),
-            ("/run", "run"): (self._handle_run, False),
+            ("/status", "status"): (self._handle_status, CommandClass.PUBLIC),
+            ("/help", "help", "/start"): (self._handle_help, CommandClass.PUBLIC),
+            ("/run", "run"): (self._handle_run, CommandClass.RUN),
             ("/interrupt", "interrupt", "/cancel", "cancel", "/stop"): (
                 self._handle_interrupt,
-                True,
+                CommandClass.ADMIN,
             ),  # Global interrupt => admin-only.
-            ("/approvals", "approvals"): (self._handle_approvals_list, True),
-            ("/approve", "approve"): (self._handle_approve, True),
-            ("/reject", "reject"): (self._handle_reject, True),
-            ("/schedules", "schedules"): (self._handle_schedules_list, True),
-            ("/schedule", "schedule"): (self._handle_schedule_subcommand, True),
+            ("/approvals", "approvals"): (
+                self._handle_approvals_list,
+                CommandClass.ADMIN,
+            ),
+            ("/approve", "approve"): (self._handle_approve, CommandClass.ADMIN),
+            ("/reject", "reject"): (self._handle_reject, CommandClass.ADMIN),
+            ("/schedules", "schedules"): (
+                self._handle_schedules_list,
+                CommandClass.ADMIN,
+            ),
+            ("/schedule", "schedule"): (
+                self._handle_schedule_subcommand,
+                CommandClass.ADMIN,
+            ),
             # Phase 3 Introspection
-            ("/history", "history"): (self._handle_history, False),
-            ("/trace", "trace"): (self._handle_trace, True),  # Admin only
-            ("/jobs", "jobs", "queue"): (self._handle_jobs, False),
+            ("/history", "history"): (self._handle_history, CommandClass.PUBLIC),
+            ("/trace", "trace"): (self._handle_trace, CommandClass.ADMIN),  # Admin only
+            ("/jobs", "jobs", "queue"): (self._handle_jobs, CommandClass.PUBLIC),
             # F30: Chat Assistant
-            ("/chat", "chat"): (self._handle_chat, False),
+            ("/chat", "chat"): (self._handle_chat, CommandClass.PUBLIC),
         }
 
         # Find Handler
         handler = None
         requires_admin = False
 
-        for aliases, (func, admin_req) in handlers.items():
+        canonical_cmd = cmd  # Fallback
+        for aliases, (func, cmd_class) in handlers.items():
             if cmd in aliases:
                 handler = func
-                requires_admin = admin_req
+                default_class = cmd_class
+                # R80 Remediation: Use canonical command (first alias) for policy checks
+                # This prevents "run" vs "/run" bypass issues.
+                if isinstance(aliases, tuple):
+                    # Convention: first alias is canonical (e.g. "/run")
+                    canonical_cmd = aliases[0]
+                else:
+                    canonical_cmd = aliases
                 break
 
         if not handler:
@@ -142,12 +159,10 @@ class CommandRouter:
                 text=f"Unknown command: {cmd}. Type /help for options."
             )
 
-        # Admin Check
-        if requires_admin:
-            if not self._is_admin(req.sender_id):
-                return CommandResponse(
-                    text="[Access Denied] This command requires Admin privileges."
-                )
+        # R80: Centralized Authorization Gate
+        # Pass canonical_cmd to ensure policy matches aliases correctly
+        if auth_err := self._check_command_authz(canonical_cmd, req, default_class):
+            return auth_err
 
         # Execute
         try:
@@ -158,6 +173,48 @@ class CommandRouter:
 
     def _is_admin(self, user_id: str) -> bool:
         return str(user_id) in self.config.admin_users
+
+    def _check_command_authz(
+        self, cmd: str, req: CommandRequest, default_class: CommandClass
+    ) -> Optional[CommandResponse]:
+        """
+        R80: Verify command authorization policy.
+        Returns None if allowed, or CommandResponse(text=error) if denied.
+        """
+        policy = self.config.command_policy
+
+        # 1. Resolve Effective Class (Handle per-command overrides)
+        # Note: 'cmd' here is the canonical parsed command string (lowercase), e.g., "/run" or "run"
+        # The overrides dict might use "/run" or "run", we should check both or normalize.
+        # Currently, the router logic normalized `cmd` from input (lines 90-101).
+        # We'll check exact match against the override key.
+        eff_class = policy.command_overrides.get(cmd, default_class)
+
+        # 2. Check AllowFrom List (Explicit User Allow)
+        # If an explicit AllowFrom list exists for this class, the user MUST be in it.
+        # This takes precedence over role logic.
+        allowed_users = policy.allow_from.get(eff_class)
+        if allowed_users is not None and len(allowed_users) > 0:
+            if str(req.sender_id) not in allowed_users:
+                # If explicit allow-list is active, even admins must be in it?
+                # Decision: YES, for strict compliance. If you want admins, add them to the list.
+                # However, for usability, usually admins are implied.
+                # Let's stick to "Explicit List Wins" for R80 strict mode.
+                return CommandResponse(
+                    text="[Access Denied] You are not in the allow-list for this command."
+                )
+            # If in list, proceed (bypass default role checks? No, usually allows)
+            return None
+
+        # 3. Default Role Logic
+        if eff_class == CommandClass.ADMIN:
+            if not self._is_admin(req.sender_id):
+                return CommandResponse(
+                    text="[Access Denied] This command requires Admin privileges."
+                )
+
+        # PUBLIC and RUN are allowed by default (RUN checks trust internally)
+        return None
 
     def _is_trusted(self, req: CommandRequest) -> bool:
         """

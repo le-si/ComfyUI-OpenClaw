@@ -6,7 +6,30 @@ Loads environment variables and validates allowlists.
 import os
 import sys
 from dataclasses import dataclass, field
-from typing import List, Optional
+from enum import Enum
+from typing import Dict, List, Optional, Set
+
+
+class CommandClass(str, Enum):
+    PUBLIC = "public"  # status, help, tools
+    RUN = "run"  # run (subject to approval flow)
+    ADMIN = "admin"  # sensitive ops
+
+
+@dataclass
+class CommandPolicy:
+    """
+    R80: Authorization Matrix.
+    Defines who can run what.
+    """
+
+    # Default AllowFrom lists (User IDs)
+    # If empty for a class, it falls back to role checks (e.g. is_admin, is_trusted)
+    allow_from: Dict[CommandClass, Set[str]] = field(default_factory=dict)
+
+    # Command -> Class overrides
+    # e.g. {"/custom": CommandClass.ADMIN}
+    command_overrides: Dict[str, CommandClass] = field(default_factory=dict)
 
 
 @dataclass
@@ -80,6 +103,9 @@ class ConnectorConfig:
     rate_limit_channel_rpm: int = 30  # Requests per minute per channel
     max_command_length: int = 4096  # Max characters in a single command
     llm_max_tokens_per_request: int = 1024  # LLM token budget
+
+    # R80: Command Auth Policy
+    command_policy: CommandPolicy = field(default_factory=CommandPolicy)
 
     # Global
     debug: bool = False
@@ -225,5 +251,42 @@ def load_config() -> ConnectorConfig:
     if mb := os.environ.get("OPENCLAW_CONNECTOR_MEDIA_MAX_MB"):
         if mb.isdigit():
             cfg.media_max_mb = int(mb)
+
+    # R80: Command Auth Policy
+    import json
+
+    # 1. Overrides (JSON dict)
+    if overrides_json := os.environ.get("OPENCLAW_COMMAND_OVERRIDES"):
+        try:
+            overrides = json.loads(overrides_json)
+            if isinstance(overrides, dict):
+                for k, v in overrides.items():
+                    try:
+                        # Normalize command key (lowercase, ensure leading slash)
+                        k = k.strip().lower()
+                        if not k.startswith("/"):
+                            k = "/" + k
+
+                        # Map string value to enum
+                        if isinstance(v, str):
+                            v = CommandClass(v.lower())
+                        cfg.command_policy.command_overrides[k] = v
+                    except ValueError:
+                        pass  # Invalid enum value, ignore
+        except json.JSONDecodeError:
+            pass  # Invalid JSON, ignore
+
+    # 2. AllowFrom Lists (start with empty sets)
+    # Env vars: OPENCLAW_COMMAND_ALLOW_FROM_ADMIN=user1,user2
+    #           OPENCLAW_COMMAND_ALLOW_FROM_RUN=user3
+    #           OPENCLAW_COMMAND_ALLOW_FROM_PUBLIC=...
+    for cmd_class in CommandClass:
+        env_key = f"OPENCLAW_COMMAND_ALLOW_FROM_{cmd_class.value.upper()}"
+        if val := os.environ.get(env_key):
+            users = {u.strip() for u in val.split(",") if u.strip()}
+            if users:
+                if cmd_class not in cfg.command_policy.allow_from:
+                    cfg.command_policy.allow_from[cmd_class] = set()
+                cfg.command_policy.allow_from[cmd_class].update(users)
 
     return cfg

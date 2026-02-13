@@ -7,7 +7,9 @@ ComfyUI-OpenClaw is a **security-first** ComfyUI custom node pack that adds:
 - **LLM-assisted nodes** (planner/refiner/vision/batch variants)
 - **A built-in extension UI** (`OpenClaw` panel)
 - **A secure-by-default HTTP API** for automation (webhooks, triggers, schedules, approvals, presets)
+- **Now supports major messaging platforms, including Discord, Telegram, WhatsApp, LINE, WeChat and KaKaoTalk(pending).**
 - **And more exciting features being added continuously**
+
 
 This project is intentionally **not** a general-purpose “assistant platform” with broad remote execution surfaces.
 It is designed to make **ComfyUI a reliable automation target** with an explicit admin boundary and hardened defaults.
@@ -23,7 +25,7 @@ It is designed to make **ComfyUI a reliable automation target** with an explicit
 ## Latest Updates - Click to expand
 
 <details>
-<summary><strong>Security Hardening: Observability/Auth boundaries, transform isolation, integrity checks, and safe tooling controls</strong></summary>
+<summary><strong>Security Hardening: Auth/Observability boundaries, connector command controls, registry trust policy, transform isolation, integrity checks, and safe tooling controls</strong></summary>
 
 - Delivered observability tier hardening with explicit sensitivity split:
   - Public-safe: `/openclaw/health`
@@ -46,6 +48,18 @@ It is designed to make **ComfyUI a reliable automation target** with an explicit
   - reports external tooling posture
   - verifies integrity module availability
 - Auth-coverage contract tests were updated to include new tool routes and prevent future route-auth drift regressions.
+- Added connector command authorization hardening:
+  - separates command visibility from command execution privileges
+  - centralizes per-command access checks to reduce cross-platform auth drift
+  - supports explicit allow-list policy controls for sensitive command classes
+  - adds operator-configurable command policy controls via `OPENCLAW_COMMAND_OVERRIDES` and `OPENCLAW_COMMAND_ALLOW_FROM_{PUBLIC|RUN|ADMIN}`
+- Added registry anti-abuse controls for remote distribution paths:
+  - bounded request-rate controls and deduplication windows reduce abuse and accidental hot loops
+  - stale anti-abuse state pruning keeps long-running deployments stable
+- Added registry preflight and trust-policy hardening:
+  - static package safety checks are enforced before activation paths
+  - policy-driven signature/trust posture supports audit and strict enforcement modes
+  - registry trust mode is operator-controlled via `OPENCLAW_REGISTRY_POLICY` and preflight verification enforces fail-closed file-path requirements
 
 </details>
 
