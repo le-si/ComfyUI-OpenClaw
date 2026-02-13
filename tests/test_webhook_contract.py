@@ -59,7 +59,7 @@ class TestWebhookContract(AioHTTPTestCase):
         )
         self.assertEqual(resp.status, 415)
         body = await resp.json()
-        self.assertEqual(body["error"], "unsupported_media_type")
+        self.assertEqual(body["code"], "unsupported_media_type")
 
     async def test_payload_too_large(self):
         """Test that payloads > 64KB are rejected."""
@@ -75,7 +75,7 @@ class TestWebhookContract(AioHTTPTestCase):
         )
         self.assertEqual(resp.status, 413)
         body = await resp.json()
-        self.assertEqual(body["error"], "payload_too_large")
+        self.assertEqual(body["code"], "payload_too_large")
 
     async def test_missing_auth_returns_401(self):
         """Test that missing auth returns 401."""
@@ -137,7 +137,7 @@ class TestWebhookContract(AioHTTPTestCase):
         )
         self.assertEqual(resp.status, 400)
         body = await resp.json()
-        self.assertEqual(body["error"], "invalid_json")
+        self.assertEqual(body["code"], "invalid_json")
 
     async def test_schema_validation_error_returns_400(self):
         """Test that schema validation errors return 400."""
@@ -152,7 +152,7 @@ class TestWebhookContract(AioHTTPTestCase):
         )
         self.assertEqual(resp.status, 400)
         body = await resp.json()
-        self.assertEqual(body["error"], "validation_error")
+        self.assertEqual(body["code"], "validation_error")
 
 
 if __name__ == "__main__":

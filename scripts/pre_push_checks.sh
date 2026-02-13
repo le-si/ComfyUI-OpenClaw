@@ -279,8 +279,23 @@ echo "[pre-push] Node version: $(node -v)"
 echo "[pre-push] 1/4 detect-secrets"
 run_pre_commit_safe run detect-secrets --all-files
 
-echo "[pre-push] 2/4 pre-commit all hooks"
-run_pre_commit_safe run --all-files
+echo "[pre-push] 2/4 pre-commit all hooks (pass 1)"
+if run_pre_commit_safe run --all-files --show-diff-on-failure; then
+  :
+else
+  echo "[pre-push] INFO: pre-commit reported changes/issues; running pass 2 verification..." >&2
+  if run_pre_commit_safe run --all-files --show-diff-on-failure; then
+    if ! git diff --quiet -- .; then
+      echo "[pre-push] ERROR: hooks auto-fixed files during pre-push." >&2
+      echo "[pre-push] Please review, commit the fixes, then push again." >&2
+      git status --short
+      exit 1
+    fi
+    echo "[pre-push] WARN: first pass failed but second pass succeeded without local file changes." >&2
+  else
+    exit 1
+  fi
+fi
 
 echo "[pre-push] 3/4 backend unit tests"
 MOLTBOT_STATE_DIR="$ROOT_DIR/moltbot_state/_pre_push_unit" \

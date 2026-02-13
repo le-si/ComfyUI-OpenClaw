@@ -12,7 +12,23 @@ import logging
 import uuid
 from typing import Any, Dict, Optional
 
-import aiohttp
+try:
+    from api.errors import APIError, ErrorCode, create_error_response
+except ImportError:
+    # Fallback if api module not found (e.g. some test environments)
+    # Define minimal mocks to avoid crash
+    class ErrorCode:
+        DEPENDENCY_UNAVAILABLE = "dependency_unavailable"
+        QUEUE_SUBMIT_FAILED = "queue_submit_failed"
+        INTERNAL_ERROR = "internal_error"
+
+    class APIError(Exception):
+        def __init__(self, message, code="internal_error", status=500, detail=None):
+            super().__init__(message)
+            self.code = code
+            self.status = status
+            self.detail = detail or {}
+
 
 logger = logging.getLogger("ComfyUI-OpenClaw.services.queue")
 
@@ -100,6 +116,19 @@ async def submit_prompt(
         # unless we can hook internal server entry point.
         # For MVP, HTTP loopback is safest and standard.
 
+        # R62: Lazy import aiohttp to avoid hard dependency crash at startup
+        try:
+            import aiohttp
+        except ImportError:
+            msg = "aiohttp is required for queue submission but not installed."
+            logger.error(msg)
+            raise APIError(
+                message=msg,
+                code=ErrorCode.DEPENDENCY_UNAVAILABLE,
+                status=503,
+                detail={"package": "aiohttp"},
+            )
+
         url = f"{COMFYUI_URL}/prompt"
 
         try:
@@ -116,9 +145,25 @@ async def submit_prompt(
                         logger.error(
                             f"Failed to queue prompt: {resp.status} - {text} (source={source}, trace_id={trace_id})"
                         )
-                        raise RuntimeError(f"Queue submission failed: {resp.status}")
+                        # R61: Use APIError for queue failure
+                        raise APIError(
+                            message=f"Queue submission failed: {resp.status}",
+                            code=ErrorCode.QUEUE_SUBMIT_FAILED,
+                            status=502,
+                            detail={
+                                "upstream_status": resp.status,
+                                "upstream_response": text[:200],
+                            },
+                        )
+        except APIError:
+            raise
         except Exception as e:
             logger.error(
                 f"Error submitting to queue: {e} (source={source}, trace_id={trace_id})"
             )
-            raise
+            # R61: Wrap generic exceptions too
+            raise APIError(
+                message=f"Queue submission error: {str(e)}",
+                code=ErrorCode.INTERNAL_ERROR,
+                status=500,
+            )

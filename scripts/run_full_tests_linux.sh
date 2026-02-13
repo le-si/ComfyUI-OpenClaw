@@ -108,8 +108,13 @@ echo "[tests] Node version: $(node -v)"
 echo "[tests] 1/4 detect-secrets"
 "$VENV_PY" -m pre_commit run detect-secrets --all-files
 
-echo "[tests] 2/4 pre-commit all hooks"
-"$VENV_PY" -m pre_commit run --all-files --show-diff-on-failure
+echo "[tests] 2/4 pre-commit all hooks (pass 1: autofix)"
+if "$VENV_PY" -m pre_commit run --all-files --show-diff-on-failure; then
+  :
+else
+  echo "[tests] INFO: pre-commit reported changes/issues; running pass 2 verification..."
+  "$VENV_PY" -m pre_commit run --all-files --show-diff-on-failure
+fi
 
 echo "[tests] 3/4 backend unit tests"
 MOLTBOT_STATE_DIR="$ROOT_DIR/moltbot_state/_local_unit" "$VENV_PY" scripts/run_unittests.py --start-dir tests --pattern "test_*.py"

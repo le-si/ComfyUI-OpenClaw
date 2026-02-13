@@ -15,6 +15,12 @@ import logging
 from aiohttp import web
 
 try:
+    from .errors import APIError, ErrorCode, create_error_response
+except ImportError:
+    # Build-time / Test fallback
+    from api.errors import APIError, ErrorCode, create_error_response
+
+try:
     from ..models.schemas import MAX_BODY_SIZE, WebhookJobRequest
     from ..services.metrics import metrics
     from ..services.rate_limit import check_rate_limit
@@ -36,16 +42,6 @@ except ImportError:
 logger = diagnostics.get_logger("ComfyUI-OpenClaw.api.webhook", "webhook")
 
 
-def safe_error_response(status: int, error: str, detail: str = "") -> web.Response:
-    """
-    Return a safe error response (no secrets, no stack traces).
-    """
-    body = {"ok": False, "error": error}
-    if detail:
-        body["detail"] = detail
-    return web.json_response(body, status=status)
-
-
 async def webhook_handler(request: web.Request) -> web.Response:
     """
     POST /moltbot/webhook
@@ -55,10 +51,11 @@ async def webhook_handler(request: web.Request) -> web.Response:
     # S17: Rate Limit
     if not check_rate_limit(request, "webhook"):
         metrics.inc("webhook_denied")
-        return web.json_response(
-            {"ok": False, "error": "rate_limit_exceeded"},
+        return create_error_response(
+            message="Rate limit exceeded",
+            code=ErrorCode.RATE_LIMIT_EXCEEDED,
             status=429,
-            headers={"Retry-After": "60"},
+            detail={"retry_after": "60"},
         )
 
     try:
@@ -66,8 +63,10 @@ async def webhook_handler(request: web.Request) -> web.Response:
         content_type = request.headers.get("Content-Type", "")
         if not content_type.startswith("application/json"):
             metrics.inc("webhook_denied")
-            return safe_error_response(
-                415, "unsupported_media_type", "Content-Type must be application/json"
+            return create_error_response(
+                message="Content-Type must be application/json",
+                code=ErrorCode.UNSUPPORTED_MEDIA_TYPE,
+                status=415,
             )
 
         # Read raw body with size limit
@@ -75,13 +74,19 @@ async def webhook_handler(request: web.Request) -> web.Response:
             raw_body = await request.content.read(MAX_BODY_SIZE + 1)
             if len(raw_body) > MAX_BODY_SIZE:
                 metrics.inc("webhook_denied")
-                return safe_error_response(
-                    413, "payload_too_large", f"Max body size: {MAX_BODY_SIZE} bytes"
+                return create_error_response(
+                    message=f"Payload too large (max {MAX_BODY_SIZE} bytes)",
+                    code=ErrorCode.PAYLOAD_TOO_LARGE,
+                    status=413,
                 )
         except Exception as e:
             logger.error(f"Failed to read request body: {e}")
             metrics.inc("errors")
-            return safe_error_response(400, "read_error")
+            return create_error_response(
+                message="Failed to read request body",
+                code=ErrorCode.READ_ERROR,
+                status=400,
+            )
 
         # Require auth
         valid, error = require_auth(request, raw_body)
@@ -92,46 +97,55 @@ async def webhook_handler(request: web.Request) -> web.Response:
             metrics.inc("webhook_denied")
 
             # Map error to appropriate status code
-            if error in (
-                "auth_not_configured",
-                "bearer_not_configured",
-                "hmac_not_configured",
-            ):
-                return safe_error_response(403, error)
-            else:
-                return safe_error_response(401, error)
+            status = (
+                403
+                if error
+                in (
+                    "auth_not_configured",
+                    "bearer_not_configured",
+                    "hmac_not_configured",
+                )
+                else 401
+            )
+
+            return create_error_response(
+                message=error, code=ErrorCode.AUTH_FAILED, status=status
+            )
 
         # Parse JSON
         try:
             data = json.loads(raw_body.decode("utf-8"))
             # R46: Log payload if validation diagnostics enabled
             if diagnostics.is_enabled("webhook.validate"):
-                # Use a separate logger for validation if we want specific granularity,
-                # or just reuse the main one but check the flag dynamically?
-                # Since logger is scoped to "webhook", we can check specific sub-flag here manually.
-                # Actually, let's just log to the main scoped logger, but with a clear prefix.
-                # Or create a sub-scope logger?
-                # For simplicity, reuse main logger but only call debug if specific intent matches?
-                # The 'diagnostics.get_logger' wraps 'debug' with 'is_enabled("webhook")'.
-                # If we want detailed validation logs only on "webhook.validate", we can do:
                 diagnostics.get_logger(
                     "ComfyUI-OpenClaw.api.webhook.validate", "webhook.validate"
                 ).debug("Incoming Payload", data=data)
 
         except (json.JSONDecodeError, UnicodeDecodeError) as e:
             metrics.inc("webhook_denied")
-            return safe_error_response(400, "invalid_json")
+            return create_error_response(
+                message="Invalid JSON", code=ErrorCode.INVALID_JSON, status=400
+            )
 
         # Validate schema
         try:
             job_request = WebhookJobRequest.from_dict(data)
         except ValueError as e:
             metrics.inc("webhook_denied")
-            return safe_error_response(400, "validation_error", str(e))
+            return create_error_response(
+                message="Validation Error",
+                code=ErrorCode.VALIDATION_ERROR,
+                status=400,
+                detail={"error": str(e)},
+            )
         except Exception as e:
             logger.error(f"Unexpected validation error: {e}")
             metrics.inc("errors")
-            return safe_error_response(400, "validation_error")
+            return create_error_response(
+                message="Validation system error",
+                code=ErrorCode.VALIDATION_ERROR,
+                status=400,
+            )
 
         # R25: Trace Context Extraction
         trace_id = get_effective_trace_id(request.headers, data)
@@ -165,4 +179,6 @@ async def webhook_handler(request: web.Request) -> web.Response:
         # Catch-all for unexpected errors - log but don't expose details
         logger.exception(f"Unexpected webhook error: {e}")
         metrics.inc("errors")
-        return safe_error_response(500, "internal_error")
+        return create_error_response(
+            message="Internal Server Error", code=ErrorCode.INTERNAL_ERROR, status=500
+        )

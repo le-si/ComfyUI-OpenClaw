@@ -129,8 +129,12 @@ Write-Host "[tests] Node version: $(node -v)"
 Write-Host "[tests] 1/4 detect-secrets"
 Invoke-Checked "detect-secrets" { & $venvPython -m pre_commit run detect-secrets --all-files }
 
-Write-Host "[tests] 2/4 pre-commit all hooks"
-Invoke-Checked "pre-commit all hooks" { & $venvPython -m pre_commit run --all-files --show-diff-on-failure }
+Write-Host "[tests] 2/4 pre-commit all hooks (pass 1: autofix)"
+& $venvPython -m pre_commit run --all-files --show-diff-on-failure
+if ($LASTEXITCODE -ne 0) {
+  Write-Host "[tests] INFO: pre-commit reported changes/issues; running pass 2 verification..."
+  Invoke-Checked "pre-commit all hooks (pass 2 verify)" { & $venvPython -m pre_commit run --all-files --show-diff-on-failure }
+}
 
 Write-Host "[tests] 3/4 backend unit tests"
 $env:MOLTBOT_STATE_DIR = "$root\moltbot_state\_local_unit"

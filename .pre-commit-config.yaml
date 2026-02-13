@@ -85,5 +85,4 @@ repos:
     rev: 5.13.2
     hooks:
       - id: isort
-        args: ['--check-only', '--diff']
-        # Remove --check-only --diff to auto-sort
+        # Auto-sort imports (same behavior style as black-single autofix hook).
