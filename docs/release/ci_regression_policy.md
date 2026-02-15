@@ -1,4 +1,4 @@
-# CI Regression Policy (R52)
+# CI Regression Policy
 
 To ensure stability and prevent regressions, all Pull Requests (PRs) must pass the following checks before merge.
 
@@ -32,5 +32,5 @@ They must pass even when internal implementation details change.
 If a change breaks a contract test:
 
 1. **Verify**: Is the breakage intentional?
-2. **Deprecate**: If yes, follow the Deprecation Policy (R51).
+2. **Deprecate**: If yes, follow the Deprecation Policy.
 3. **Update**: Update the contract test to reflect the new behavior.

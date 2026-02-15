@@ -152,7 +152,6 @@ This project is intentionally **not** a general-purpose assistant platform with 
 
 - [Installation](#installation)
 - [Quick Start (Minimal)](#quick-start-minimal)
-  - [Sprint A Reliability Highlights](#sprint-a-reliability-highlights)
   - [Configure an LLM key](#1-configure-an-llm-key-for-plannerrefinervision-helpers)
   - [Configure webhook auth](#2-configure-webhook-auth-required-for-webhook)
   - [Set an Admin Token](#3-optional-recommended-set-an-admin-token)
@@ -170,11 +169,15 @@ This project is intentionally **not** a general-purpose assistant platform with 
 - [Templates](#templates)
 - [Execution Budgets](#execution-budgets)
 - [LLM Failover](#llm-failover)
+- [Advanced Security and Runtime Setup](#advanced-security-and-runtime-setup)
+  - [Runtime hardening and startup gates](#runtime-hardening-and-startup-gates)
+  - [Remote registry sync and constrained transforms](#remote-registry-sync-and-constrained-transforms)
+  - [Connector command authorization policy](#connector-command-authorization-policy)
 - [State Directory & Logs](#state-directory--logs)
 - [Troubleshooting](#troubleshooting)
 - [Tests](#tests)
 - [Updating](#updating)
-- [Remote Control (Connector)](#-remote-control-connector)
+- [Remote Control (Connector)](#remote-control-connector)
 - [Security](#security)
 
 ---
@@ -194,17 +197,7 @@ If the UI loads but endpoints return 404, ComfyUI likely did not load the Python
 
 ## Quick Start (Minimal)
 
-### Sprint A Reliability Highlights
-
-Sprint A closes the M1 release gate with stronger config behavior and safer local convenience mode:
-
-- `R53`: config save/apply semantics are explicit in `PUT /openclaw/config` responses
-- `R54`: frontend guards for stale/partial settings states reduce accidental overwrite risk
-- `R57`: provider/model precedence is deterministic and stable across save/test/chat paths
-- `S27`: `/openclaw/llm/chat` enforces same-origin checks in localhost convenience mode
-- `R60`: `/openclaw/llm/models` uses bounded in-memory caching (TTL + max entries)
-
-### 1) Configure an LLM key (for Planner/Refiner/vision helpers)
+### 1 Configure an LLM key (for Planner/Refiner/vision helpers)
 
 Set at least one of:
 
@@ -334,12 +327,12 @@ Notes:
 - `POST /openclaw/webhook/validate` -dry-run render (no queue submission; includes render budgets + warnings)
 - `POST /openclaw/webhook/submit` -full pipeline: auth -normalize -idempotency -render -submit to queue
 
-**Payload Mapping (F40)**:
+**Payload mapping**:
 
 - Submit arbitrary payloads (GitHub, Discord, etc.) by adding `X-Webhook-Mapping-Profile: github_push` (or `discord_message`).
 - The internal engine maps fields to the canonical schema before validation.
 
-**Job Events (R71)**:
+**Job events**:
 
 - `GET /openclaw/events/stream` -SSE endpoint for real-time job lifecycle events (queued, running, completed, failed).
 - `GET /openclaw/events` -JSON polling fallback.
@@ -428,6 +421,7 @@ Bridge route groups:
   - `GET /bridge/health`
   - `POST /bridge/submit`
   - `POST /bridge/deliver`
+  - `POST /bridge/handshake` (protocol compatibility check during sidecar startup)
 - Worker bridge routes:
   - `GET /bridge/worker/poll`
   - `POST /bridge/worker/result/{job_id}`
@@ -453,6 +447,35 @@ Standalone worker runtime:
   - `OPENCLAW_WORKER_ID`
 - Current implementation note:
   - worker queue/result/heartbeat persistence is in-memory (MVP); use persistent backing for production durability.
+
+## Advanced Security and Runtime Setup
+
+### Runtime hardening and startup gates
+
+- Runtime profile resolution, startup security enforcement, module startup boundaries, and bridge protocol compatibility are documented in:
+  - `docs/runtime_hardening_and_startup.md`
+- Key settings:
+  - `OPENCLAW_RUNTIME_PROFILE` (`minimal` or `hardened`)
+  - `OPENCLAW_BRIDGE_ENABLED`
+  - `OPENCLAW_BRIDGE_DEVICE_TOKEN`, `OPENCLAW_BRIDGE_ALLOWED_DEVICE_IDS`
+
+### Remote registry sync and constrained transforms
+
+- Optional remote registry sync and constrained transform execution are documented in:
+  - `docs/advanced_registry_and_transforms.md`
+- Key settings:
+  - `OPENCLAW_ENABLE_REGISTRY_SYNC`, `OPENCLAW_REGISTRY_POLICY`
+  - `OPENCLAW_ENABLE_TRANSFORMS`, `OPENCLAW_TRANSFORM_*`
+
+### Connector command authorization policy
+
+- Connector command authorization and allow-from policies are documented in:
+  - `docs/connector.md#command-authorization-policy`
+- Key settings:
+  - `OPENCLAW_COMMAND_OVERRIDES`
+  - `OPENCLAW_COMMAND_ALLOW_FROM_PUBLIC`
+  - `OPENCLAW_COMMAND_ALLOW_FROM_RUN`
+  - `OPENCLAW_COMMAND_ALLOW_FROM_ADMIN`
 
 ## Templates
 
@@ -558,7 +581,7 @@ Notes:
 - If your pack folder name is not `comfyui-openclaw`, the smoke script may need `OPENCLAW_PACK_IMPORT_NAME=your-folder-name`.
 - If imports fail with a `services.*` module error, check for name collisions with other custom nodes and prefer package-relative imports.
 
-### Operator Doctor (R72)
+### Operator Doctor
 
 Run the built-in diagnostic tool to verify environment readiness (libraries, permissions, contract files):
 
@@ -592,7 +615,7 @@ python3 -m unittest discover -s tests -p "test_*.py"
 - Git install: `git pull` inside `custom_nodes/comfyui-openclaw/`, then restart ComfyUI.
 - ComfyUI-Manager install: update from Manager UI, then restart ComfyUI.
 
-## ? Remote Control (Connector)
+## Remote Control (Connector)
 
 OpenClaw includes a standalone **Connector** process that allows you to control your local instance securely via **Telegram**, **Discord**, **LINE**, **WhatsApp**, **WeChat**, and **KakaoTalk**.
 
@@ -603,7 +626,7 @@ OpenClaw includes a standalone **Connector** process that allows you to control 
 - **WeChat encrypted mode**: Official Account encrypted webhook mode is supported when AES settings are configured.
 - **KakaoTalk response safety**: QuickReply limits and safe fallback handling are enforced for reliable payload behavior.
 
-[- **See Setup Guide (docs/connector.md)**](docs/connector.md)
+- [See Setup Guide (`docs/connector.md`)](docs/connector.md)
 
 ## Security
 

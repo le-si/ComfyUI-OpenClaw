@@ -1,4 +1,4 @@
-# Support Policy (R51)
+# Support Policy
 
 ## Support Tiers
 

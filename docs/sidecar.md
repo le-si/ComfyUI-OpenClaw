@@ -42,7 +42,7 @@ The **OpenClaw Gateway** (sidecar) is a separate process that:
     stored here           (authenticated)          (no secrets)
 ```
 
-## Bridge API (R13 Contract)
+## Bridge API Contract
 
 The sidecar communicates with ComfyUI-OpenClaw via the Bridge API:
 
@@ -77,6 +77,6 @@ All mutating operations require an `idempotency_key` to prevent duplicate proces
 
 ## Next Steps
 
-1. ~~**F10**~~ ✅ Implemented: bridge endpoints in ComfyUI-OpenClaw
-2. ~~**F13**~~ ✅ Implemented: delivery adapter contract in ComfyUI-OpenClaw
-3. **F46**: Implement standalone sidecar process/runtime (external deployable service)
+1. Bridge endpoints in ComfyUI-OpenClaw are implemented.
+2. Delivery adapter contract in ComfyUI-OpenClaw is implemented.
+3. Implement standalone sidecar process/runtime (external deployable service).

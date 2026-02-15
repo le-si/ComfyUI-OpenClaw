@@ -109,7 +109,7 @@ Set the following environment variables (or put them in a `.env` file if you use
 - `OPENCLAW_CONNECTOR_KAKAO_PORT`: Port (default `8096`).
 - `OPENCLAW_CONNECTOR_KAKAO_PATH`: Webhook path (default `/kakao/webhook`).
 
-**Image Delivery (F33):**
+**Image Delivery:**
 
 - `OPENCLAW_CONNECTOR_PUBLIC_BASE_URL`: Public HTTPS URL of your connector (e.g. `https://your-tunnel.example.com`). Required for sending images.
 - `OPENCLAW_CONNECTOR_MEDIA_PATH`: URL path for serving temporary media (default `/media`).
@@ -121,6 +121,42 @@ Set the following environment variables (or put them in a `.env` file if you use
 > LINE and WhatsApp also **require** `public_base_url` to be HTTPS.
 > WeChat currently supports text-first control. Image/media upload delivery is not implemented in phase 1.
 > Kakao currently supports text-first control and quick replies. Rich media delivery is not enabled in the default Kakao webhook flow.
+
+### Command authorization policy
+
+Connector commands are evaluated through a centralized authorization policy with three command classes:
+
+- `public`: low-risk status/help style commands
+- `run`: execution commands such as `/run` (still subject to trust/approval behavior)
+- `admin`: sensitive commands such as `/trace`, `/approvals`, `/approve`, `/reject`, and schedule controls
+
+Default behavior:
+
+- If no explicit allow-from list is configured for a command class, class-level defaults apply.
+- `admin` commands require the sender to be in `OPENCLAW_CONNECTOR_ADMIN_USERS`.
+- `public` and `run` commands still pass through each platform adapter's trust/allowlist checks.
+
+Optional policy controls:
+
+- `OPENCLAW_COMMAND_OVERRIDES`: JSON object mapping command name to class (`public`, `run`, `admin`).
+- `OPENCLAW_COMMAND_ALLOW_FROM_PUBLIC`: comma-separated sender IDs.
+- `OPENCLAW_COMMAND_ALLOW_FROM_RUN`: comma-separated sender IDs.
+- `OPENCLAW_COMMAND_ALLOW_FROM_ADMIN`: comma-separated sender IDs.
+
+Normalization rules:
+
+- Command keys in `OPENCLAW_COMMAND_OVERRIDES` are normalized to lowercase.
+- Missing leading `/` is added automatically.
+
+Example:
+
+```bash
+OPENCLAW_COMMAND_OVERRIDES='{"run":"admin","/status":"public"}'
+OPENCLAW_COMMAND_ALLOW_FROM_ADMIN=alice_id,bob_id
+OPENCLAW_COMMAND_ALLOW_FROM_RUN=alice_id,ops_bot_id
+```
+
+If a class-level `OPENCLAW_COMMAND_ALLOW_FROM_*` list is set and non-empty, only listed IDs can run that class.
 
 ### 3. Usage
 
