@@ -227,6 +227,16 @@ async def health_handler(request: web.Request) -> web.Response:
     except Exception:
         m_snapshot = {"errors_captured": 0, "logs_processed": 0}
 
+    # Job Event Store Stats (Backpressure)
+    job_stats = {}
+    try:
+        from ..services.job_events import get_job_event_store
+
+        store = get_job_event_store()
+        job_stats = store.stats()
+    except Exception:
+        pass
+
     return web.json_response(
         {
             "ok": True,
@@ -250,6 +260,7 @@ async def health_handler(request: web.Request) -> web.Response:
             "stats": {
                 "errors_captured": m_snapshot["errors_captured"],
                 "logs_processed": m_snapshot["logs_processed"],
+                "observability": job_stats,  # R87
             },
             # S15: Exposure Detection
             "access_policy": {

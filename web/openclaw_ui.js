@@ -105,6 +105,14 @@ export class MoltbotUI {
                 }
                 // S15: Check exposure
                 this.checkExposure(data?.access_policy);
+
+                // R87: Check Backpressure
+                const obs = data.stats?.observability;
+                if (obs && obs.total_dropped > 0) {
+                    const dropCount = obs.total_dropped;
+                    // Only warn if significant relative to capacity or distinct threshold
+                    this.showBanner("warning", `\u26A0\uFE0F High load: ${dropCount} observability events dropped (Queue full). logs/traces might be incomplete.`);
+                }
             } else {
                 versionSpan.textContent = "v?.?.?";
             }
@@ -147,7 +155,7 @@ export class MoltbotUI {
 
             if (!isProtected) {
                 // High risk: Remote + No Token
-                this.showBanner("warning", "⚠️ Remote access detected; logs/config are protected unless you explicitly enable token-based access.");
+                this.showBanner("warning", "\u26A0\uFE0F Remote access detected; logs/config are protected unless you explicitly enable token-based access.");
             } else {
                 // Medium risk: Remote + Token (Just info)
                 // Optionally show nothing, or a small "Remote Access Secured" badge
@@ -170,4 +178,58 @@ export class MoltbotUI {
     }
 }
 
+/**
+ * F48: Queue Lifecycle Monitor.
+ * Polls /health to show deduplicated backpressure status banners.
+ */
+class QueueMonitor {
+    constructor(ui) {
+        this.ui = ui;
+        this.lastBannerTime = 0;
+        this.lastStatus = null;
+        this.bannerTTL = 5000; // 5s debounce for same status
+    }
+
+    start() {
+        // Poll health periodically for backpressure
+        setInterval(() => this.checkHealth(), 10000);
+    }
+
+    async checkHealth() {
+        try {
+            const res = await moltbotApi.getHealth();
+            if (res.ok && res.data) {
+                const stats = res.data.stats || {};
+                const obs = stats.observability || {};
+
+                // R87: Backpressure
+                if (obs.total_dropped > 0) {
+                    this.showBanner(
+                        "warning",
+                        `High load: ${obs.total_dropped} events dropped.`,
+                        "backpressure"
+                    );
+                }
+            }
+        } catch (e) {
+            // silent fail
+        }
+    }
+
+    showBanner(type, message, statusId) {
+        const now = Date.now();
+        // Dedupe: Don't show same status banner if recently shown
+        if (this.lastStatus === statusId && (now - this.lastBannerTime < this.bannerTTL)) {
+            return;
+        }
+
+        this.ui.showBanner(type, message);
+        this.lastStatus = statusId;
+        this.lastBannerTime = now;
+    }
+}
+
 export const moltbotUI = new MoltbotUI();
+const monitor = new QueueMonitor(moltbotUI);
+monitor.start();
+

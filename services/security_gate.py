@@ -73,6 +73,20 @@ class SecurityGate:
         except ImportError:
             settings_issues.append("Redaction service failed to import")
 
+        # 5. Permission Posture (S42)
+        try:
+            from .permission_posture import evaluate_startup_permissions
+
+            perm_allowed, perm_results = evaluate_startup_permissions()
+            if not perm_allowed:
+                for res in perm_results:
+                    if res.severity == "fail":
+                        settings_issues.append(
+                            f"Permission Check FAILED: {res.message}"
+                        )
+        except ImportError:
+            settings_issues.append("Permission posture service failed to import")
+
         failures = []
 
         # In HARDENED mode, any issue is a failure.

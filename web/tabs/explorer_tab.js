@@ -299,12 +299,32 @@ export const ExplorerTab = {
             headerRow.appendChild(saveBtn);
             resultsArea.appendChild(headerRow);
 
+            // R90: Known Replacements
+            const MISSING_NODE_REPLACEMENTS = {
+                "CLIPTextEncode": "CLIPTextEncodeSDXL",
+                "VAEDecode": "VAEDecodeTiled",
+                "KSampler": "KSamplerAdvanced",
+                // Add more common migration mappings here
+            };
+
             if (report.summary.missing_nodes > 0) {
                 const section = makeEl("div");
                 section.innerHTML = `<h4>Missing Nodes (${report.summary.missing_nodes})</h4>`;
                 const ul = makeEl("ul");
                 report.missing_nodes.forEach(m => {
-                    const li = makeEl("li", "", `${m.class_type} (x${m.count})`);
+                    const li = makeEl("li", "", "");
+                    // Safe text insertion
+                    const textSpan = document.createElement("span");
+                    textSpan.textContent = `${m.class_type} (x${m.count})`;
+                    li.appendChild(textSpan);
+
+                    if (MISSING_NODE_REPLACEMENTS[m.class_type]) {
+                        const hint = document.createElement("span");
+                        hint.style.opacity = "0.7";
+                        hint.style.fontSize = "0.9em";
+                        hint.innerHTML = ` (Try: <code>${MISSING_NODE_REPLACEMENTS[m.class_type]}</code>)`;
+                        li.appendChild(hint);
+                    }
                     ul.appendChild(li);
                 });
                 section.appendChild(ul);

@@ -119,9 +119,16 @@ class JobEventStore:
     """
 
     def __init__(self, max_size: int = MAX_EVENT_BUFFER) -> None:
+        try:
+            # IMPORTANT: keep package-relative import first to avoid custom-node
+            # import regressions when top-level "services" is unavailable.
+            from .observability.backpressure import BoundedQueue
+        except ImportError:
+            # Fallback for ad-hoc/test import paths.
+            from services.observability.backpressure import BoundedQueue
+
         self._lock = threading.Lock()
-        self._events: List[JobEvent] = []
-        self._max_size = max_size
+        self._queue = BoundedQueue[JobEvent](capacity=max_size)
         self._seq_counter = 0
 
     def emit(
@@ -141,10 +148,10 @@ class JobEventStore:
                 trace_id=trace_id,
                 data=data or {},
             )
-            self._events.append(evt)
-            # Evict oldest if over capacity
-            if len(self._events) > self._max_size:
-                self._events = self._events[-self._max_size :]
+
+            # enqueue returns False if dropped, but we don't need to surface that
+            # to the caller of emit(), tracking happens inside BoundedQueue checks.
+            self._queue.enqueue(evt)
             return evt
 
     def events_since(
@@ -158,19 +165,22 @@ class JobEventStore:
         Returns at most `limit` events (oldest first).
         """
         now = time.time()
-        with self._lock:
-            results = []
-            for evt in self._events:
-                if evt.seq <= last_seq:
-                    continue
-                if now - evt.timestamp > EVENT_TTL_SEC:
-                    continue
-                if prompt_id and evt.prompt_id != prompt_id:
-                    continue
-                results.append(evt)
-                if len(results) >= limit:
-                    break
-            return results
+        # No lock needed for get_all() as it is thread-safe, but we filter here.
+        # Ideally get_all() returns a snapshot.
+        all_events = self._queue.get_all()
+
+        results = []
+        for evt in all_events:
+            if evt.seq <= last_seq:
+                continue
+            if now - evt.timestamp > EVENT_TTL_SEC:
+                continue
+            if prompt_id and evt.prompt_id != prompt_id:
+                continue
+            results.append(evt)
+            if len(results) >= limit:
+                break
+        return results
 
     def latest_seq(self) -> int:
         """Return the latest sequence number."""
@@ -179,13 +189,24 @@ class JobEventStore:
 
     @property
     def size(self) -> int:
-        with self._lock:
-            return len(self._events)
+        return self._queue.stats().current_size
+
+    def stats(self) -> Dict[str, Any]:
+        """Return drop/usage stats."""
+        s = self._queue.stats()
+        return {
+            "capacity": s.capacity,
+            "current_size": s.current_size,
+            "high_watermark": s.high_watermark,
+            "total_enqueued": s.total_enqueued,
+            "total_dropped": s.total_dropped,
+            "last_drop_ts": s.last_drop_ts,
+        }
 
     def clear(self) -> None:
         """Clear all events (used in tests)."""
         with self._lock:
-            self._events.clear()
+            self._queue.clear()
             self._seq_counter = 0
 
 

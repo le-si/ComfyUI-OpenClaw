@@ -38,6 +38,7 @@ class Severity(Enum):
     WARN = "warn"
     FAIL = "fail"
     SKIP = "skip"
+    INFO = "info"
 
 
 @dataclass
@@ -432,6 +433,86 @@ def check_core_imports(report: DoctorReport) -> None:
             )
 
 
+def check_runtime_provenance(report: DoctorReport) -> None:
+    """
+    R86: Verify runtime provenance (Python/Node/Pip/Managers).
+    Detects shim drift and version manager conflicts.
+    """
+    # 1. Python Provenance & Shim Detection
+    sys_exe = sys.executable
+    path_exe = shutil.which("python")
+
+    report.environment["sys_executable"] = sys_exe
+    report.environment["path_python"] = str(path_exe)
+
+    if platform.system() == "Windows" and path_exe:
+        # Detect Windows Store Shim (common pitfall)
+        if "WindowsApps" in str(path_exe) and "WindowsApps" not in sys_exe:
+            report.add(
+                CheckResult(
+                    name="python_shim_drift",
+                    severity=Severity.WARN.value,
+                    message="Python token on PATH is a Windows Store shim",
+                    detail=f"PATH points to: {path_exe}\nRunning as: {sys_exe}",
+                    remediation="Adjust PATH to prioritize your installed Python 'Scripts' directory.",
+                )
+            )
+
+    # 2. Pip Provenance
+    pip_exe = shutil.which("pip")
+    if pip_exe:
+        try:
+            pip_ver = subprocess.check_output(
+                [pip_exe, "--version"], text=True, timeout=5
+            ).strip()
+            report.environment["pip_version"] = pip_ver
+            report.add(
+                CheckResult(
+                    name="pip_provenance",
+                    severity=Severity.PASS.value,
+                    message=f"Pip found: {pip_ver.split()[1] if ' ' in pip_ver else 'valid'}",
+                )
+            )
+        except Exception:
+            report.add(
+                CheckResult(
+                    name="pip_provenance",
+                    severity=Severity.WARN.value,
+                    message="Pip found but failed to run",
+                )
+            )
+    else:
+        report.add(
+            CheckResult(
+                name="pip_provenance",
+                severity=Severity.WARN.value,
+                message="Pip not found on PATH",
+            )
+        )
+
+    # 3. Environment Manager Detection
+    managers = []
+    if os.environ.get("NVM_DIR"):
+        managers.append("nvm")
+    if os.environ.get("FNM_DIR"):
+        managers.append("fnm")
+    if os.environ.get("MISE_DATA_DIR") or os.environ.get("MISE_CONFIG_DIR"):
+        managers.append("mise")
+    if os.environ.get("CONDA_PREFIX"):
+        managers.append("conda")
+
+    if managers:
+        report.environment["env_managers"] = ", ".join(managers)
+        report.add(
+            CheckResult(
+                name="env_manager_detected",
+                severity=Severity.INFO.value,
+                message=f"Environment manager(s) active: {', '.join(managers)}",
+                detail="Ensure IDE/Terminal profiles share the same manager context.",
+            )
+        )
+
+
 def check_os_environment(report: DoctorReport) -> None:
     """Record OS environment info."""
     report.environment["os"] = platform.system()
@@ -447,6 +528,47 @@ def check_os_environment(report: DoctorReport) -> None:
                 severity=Severity.PASS.value,
                 message="Windows environment detected",
                 detail=f"Architecture: {platform.machine()}",
+            )
+        )
+
+
+def check_permissions(report: DoctorReport) -> None:
+    """
+    S42: Check permission posture (state dir, secrets).
+    """
+    try:
+        from .permission_posture import (
+            PermissionEvaluator,
+            PermissionSeverity,
+            evaluate_startup_permissions,
+        )
+
+        evaluator = PermissionEvaluator()
+        results = evaluator.evaluate()
+
+        for res in results:
+            severity = Severity.PASS
+            if res.severity == PermissionSeverity.WARN:
+                severity = Severity.WARN
+            elif res.severity == PermissionSeverity.FAIL:
+                severity = Severity.FAIL
+            elif res.severity == PermissionSeverity.SKIP:
+                severity = Severity.SKIP
+
+            report.add(
+                CheckResult(
+                    name=res.code,
+                    severity=severity.value,
+                    message=res.message,
+                    remediation=res.remediation,
+                )
+            )
+    except ImportError:
+        report.add(
+            CheckResult(
+                name="permission_evaluator_import",
+                severity=Severity.WARN.value,
+                message="Could not import permission evaluator",
             )
         )
 
@@ -467,6 +589,8 @@ def run_doctor(pack_root: Optional[Path] = None) -> DoctorReport:
 
     # Run checks
     check_os_environment(report)
+    check_runtime_provenance(report)  # R86
+    check_permissions(report)  # S42
     check_python_version(report)
     check_node_version(report)
     check_venv(report)
