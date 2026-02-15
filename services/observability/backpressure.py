@@ -40,11 +40,11 @@ class BoundedQueue(Generic[T]):
     def __init__(self, capacity: int) -> None:
         if capacity <= 0:
             raise ValueError("Capacity must be positive")
-        
+
         self._capacity = capacity
         self._deque: Deque[T] = deque(maxlen=capacity)
         self._lock = threading.Lock()
-        
+
         # Metrics
         self._high_watermark = 0
         self._total_enqueued = 0
@@ -64,14 +64,14 @@ class BoundedQueue(Generic[T]):
                 self._total_dropped += 1
                 self._last_drop_ts = time.time()
                 dropped = True
-            
+
             self._deque.append(item)
             self._total_enqueued += 1
-            
+
             current_size = len(self._deque)
             if current_size > self._high_watermark:
                 self._high_watermark = current_size
-                
+
         return not dropped
 
     def get_all(self) -> List[T]:
@@ -88,7 +88,7 @@ class BoundedQueue(Generic[T]):
                 high_watermark=self._high_watermark,
                 total_enqueued=self._total_enqueued,
                 total_dropped=self._total_dropped,
-                last_drop_ts=self._last_drop_ts
+                last_drop_ts=self._last_drop_ts,
             )
 
     def clear(self) -> None:

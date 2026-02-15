@@ -3,7 +3,6 @@ import re
 import shutil
 from typing import Dict, List, Optional
 
-<<<<<<< HEAD
 from ..safe_io import resolve_under_root
 from .pack_archive import PackArchive, PackError
 from .pack_types import PackMetadata
@@ -57,9 +56,7 @@ class PackRegistry:
             # A malicious pack.json could contain traversal sequences.
             _validate_pack_segment(name, "name")
             _validate_pack_segment(version, "version")
-            target_dir = resolve_under_root(
-                self.packs_dir, os.path.join(name, version)
-            )
+            target_dir = resolve_under_root(self.packs_dir, os.path.join(name, version))
 
             if os.path.exists(target_dir):
                 if not overwrite:
@@ -76,9 +73,7 @@ class PackRegistry:
     def uninstall_pack(self, name: str, version: str) -> bool:
         _validate_pack_segment(name, "name")
         _validate_pack_segment(version, "version")
-        target_dir = resolve_under_root(
-            self.packs_dir, os.path.join(name, version)
-        )
+        target_dir = resolve_under_root(self.packs_dir, os.path.join(name, version))
         if os.path.exists(target_dir):
             shutil.rmtree(target_dir)
             # Clean up parent if empty
@@ -118,9 +113,7 @@ class PackRegistry:
     def get_pack_path(self, name: str, version: str) -> Optional[str]:
         _validate_pack_segment(name, "name")
         _validate_pack_segment(version, "version")
-        target_dir = resolve_under_root(
-            self.packs_dir, os.path.join(name, version)
-        )
+        target_dir = resolve_under_root(self.packs_dir, os.path.join(name, version))
         if os.path.exists(target_dir):
             return target_dir
         return None

@@ -6,13 +6,13 @@ import unittest
 import zipfile
 
 from services.packs.pack_archive import PackArchive
-from services.packs.pack_registry import PackRegistry, _validate_pack_segment
 from services.packs.pack_manifest import (
     MAX_MANIFEST_FILES,
     PackError,
     validate_manifest_integrity,
     validate_pack_metadata,
 )
+from services.packs.pack_registry import PackRegistry, _validate_pack_segment
 from services.packs.pack_types import PackMetadata, PackType
 
 

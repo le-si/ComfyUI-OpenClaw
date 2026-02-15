@@ -60,24 +60,24 @@ class PermissionEvaluator:
     def evaluate(self) -> List[PermissionResult]:
         """Run all permission checks."""
         results = []
-        
+
         # 1. State Directory
         results.append(self._check_state_dir())
 
         # 2. Secrets File
         results.append(self._check_secrets_file())
-        
+
         return results
 
     def _check_state_dir(self) -> PermissionResult:
         """Check state directory permissions."""
         path = self.state_dir
         if not path.exists():
-             return PermissionResult(
+            return PermissionResult(
                 resource="state_dir",
                 severity=PermissionSeverity.SKIP,
                 message="State directory does not exist",
-                code="perm.state_dir.missing"
+                code="perm.state_dir.missing",
             )
 
         # Common: Must be writable by owner/current user
@@ -88,7 +88,7 @@ class PermissionEvaluator:
                 severity=PermissionSeverity.FAIL,
                 message=f"State directory not writable: {path}",
                 code="perm.state_dir.not_writable",
-                remediation="Ensure the process user has write access."
+                remediation="Ensure the process user has write access.",
             )
 
         # POSIX Hardening
@@ -97,13 +97,17 @@ class PermissionEvaluator:
                 mode = path.stat().st_mode
                 if mode & stat.S_IWOTH:
                     # World writable is CRITICAL in Hardened
-                    sev = PermissionSeverity.FAIL if self.profile == RuntimeProfile.HARDENED else PermissionSeverity.WARN
+                    sev = (
+                        PermissionSeverity.FAIL
+                        if self.profile == RuntimeProfile.HARDENED
+                        else PermissionSeverity.WARN
+                    )
                     return PermissionResult(
                         resource="state_dir",
                         severity=sev,
-                         message="State directory is world-writable",
+                        message="State directory is world-writable",
                         code="perm.state_dir.world_writable",
-                        remediation=f"chmod 700 {path}"
+                        remediation=f"chmod 700 {path}",
                     )
             except Exception as e:
                 logger.warning(f"Failed to stat state dir: {e}")
@@ -112,19 +116,19 @@ class PermissionEvaluator:
             resource="state_dir",
             severity=PermissionSeverity.PASS,
             message="State directory permissions OK",
-            code="perm.state_dir.ok"
+            code="perm.state_dir.ok",
         )
 
     def _check_secrets_file(self) -> PermissionResult:
         """Check secrets.json permissions."""
         path = self.state_dir / "secrets.json"
-        
+
         if not path.exists():
-             return PermissionResult(
+            return PermissionResult(
                 resource="secrets_file",
-                severity=PermissionSeverity.PASS, # Not an error to not exist
+                severity=PermissionSeverity.PASS,  # Not an error to not exist
                 message="Secrets file not present",
-                code="perm.secrets.missing"
+                code="perm.secrets.missing",
             )
 
         if self.system != "Windows":
@@ -132,13 +136,17 @@ class PermissionEvaluator:
                 mode = path.stat().st_mode
                 # Check World Readable/Writable
                 if mode & (stat.S_IROTH | stat.S_IWOTH):
-                    sev = PermissionSeverity.FAIL if self.profile == RuntimeProfile.HARDENED else PermissionSeverity.WARN
+                    sev = (
+                        PermissionSeverity.FAIL
+                        if self.profile == RuntimeProfile.HARDENED
+                        else PermissionSeverity.WARN
+                    )
                     return PermissionResult(
                         resource="secrets_file",
                         severity=sev,
                         message="Secrets file is world-accessible",
                         code="perm.secrets.world_accessible",
-                        remediation=f"chmod 600 {path}"
+                        remediation=f"chmod 600 {path}",
                     )
             except Exception as e:
                 logger.warning(f"Failed to stat secrets file: {e}")
@@ -147,7 +155,7 @@ class PermissionEvaluator:
             resource="secrets_file",
             severity=PermissionSeverity.PASS,
             message="Secrets file permissions OK",
-            code="perm.secrets.ok"
+            code="perm.secrets.ok",
         )
 
 
@@ -158,13 +166,15 @@ def evaluate_startup_permissions() -> Tuple[bool, List[PermissionResult]]:
     """
     evaluator = PermissionEvaluator()
     results = evaluator.evaluate()
-    
+
     # Block startup if any FAIL result exists
     failures = [r for r in results if r.severity == PermissionSeverity.FAIL]
     if failures:
-        logger.critical(f"Startup blocked by permission checks ({len(failures)} failures).")
+        logger.critical(
+            f"Startup blocked by permission checks ({len(failures)} failures)."
+        )
         for f in failures:
             logger.critical(f"  [{f.code}] {f.message} -> {f.remediation}")
         return False, results
-        
+
     return True, results

@@ -232,4 +232,3 @@ class QueueMonitor {
 export const moltbotUI = new MoltbotUI();
 const monitor = new QueueMonitor(moltbotUI);
 monitor.start();
-
