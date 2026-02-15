@@ -1,19 +1,19 @@
 # OpenClaw Connector
 
-The **OpenClaw Connector** (`connector`) is a standalone process that allows you to control your local ComfyUI instance remotely via chat platforms like **Telegram**, **Discord**, **LINE**, **WhatsApp**, and **WeChat Official Account**.
+The **OpenClaw Connector** (`connector`) is a standalone process that allows you to control your local ComfyUI instance remotely via chat platforms like **Telegram**, **Discord**, **LINE**, **WhatsApp**, **WeChat Official Account**, and **KakaoTalk (Kakao i Open Builder)**.
 
 ## How It Works
 
 The connector runs alongside ComfyUI on your machine.
 
 1. It connects outbound to Telegram/Discord (polling/gateway).
-2. LINE/WhatsApp/WeChat use inbound webhooks (HTTPS required).
+2. LINE/WhatsApp/WeChat/KakaoTalk use inbound webhooks (HTTPS required).
 3. It talks to ComfyUI via `localhost`.
 4. It relays commands and status updates securely.
 
 **Security**:
 
-- **Transport Model**: Telegram/Discord are outbound. LINE/WhatsApp/WeChat require inbound HTTPS webhook endpoints.
+- **Transport Model**: Telegram/Discord are outbound. LINE/WhatsApp/WeChat/KakaoTalk require inbound HTTPS webhook endpoints.
 - **Allowlist**: Only users/chats you explicitly allow can send commands.
 - **Local Secrets**: Bot tokens are stored in your local environment, never sent to ComfyUI.
 - **Admin Boundary**: Control-plane actions call admin endpoints on the local ComfyUI instance. See `OPENCLAW_CONNECTOR_ADMIN_TOKEN` below.
@@ -25,6 +25,7 @@ The connector runs alongside ComfyUI on your machine.
 - **LINE**: Webhook (requires inbound HTTPS).
 - **WhatsApp**: Webhook (requires inbound HTTPS).
 - **WeChat Official Account**: Webhook (requires inbound HTTPS).
+- **KakaoTalk (Kakao i Open Builder)**: Webhook (requires inbound HTTPS).
 
 ## Setup
 
@@ -98,6 +99,16 @@ Set the following environment variables (or put them in a `.env` file if you use
 - `OPENCLAW_CONNECTOR_WECHAT_PORT`: Port (default `8097`).
 - `OPENCLAW_CONNECTOR_WECHAT_PATH`: Webhook path (default `/wechat/webhook`).
 
+**KakaoTalk (Kakao i Open Builder):**
+
+*(Requires Inbound Connectivity - see below)*
+
+- `OPENCLAW_CONNECTOR_KAKAO_ENABLED`: Set to `true` to enable Kakao webhook adapter.
+- `OPENCLAW_CONNECTOR_KAKAO_ALLOWED_USERS`: Comma-separated Kakao user IDs (`userRequest.user.id` / botUserKey). Non-allowlisted users are treated as untrusted and sensitive actions require approval.
+- `OPENCLAW_CONNECTOR_KAKAO_BIND`: Host to bind (default `127.0.0.1`).
+- `OPENCLAW_CONNECTOR_KAKAO_PORT`: Port (default `8096`).
+- `OPENCLAW_CONNECTOR_KAKAO_PATH`: Webhook path (default `/kakao/webhook`).
+
 **Image Delivery (F33):**
 
 - `OPENCLAW_CONNECTOR_PUBLIC_BASE_URL`: Public HTTPS URL of your connector (e.g. `https://your-tunnel.example.com`). Required for sending images.
@@ -109,6 +120,7 @@ Set the following environment variables (or put them in a `.env` file if you use
 > To ensure URLs remain valid after connector restarts, **you must set `OPENCLAW_CONNECTOR_ADMIN_TOKEN`**.
 > LINE and WhatsApp also **require** `public_base_url` to be HTTPS.
 > WeChat currently supports text-first control. Image/media upload delivery is not implemented in phase 1.
+> Kakao currently supports text-first control and quick replies. Rich media delivery is not enabled in the default Kakao webhook flow.
 
 ### 3. Usage
 
@@ -204,6 +216,62 @@ WeChat Official Account pushes webhook requests to your connector. You must expo
 - Current command surface is text-first. Unsupported message/event types are ignored with success response.
 - Proactive outbound API messaging requires both `OPENCLAW_CONNECTOR_WECHAT_APP_ID` and `OPENCLAW_CONNECTOR_WECHAT_APP_SECRET`.
 
+#### KakaoTalk (Kakao i Open Builder) Webhook Setup (Detailed)
+
+Kakao i Open Builder sends webhook requests to your connector Skill endpoint. You must expose the Kakao endpoint publicly over HTTPS.
+
+1. Prepare the required environment variables:
+
+   ```bash
+   OPENCLAW_CONNECTOR_KAKAO_ENABLED=true
+   OPENCLAW_CONNECTOR_KAKAO_ALLOWED_USERS=kakao_user_id_1,kakao_user_id_2
+   OPENCLAW_CONNECTOR_KAKAO_BIND=127.0.0.1
+   OPENCLAW_CONNECTOR_KAKAO_PORT=8096
+   OPENCLAW_CONNECTOR_KAKAO_PATH=/kakao/webhook
+   ```
+
+2. Start the connector:
+
+   ```bash
+   python -m connector
+   ```
+
+3. Expose the local webhook service to HTTPS (Cloudflare Tunnel or reverse proxy):
+   - local upstream: `http://127.0.0.1:8096`
+   - public path: `/kakao/webhook`
+   - expected public URL: `https://<your-public-host>/kakao/webhook`
+
+4. In Kakao i Open Builder:
+   - create/select your bot
+   - create/select a Skill
+   - set Skill server URL to `https://<your-public-host>/kakao/webhook`
+   - deploy/publish the Skill scenario that calls this Skill endpoint
+
+5. Functional test:
+   - chat with your Kakao bot
+   - send `/help` or `/status`
+   - verify connector receives command and returns a SkillResponse (`version: 2.0`)
+
+6. Verify trusted/untrusted behavior:
+   - if sender `userRequest.user.id` is in `OPENCLAW_CONNECTOR_KAKAO_ALLOWED_USERS`, `/run` can execute directly (subject to admin rules)
+   - if not allowlisted, sensitive actions are routed to approval flow
+
+7. Optional first-time allowlist bootstrap:
+   - temporarily leave `OPENCLAW_CONNECTOR_KAKAO_ALLOWED_USERS` empty
+   - send a test message and check logs for `Untrusted Kakao message from user=<id>`
+   - add that ID to allowlist and restart connector
+
+**Kakao-specific notes:**
+
+- Adapter is disabled unless `OPENCLAW_CONNECTOR_KAKAO_ENABLED=true`.
+- Kakao webhook ingress is `POST` only on `OPENCLAW_CONNECTOR_KAKAO_PATH`.
+- Replay protection is enabled: identical payloads within the replay window are acknowledged and not re-executed.
+- Kakao command requests are normalized from:
+  - `userRequest.user.id` -> `sender_id`
+  - `userRequest.utterance` -> command text
+- Response format follows Kakao SkillResponse v2.0 with text-first output and optional quick replies.
+- If `aiohttp` is missing, the adapter is skipped at startup.
+
 ## Commands
 
 **General:**
@@ -265,3 +333,15 @@ WeChat Official Account pushes webhook requests to your connector. You must expo
 - **HTTP 403 (Admin Token)**:
   - Connector has the right user allowlist, but the upstream OpenClaw server rejected the Admin Token.
   - Fix: Ensure `OPENCLAW_CONNECTOR_ADMIN_TOKEN` matches the server's `OPENCLAW_ADMIN_TOKEN`.
+
+- **Kakao requests not arriving**:
+  - `OPENCLAW_CONNECTOR_KAKAO_ENABLED` is not `true`, or Kakao Skill URL/path does not match `OPENCLAW_CONNECTOR_KAKAO_PATH`.
+  - Fix: set `OPENCLAW_CONNECTOR_KAKAO_ENABLED=true`, verify public HTTPS URL, and confirm Skill URL exactly matches `/kakao/webhook` (or your custom path).
+
+- **Kakao returns empty/fallback response**:
+  - Payload is malformed (missing `userRequest.user.id` / `userRequest.utterance`) or the adapter rejected malformed JSON.
+  - Fix: validate Skill request payload shape in Open Builder test console and check connector logs for `Bad JSON` / payload errors.
+
+- **Kakao `/run` always goes to approval**:
+  - Sender is not in `OPENCLAW_CONNECTOR_KAKAO_ALLOWED_USERS` (or allowlist is empty).
+  - Fix: capture `userRequest.user.id` from logs, add it to `OPENCLAW_CONNECTOR_KAKAO_ALLOWED_USERS`, restart connector.
