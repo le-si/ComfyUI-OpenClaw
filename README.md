@@ -21,6 +21,7 @@ This project is intentionally **not** a general-purpose assistant platform with 
 - Webhooks are **deny-by-default** until auth is configured
 - Encrypted webhook mode is **fail-closed** (invalid signature/decrypt/app-id checks are rejected)
 - Strict outbound SSRF policy (callbacks + custom LLM base URLs)
+- Pack lifecycle file paths and pack API inputs are validated and root-bounded to prevent path traversal
 - Bridge worker endpoints enforce device-token auth, scope checks, and idempotency handling
 - Replay risk is reduced with deterministic dedupe keys for event payloads without message IDs
 - Cryptography dependency is optional and only required when encrypted webhook mode is enabled
@@ -29,6 +30,16 @@ This project is intentionally **not** a general-purpose assistant platform with 
 - Startup module capability gates (disabled modules do not register routes/workers)
 
 ## Latest Updates - Click to expand
+
+<details>
+<summary><strong>Pack security hardening: path traversal defense and strict API validation</strong></summary>
+
+- Added path traversal protection for pack uninstall and pack path resolution.
+- Hardened pack install path construction by validating pack metadata segments (`name`, `version`) and enforcing root-bounded path resolution.
+- Added stricter input validation on pack API route handlers for pack lifecycle operations.
+- Expanded regression coverage for traversal attempts and invalid input handling in pack flows.
+
+</details>
 
 <details>
 <summary><strong>Runtime profile hardening and bridge startup compatibility checks</strong></summary>
