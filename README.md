@@ -1,4 +1,4 @@
-# ComfyUI-OpenClaw
+﻿# ComfyUI-OpenClaw
 
 ![OpenClaw /run command example](assets/run.png)
 
@@ -12,7 +12,7 @@ ComfyUI-OpenClaw is a **security-first** ComfyUI custom node pack that adds:
 
 ---
 
-This project is intentionally **not** a general-purpose “assistant platform” with broad remote execution surfaces. It is designed to make **ComfyUI a reliable automation target** with an explicit admin boundary and hardened defaults.
+This project is intentionally **not** a general-purpose assistant platform with broad remote execution surfaces. It is designed to make **ComfyUI a reliable automation target** with an explicit admin boundary and hardened defaults.
 
 **Security stance (how this project differs from convenience-first automation packs):**
 
@@ -25,6 +25,8 @@ This project is intentionally **not** a general-purpose “assistant platform”
 - Replay risk is reduced with deterministic dedupe keys for event payloads without message IDs
 - Cryptography dependency is optional and only required when encrypted webhook mode is enabled
 - Secrets are never stored in browser storage (optional server-side key store is local-only convenience)
+- Profile-driven startup hardening with fail-closed enforcement in hardened mode
+- Startup module capability gates (disabled modules do not register routes/workers)
 
 ## Latest Updates - Click to expand
 
@@ -188,7 +190,7 @@ Alternative install options:
 1. Copy/clone this repository into your ComfyUI `custom_nodes` folder
 2. Restart ComfyUI.
 
-If the UI loads but endpoints return 404, ComfyUI likely did not load the Python part of the pack (see “Troubleshooting”).
+If the UI loads but endpoints return 404, ComfyUI likely did not load the Python part of the pack (see Troubleshooting).
 
 ## Quick Start (Minimal)
 
@@ -214,7 +216,7 @@ Provider/model configuration can be set via env or `/openclaw/config` (admin bou
 Notes:
 
 - Recommended: set API keys via environment variables.
-- Optional: for single-user localhost setups, you can store a provider API key from the Settings tab (“UI Key Store (Advanced)”).
+- Optional: for single-user localhost setups, you can store a provider API key from the Settings tab (UI Key Store (Advanced)).
   - This writes to the server-side secret store (`{STATE_DIR}/secrets.json`).
   - Environment variables always take priority over stored keys.
 
@@ -285,11 +287,11 @@ Use `/api/...` from browsers and extension JS.
 
 ### Observability (read-only)
 
-- `GET /openclaw/health` — pack status, key presence, and basic metrics
-- `GET /openclaw/logs/tail?n=50` — log tail (supports `trace_id` / `prompt_id` filters)
-- `GET /openclaw/trace/{prompt_id}` — trace timeline (redacted)
-- `GET /openclaw/capabilities` — feature/capability probe for frontend compatibility
-- `GET /openclaw/jobs` — currently a stub (returns an empty list)
+- `GET /openclaw/health` -pack status, key presence, and basic metrics
+- `GET /openclaw/logs/tail?n=50` - log tail (supports `trace_id` / `prompt_id` filters)
+- `GET /openclaw/trace/{prompt_id}` -trace timeline (redacted)
+- `GET /openclaw/capabilities` -feature/capability probe for frontend compatibility
+- `GET /openclaw/jobs` -currently a stub (returns an empty list)
 
 Access control:
 
@@ -298,11 +300,11 @@ Access control:
 
 ### LLM config (non-secret)
 
-- `GET /openclaw/config` — effective config + sources + provider catalog (observability-protected)
-- `PUT /openclaw/config` — update non-secret config (admin boundary)
-- `POST /openclaw/llm/test` — test connectivity (admin boundary)
-- `POST /openclaw/llm/chat` — connector chat completion path (admin boundary)
-- `GET /openclaw/llm/models` — fetch model list for selected provider/base URL
+- `GET /openclaw/config` -effective config + sources + provider catalog (observability-protected)
+- `PUT /openclaw/config` -update non-secret config (admin boundary)
+- `POST /openclaw/llm/test` -test connectivity (admin boundary)
+- `POST /openclaw/llm/chat` -connector chat completion path (admin boundary)
+- `GET /openclaw/llm/models` -fetch model list for selected provider/base URL
 
 Notes:
 
@@ -328,9 +330,9 @@ Notes:
 
 ### Webhooks
 
-- `POST /openclaw/webhook` — authenticate + validate schema and return normalized payload (no queue submission)
-- `POST /openclaw/webhook/validate` — dry-run render (no queue submission; includes render budgets + warnings)
-- `POST /openclaw/webhook/submit` — full pipeline: auth → normalize → idempotency → render → submit to queue
+- `POST /openclaw/webhook` -authenticate + validate schema and return normalized payload (no queue submission)
+- `POST /openclaw/webhook/validate` -dry-run render (no queue submission; includes render budgets + warnings)
+- `POST /openclaw/webhook/submit` -full pipeline: auth -normalize -idempotency -render -submit to queue
 
 **Payload Mapping (F40)**:
 
@@ -339,8 +341,8 @@ Notes:
 
 **Job Events (R71)**:
 
-- `GET /openclaw/events/stream` — SSE endpoint for real-time job lifecycle events (queued, running, completed, failed).
-- `GET /openclaw/events` — JSON polling fallback.
+- `GET /openclaw/events/stream` -SSE endpoint for real-time job lifecycle events (queued, running, completed, failed).
+- `GET /openclaw/events` -JSON polling fallback.
 - Supports `Last-Event-ID` header to resume streams without data loss.
 
 Request schema (minimal):
@@ -371,10 +373,10 @@ Callback allowlist:
 
 ### Triggers + approvals (admin)
 
-- `POST /openclaw/triggers/fire` — fire a template with optional approval gate
+- `POST /openclaw/triggers/fire` -fire a template with optional approval gate
 - `GET /openclaw/approvals`
 - `GET /openclaw/approvals/{approval_id}`
-- `POST /openclaw/approvals/{approval_id}/approve` — can auto-execute
+- `POST /openclaw/approvals/{approval_id}/approve` -can auto-execute
 - `POST /openclaw/approvals/{approval_id}/reject`
 
 Admin boundary:
@@ -412,7 +414,7 @@ Operational notes:
 
 - Packs are **local-only by default** (no auto-download).
 - Packs management requires the Admin Token boundary (or localhost-only convenience mode).
-- UI: `OpenClaw` panel → `Packs` tab.
+- UI: `OpenClaw` panel -> `Packs` tab.
 - Verification: `python -m unittest tests.test_packs_integrity -v`
 
 ### Bridge (sidecar; optional)
@@ -469,13 +471,13 @@ For the full step-by-step guide (where to put exported workflow JSON, how to aut
 **Free-text prompt mode (no `key=value` needed):**
 
 ```
-/run z 画面中央是一位年轻女性… seed=-1
+/run z "a cinematic portrait" seed=-1
 ```
 
 The connector will map the free text into a prompt field using:
 
 - `allowed_inputs` if a single key is declared in `manifest.json`, or
-- fallback order: `positive_prompt` → `prompt` → `text` → `positive` → `caption`.
+- fallback order: `positive_prompt` -> `prompt` -> `text` -> `positive` -> `caption`.
 
 **Key=value mode (explicit mapping):**
 
@@ -509,7 +511,7 @@ Failover is integrated into `services/llm_client.py` and controlled via runtime 
 
 - `OPENCLAW_FALLBACK_MODELS` (CSV)
 - `OPENCLAW_FALLBACK_PROVIDERS` (CSV)
-- `OPENCLAW_MAX_FAILOVER_CANDIDATES` (int, 1–5)
+- `OPENCLAW_MAX_FAILOVER_CANDIDATES` (int, 1-)
 
 ## State Directory & Logs
 
@@ -529,7 +531,7 @@ Logs:
 
 ## Troubleshooting
 
-### UI shows “Backend Not Loaded” / endpoints return 404
+### UI shows Backend Not Loaded / endpoints return 404
 
 This means ComfyUI did not load the Python part of the pack or route registration failed.
 
@@ -568,7 +570,7 @@ python scripts/operator_doctor.py --json
 
 ### Webhooks return `403 auth_not_configured`
 
-Set webhook auth env vars (see “Quick Start”) and restart ComfyUI.
+Set webhook auth env vars (see Quick Start) and restart ComfyUI.
 
 ### Admin Token: server-side vs UI
 
@@ -590,7 +592,7 @@ python3 -m unittest discover -s tests -p "test_*.py"
 - Git install: `git pull` inside `custom_nodes/comfyui-openclaw/`, then restart ComfyUI.
 - ComfyUI-Manager install: update from Manager UI, then restart ComfyUI.
 
-## 🎮 Remote Control (Connector)
+## ? Remote Control (Connector)
 
 OpenClaw includes a standalone **Connector** process that allows you to control your local instance securely via **Telegram**, **Discord**, **LINE**, **WhatsApp**, **WeChat**, and **KakaoTalk**.
 
@@ -601,7 +603,7 @@ OpenClaw includes a standalone **Connector** process that allows you to control 
 - **WeChat encrypted mode**: Official Account encrypted webhook mode is supported when AES settings are configured.
 - **KakaoTalk response safety**: QuickReply limits and safe fallback handling are enforced for reliable payload behavior.
 
-[👉 **See Setup Guide (docs/connector.md)**](docs/connector.md)
+[- **See Setup Guide (docs/connector.md)**](docs/connector.md)
 
 ## Security
 
@@ -611,7 +613,7 @@ Read `SECURITY.md` before exposing any endpoint beyond localhost. The project is
 
 ## Disclaimer (Security & Liability)
 
-This project is provided **“as‑is”** without warranty of any kind. You are solely responsible for:
+This project is provided **as-is** without warranty of any kind. You are solely responsible for:
 
 - **API keys / Admin tokens**: creation, storage, rotation, and revocation
 - **Runtime configuration**: environment variables, config files, UI settings
@@ -621,15 +623,15 @@ This project is provided **“as‑is”** without warranty of any kind. You are
 ### Key Handling Guidance (all environments)
 
 - **Prefer environment variables** for API keys and admin tokens.
-- **UI key storage (if enabled)** is for local, single‑user setups only.
+- **UI key storage (if enabled)** is for local, single-user setups only.
 - **Never commit secrets** or embed them in versioned files.
 - **Rotate tokens** regularly and after any suspected exposure.
 
 ### Common Deployment Contexts (you must secure each)
 
-- **Local / single‑user**: treat keys as secrets; avoid long‑term browser storage.
+- **Local / single-user**: treat keys as secrets; avoid long-term browser storage.
 - **LAN / shared machines**: require admin tokens, restrict IPs, disable unsafe endpoints.
-- **Public / tunneled / reverse‑proxy**: enforce strict allowlists, HTTPS, least‑privilege access.
+- **Public / tunneled / reverse-proxy**: enforce strict allowlists, HTTPS, least-privilege access.
 - **Desktop / portable / scripts**: ensure secrets are not logged or persisted by launchers.
 
 ### No Liability
