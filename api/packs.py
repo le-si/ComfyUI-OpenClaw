@@ -32,6 +32,7 @@ except ImportError:
     web = MockWeb()
 
 import os
+import re
 import shutil
 import tempfile
 
@@ -44,6 +45,16 @@ else:
     from services.access_control import require_admin_token
     from services.packs.pack_archive import PackArchive, PackError
     from services.packs.pack_registry import PackRegistry
+
+# Strict pattern for pack name/version URL route parameters.
+_SAFE_SEGMENT_RE = re.compile(r"^[a-zA-Z0-9._-]+$")
+
+
+def _is_safe_pack_segment(value: str) -> bool:
+    """Check if a pack name or version segment is safe for filesystem use."""
+    if not value or value in (".", ".."):
+        return False
+    return bool(_SAFE_SEGMENT_RE.match(value))
 
 
 if web:
@@ -155,6 +166,11 @@ class PacksHandlers:
                 {"ok": False, "error": "Missing name/version"}, status=400
             )
 
+        if not _is_safe_pack_segment(name) or not _is_safe_pack_segment(version):
+            return web.json_response(
+                {"ok": False, "error": "Invalid name or version format"}, status=400
+            )
+
         try:
             success = self.registry.uninstall_pack(name, version)
             if success:
@@ -182,6 +198,11 @@ class PacksHandlers:
                 {"ok": False, "error": "Missing name/version"}, status=400
             )
 
+        if not _is_safe_pack_segment(name) or not _is_safe_pack_segment(version):
+            return web.json_response(
+                {"ok": False, "error": "Invalid name or version format"}, status=400
+            )
+
         pack_path = self.registry.get_pack_path(name, version)
         if not pack_path:
             return web.json_response(
@@ -206,7 +227,7 @@ class PacksHandlers:
             return CleanupFileResponse(
                 temp_zip,
                 headers={
-                    "Content-Disposition": f'attachment; filename="{name}-{version}.zip"',
+                    "Content-Disposition": f'attachment; filename="{name.replace(chr(34), "")}-{version.replace(chr(34), "")}.zip"',
                     "Content-Type": "application/zip",
                 },
             )
