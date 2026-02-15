@@ -556,6 +556,7 @@ def register_routes(server) -> None:
             register_dual_route(server, method, path, handler)
 
     # F8/F21 Assist Routes
+    # R84 Boot Boundary: CORE (Planner/Refiner part of core/assist)
     if assist:
         for prefix in prefixes:
             register_dual_route(
@@ -566,18 +567,32 @@ def register_routes(server) -> None:
             )
 
     # F10 Bridge Routes (Sidecar)
+    # R84 Boot Boundary: BRIDGE
     try:
         from ..api.bridge import register_bridge_routes
+        from ..services.modules import ModuleCapability, is_module_enabled
 
-        if hasattr(server, "app"):
+        if hasattr(server, "app") and is_module_enabled(ModuleCapability.BRIDGE):
             register_bridge_routes(server.app)
-            # Bridge handles its own routing, assuming it's robust.
+            print("[OpenClaw] Bridge routes registered")
+        elif not is_module_enabled(ModuleCapability.BRIDGE):
+            print("[OpenClaw] Bridge module disabled; skipping route registration")
     except ImportError:
         pass
 
     # S8/S23/F11 Asset Packs
+    # R84 Boot Boundary: REGISTRY_SYNC (Packs management)
     try:
         from ..api.packs import PacksHandlers
+        from ..services.modules import ModuleCapability, is_module_enabled
+
+        # Packs are currently treated as part of CORE or REGISTRY_SYNC depending on strictness.
+        # For now, we bind them to REGISTRY_SYNC if we want to segment them,
+        # but realistically they are often core local features.
+        # Let's check REGISTRY_SYNC for import/export features specifically if we wanted to split,
+        # but keeping them enabled by default for now unless R84 explicitly segments them.
+        # DESIGN DECISION: Packs are local core features. Registry sync is remote.
+        # We will keep basic pack routes, but R84 might control remote interactions later.
 
         try:
             from ..config import DATA_DIR

@@ -134,3 +134,16 @@ def require_admin_token(request) -> Tuple[bool, Optional[str]]:
         False,
         "Remote admin access denied. Set OPENCLAW_ADMIN_TOKEN (or legacy MOLTBOT_ADMIN_TOKEN) to allow.",
     )
+
+
+def is_auth_configured() -> bool:
+    """
+    Check if Admin Token authentication is configured (S41).
+    Returns True if OPENCLAW_ADMIN_TOKEN/MOLTBOT_ADMIN_TOKEN is non-empty.
+    """
+    val = (
+        os.environ.get("OPENCLAW_ADMIN_TOKEN")
+        or os.environ.get("MOLTBOT_ADMIN_TOKEN")
+        or ""
+    )
+    return bool(val.strip())

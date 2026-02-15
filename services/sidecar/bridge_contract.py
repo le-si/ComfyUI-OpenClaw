@@ -18,6 +18,10 @@ class BridgeScope(str, Enum):
     # Future: CONFIG_WRITE requires explicit opt-in
 
 
+# Protocol Version (R85)
+BRIDGE_PROTOCOL_VERSION = 1
+
+
 @dataclass
 class DeviceToken:
     """
@@ -105,6 +109,12 @@ BRIDGE_ENDPOINTS = {
         "path": "/bridge/health",
         "response": BridgeHealthResponse,
         "auth": None,  # Health check is public
+    },
+    "handshake": {
+        "method": "POST",
+        "path": "/bridge/handshake",
+        "auth": None,  # Public version negotiation
+        "scope": None,
     },
     # Worker-facing (poll model — F46)
     "worker_poll": {

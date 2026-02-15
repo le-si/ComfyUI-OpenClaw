@@ -57,6 +57,53 @@ def _register_routes_once():
     except Exception as e:
         logging.getLogger("ComfyUI-OpenClaw").error(f"Failed to register plugins: {e}")
 
+    # R63/R84: Initialize Service & Module Registries
+    try:
+        from .services.modules import ModuleCapability, ModuleRegistry, enable_module
+        from .services.registry import SVC_RUNTIME_CONFIG, ServiceRegistry
+        from .services.runtime_config import get_config
+
+        # 1. Register Runtime Config
+        config = get_config()
+        ServiceRegistry.register(SVC_RUNTIME_CONFIG, config)
+
+        # 2. Initialize Default Modules
+        # Always enable CORE and SECURITY
+        enable_module(ModuleCapability.CORE)
+        enable_module(ModuleCapability.SECURITY)
+        enable_module(ModuleCapability.OBSERVABILITY)
+
+        # 3. Conditional Modules (Config-driven)
+        # Bridge
+        if config.bridge_enabled:
+            enable_module(ModuleCapability.BRIDGE)
+
+        # Scheduler (Always enabled as core feature, but runner starts conditionally)
+        enable_module(ModuleCapability.SCHEDULER)
+
+        # Webhook (Always enabled as core feature, but auth-gated)
+        enable_module(ModuleCapability.WEBHOOK)
+
+        # Connector (Always enabled as core feature)
+        enable_module(ModuleCapability.CONNECTOR)
+
+        # Lock registry alignment
+        ModuleRegistry.lock()
+        logging.getLogger("ComfyUI-OpenClaw").info(
+            f"Initialized modules: {ModuleRegistry.get_enabled_list()}"
+        )
+
+        # R41/S41: Run Security Gate
+        # Must run after config and modules are loaded.
+        from .services.security_gate import enforce_startup_gate
+
+        enforce_startup_gate()
+
+    except Exception as e:
+        logging.getLogger("ComfyUI-OpenClaw").error(
+            f"Failed to initialize registries: {e}"
+        )
+
     def _do_full_registration(server):
         """Register all Moltbot routes including Bridge and Scheduler."""
         from .api.approvals import register_approval_routes

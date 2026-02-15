@@ -29,6 +29,17 @@ This project is intentionally **not** a general-purpose “assistant platform”
 ## Latest Updates - Click to expand
 
 <details>
+<summary><strong>Runtime profile hardening and bridge startup compatibility checks</strong></summary>
+
+- Added explicit runtime profiles with centralized resolution so startup behavior is deterministic across environments.
+- Added a hardened startup security gate that fails closed when mandatory controls are not correctly configured.
+- Added module capability boundaries so routes/workers only boot when their owning module is enabled.
+- Added a bridge protocol handshake path with version compatibility checks during sidecar startup.
+- Expanded regression coverage for profile resolution, startup gating, module boundaries, and bridge handshake behavior.
+
+</details>
+
+<details>
 <summary><strong>Connector platform parity and sidecar worker runtime improvements</strong></summary>
 
 - Added stronger KakaoTalk response handling:

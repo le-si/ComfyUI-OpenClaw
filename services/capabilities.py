@@ -10,6 +10,8 @@ if __package__ and "." in __package__:
 else:  # pragma: no cover (test-only import mode)
     from config import PACK_NAME, PACK_VERSION
 
+from .runtime_profile import get_runtime_profile
+
 API_VERSION = 1
 
 
@@ -19,6 +21,7 @@ def get_capabilities() -> dict:
     """
     return {
         "api_version": API_VERSION,
+        "runtime_profile": get_runtime_profile().value,
         "pack": {
             "name": PACK_NAME,
             "version": PACK_VERSION,

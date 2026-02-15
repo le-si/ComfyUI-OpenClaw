@@ -17,6 +17,10 @@ except ModuleNotFoundError:  # pragma: no cover (optional for unit tests)
 
 try:
     from ..services.async_utils import run_in_thread
+
+    # CRITICAL: handshake verifier must be imported in package mode;
+    # missing this causes NameError at runtime on /bridge/handshake.
+    from ..services.bridge_handshake import verify_handshake
     from ..services.cache import TTLCache
     from ..services.execution_budgets import BudgetExceededError
     from ..services.rate_limit import check_rate_limit
@@ -33,6 +37,7 @@ try:
 except ImportError:
     # Fallback for ComfyUI's non-package loader or ad-hoc imports.
     from services.async_utils import run_in_thread
+    from services.bridge_handshake import verify_handshake
     from services.cache import TTLCache
     from services.execution_budgets import BudgetExceededError
     from services.rate_limit import check_rate_limit
@@ -112,6 +117,30 @@ class BridgeHandlers:
                 "uptime_sec": response.uptime_sec,
                 "job_queue_depth": response.job_queue_depth,
             }
+        )
+
+    async def handshake_handler(self, request: web.Request) -> web.Response:
+        """
+        POST /bridge/handshake
+        Negotiate protocol version compatibility.
+        """
+        try:
+            data = await request.json()
+            client_version = int(data.get("version", 0))
+        except (ValueError, TypeError, Exception):
+            return web.json_response({"error": "Invalid version format"}, status=400)
+
+        ok, msg, meta = verify_handshake(client_version)
+
+        status_code = 200 if ok else 409  # 409 Conflict for version mismatch
+
+        return web.json_response(
+            {
+                "ok": ok,
+                "message": msg,
+                "metadata": meta,
+            },
+            status=status_code,
         )
 
     async def submit_handler(self, request: web.Request) -> web.Response:
@@ -413,6 +442,9 @@ def register_bridge_routes(
     app.router.add_get(BRIDGE_ENDPOINTS["health"]["path"], handlers.health_handler)
     app.router.add_post(BRIDGE_ENDPOINTS["submit"]["path"], handlers.submit_handler)
     app.router.add_post(BRIDGE_ENDPOINTS["deliver"]["path"], handlers.deliver_handler)
+    app.router.add_post(
+        BRIDGE_ENDPOINTS["handshake"]["path"], handlers.handshake_handler
+    )
 
     # F46: Worker-facing endpoints
     app.router.add_get(

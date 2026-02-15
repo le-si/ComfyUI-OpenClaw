@@ -591,3 +591,36 @@ def get_admin_token() -> str:
 def is_loopback_client(remote_addr: str) -> bool:
     """Check if client is from loopback address."""
     return remote_addr in ("127.0.0.1", "::1", "localhost")
+
+
+class RuntimeConfig:
+    """
+    Typed configuration snapshot.
+    Aggregates effective settings from Env and File.
+    """
+
+    def __init__(self):
+        # LLM Settings
+        self.llm, _ = get_effective_config()
+
+        # Feature Flags
+        self.bridge_enabled = _env_flag(
+            "OPENCLAW_BRIDGE_ENABLED", "MOLTBOT_BRIDGE_ENABLED", False
+        )
+
+        # Security Flags (S41)
+        self.allow_any_public_llm_host = _env_flag(
+            "OPENCLAW_ALLOW_ANY_PUBLIC_LLM_HOST",
+            "MOLTBOT_ALLOW_ANY_PUBLIC_LLM_HOST",
+            False,
+        )
+        self.allow_insecure_base_url = _env_flag(
+            "OPENCLAW_ALLOW_INSECURE_BASE_URL", "MOLTBOT_ALLOW_INSECURE_BASE_URL", False
+        )
+        self.webhook_auth_mode = os.environ.get("OPENCLAW_WEBHOOK_AUTH_MODE", "")
+        self.admin_token_configured = bool(get_admin_token())
+
+
+def get_config() -> RuntimeConfig:
+    """Factory to get current config snapshot."""
+    return RuntimeConfig()

@@ -97,6 +97,7 @@ class TestF46WorkerContractAlignment(unittest.TestCase):
         self.assertIn("/bridge/health", get_paths)
         self.assertIn("/bridge/submit", post_paths)
         self.assertIn("/bridge/deliver", post_paths)
+        self.assertIn("/bridge/handshake", post_paths)
 
         # Worker-facing (F46)
         self.assertIn("/bridge/worker/poll", get_paths)
@@ -104,7 +105,7 @@ class TestF46WorkerContractAlignment(unittest.TestCase):
         self.assertIn("/bridge/worker/heartbeat", post_paths)
 
     def test_route_count(self):
-        """Exactly 2 GET + 4 POST routes registered."""
+        """Exactly 2 GET + 5 POST routes registered."""
         from api.bridge import BridgeHandlers, register_bridge_routes
 
         mock_app = MagicMock()
@@ -115,8 +116,8 @@ class TestF46WorkerContractAlignment(unittest.TestCase):
 
         self.assertEqual(mock_router.add_get.call_count, 2)  # health + poll
         self.assertEqual(
-            mock_router.add_post.call_count, 4
-        )  # submit + deliver + result + heartbeat
+            mock_router.add_post.call_count, 5
+        )  # submit + deliver + result + heartbeat + handshake
 
 
 # ---------------------------------------------------------------------------

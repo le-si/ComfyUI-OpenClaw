@@ -17,7 +17,7 @@ from typing import Any, Dict, List, Optional
 
 import aiohttp
 
-from .bridge_contract import BRIDGE_ENDPOINTS
+from .bridge_contract import BRIDGE_ENDPOINTS, BRIDGE_PROTOCOL_VERSION
 
 logger = logging.getLogger(__name__)
 
@@ -56,10 +56,39 @@ class BridgeClient:
                 },
                 timeout=aiohttp.ClientTimeout(total=30),
             )
+            # R85: Perform Handshake
+            await self.perform_handshake()
 
     async def stop(self):
         if self.session:
             await self.session.close()
+
+    async def perform_handshake(self):
+        """Negotiate protocol version with server (R85)."""
+        try:
+            url = self._endpoint("handshake")
+            payload = {"version": BRIDGE_PROTOCOL_VERSION}
+
+            async with self.session.post(
+                url, json=payload, timeout=aiohttp.ClientTimeout(total=5)
+            ) as resp:
+                if resp.status == 200:
+                    data = await resp.json()
+                    logger.info(f"Bridge handshake successful: {data.get('message')}")
+                    return True
+                elif resp.status == 409:
+                    data = await resp.json()
+                    msg = data.get("message", "Version mismatch")
+                    logger.critical(f"Bridge handshake FAILED: {msg}")
+                    raise RuntimeError(f"Bridge handshake failed: {msg}")
+                else:
+                    logger.warning(f"Bridge handshake unexpected status {resp.status}")
+                    return False
+        except Exception as e:
+            logger.error(f"Bridge handshake error: {e}")
+            # Fail closed if handshake is required, or open if optional.
+            # R85 implies strict compatibility check.
+            raise
 
     async def get_health(self) -> bool:
         """Check if bridge is reachable via contract health endpoint."""
