@@ -1,9 +1,28 @@
 import os
+import re
 import shutil
 from typing import Dict, List, Optional
 
+from ..safe_io import PathTraversalError, resolve_under_root
 from .pack_archive import PackArchive, PackError
 from .pack_types import PackMetadata
+
+# Strict pattern for pack name and version path segments.
+# Only allows alphanumerics, hyphens, underscores, and dots.
+_SAFE_SEGMENT_RE = re.compile(r"^[a-zA-Z0-9._-]+$")
+
+
+def _validate_pack_segment(value: str, label: str) -> None:
+    """Validate a pack name or version segment against path traversal."""
+    if not value:
+        raise PackError(f"Pack {label} must not be empty")
+    if not _SAFE_SEGMENT_RE.match(value):
+        raise PackError(
+            f"Pack {label} contains invalid characters: {value!r}. "
+            f"Only alphanumerics, hyphens, underscores, and dots are allowed."
+        )
+    if value in (".", ".."):
+        raise PackError(f"Pack {label} must not be '.' or '..'")
 
 
 class PackRegistry:
@@ -48,12 +67,16 @@ class PackRegistry:
             return meta
 
     def uninstall_pack(self, name: str, version: str) -> bool:
-        target_dir = os.path.join(self.packs_dir, name, version)
+        _validate_pack_segment(name, "name")
+        _validate_pack_segment(version, "version")
+        target_dir = resolve_under_root(
+            self.packs_dir, os.path.join(name, version)
+        )
         if os.path.exists(target_dir):
             shutil.rmtree(target_dir)
             # Clean up parent if empty
             parent = os.path.dirname(target_dir)
-            if not os.listdir(parent):
+            if os.path.exists(parent) and not os.listdir(parent):
                 os.rmdir(parent)
             return True
         return False
@@ -86,7 +109,11 @@ class PackRegistry:
         return results
 
     def get_pack_path(self, name: str, version: str) -> Optional[str]:
-        target_dir = os.path.join(self.packs_dir, name, version)
+        _validate_pack_segment(name, "name")
+        _validate_pack_segment(version, "version")
+        target_dir = resolve_under_root(
+            self.packs_dir, os.path.join(name, version)
+        )
         if os.path.exists(target_dir):
             return target_dir
         return None

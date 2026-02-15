@@ -6,6 +6,7 @@ import unittest
 import zipfile
 
 from services.packs.pack_archive import PackArchive
+from services.packs.pack_registry import PackRegistry, _validate_pack_segment
 from services.packs.pack_manifest import (
     MAX_MANIFEST_FILES,
     PackError,
@@ -100,6 +101,48 @@ class TestPackSecurity(unittest.TestCase):
 
         with self.assertRaisesRegex(PackError, "Too many files"):
             PackArchive.extract_pack(zip_path, os.path.join(self.test_dir, "out"))
+
+
+class TestPackRegistryPathTraversal(unittest.TestCase):
+    """Test that pack_registry rejects path traversal in name/version."""
+
+    def setUp(self):
+        self.test_dir = tempfile.mkdtemp()
+        self.registry = PackRegistry(self.test_dir)
+
+    def tearDown(self):
+        shutil.rmtree(self.test_dir)
+
+    def test_validate_segment_rejects_dotdot(self):
+        with self.assertRaises(PackError):
+            _validate_pack_segment("..", "name")
+
+    def test_validate_segment_rejects_slash(self):
+        with self.assertRaises(PackError):
+            _validate_pack_segment("../../etc", "name")
+
+    def test_validate_segment_rejects_backslash(self):
+        with self.assertRaises(PackError):
+            _validate_pack_segment("..\\..\\etc", "name")
+
+    def test_validate_segment_rejects_empty(self):
+        with self.assertRaises(PackError):
+            _validate_pack_segment("", "version")
+
+    def test_validate_segment_accepts_valid(self):
+        _validate_pack_segment("my-pack_v2.1", "name")  # Should not raise
+
+    def test_uninstall_rejects_traversal(self):
+        with self.assertRaises(PackError):
+            self.registry.uninstall_pack("../../etc", "passwd")
+
+    def test_get_pack_path_rejects_traversal(self):
+        with self.assertRaises(PackError):
+            self.registry.get_pack_path("../../../tmp", "evil")
+
+    def test_uninstall_rejects_dot_dot_version(self):
+        with self.assertRaises(PackError):
+            self.registry.uninstall_pack("legit-name", "..")
 
 
 if __name__ == "__main__":
