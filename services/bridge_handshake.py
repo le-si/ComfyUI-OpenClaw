@@ -7,7 +7,13 @@ Policy: N/N-1 Compatibility.
 import logging
 from typing import Dict, Tuple
 
-from services.sidecar.bridge_contract import BRIDGE_PROTOCOL_VERSION
+try:
+    # CRITICAL: prefer package-relative import so ComfyUI custom-node package loading
+    # does not depend on a top-level "services" module being importable.
+    from .sidecar.bridge_contract import BRIDGE_PROTOCOL_VERSION
+except ImportError:
+    # Fallback for ad-hoc/test import paths.
+    from services.sidecar.bridge_contract import BRIDGE_PROTOCOL_VERSION
 
 logger = logging.getLogger("ComfyUI-OpenClaw.services.bridge_handshake")
 
