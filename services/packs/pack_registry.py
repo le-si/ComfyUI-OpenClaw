@@ -3,7 +3,8 @@ import re
 import shutil
 from typing import Dict, List, Optional
 
-from ..safe_io import PathTraversalError, resolve_under_root
+<<<<<<< HEAD
+from ..safe_io import resolve_under_root
 from .pack_archive import PackArchive, PackError
 from .pack_types import PackMetadata
 
@@ -52,7 +53,13 @@ class PackRegistry:
             name = meta["name"]
             version = meta["version"]
 
-            target_dir = os.path.join(self.packs_dir, name, version)
+            # Validate name/version from zip metadata against path traversal.
+            # A malicious pack.json could contain traversal sequences.
+            _validate_pack_segment(name, "name")
+            _validate_pack_segment(version, "version")
+            target_dir = resolve_under_root(
+                self.packs_dir, os.path.join(name, version)
+            )
 
             if os.path.exists(target_dir):
                 if not overwrite:
