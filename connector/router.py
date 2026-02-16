@@ -15,9 +15,11 @@ from .state import ConnectorState
 if False:  # Type hinting only
     from .results_poller import ResultsPoller
 
+from .command_firewall import CommandFirewall
 from .llm_client import LLMClient
 from .prompts import CHAT_STATUS_PROMPT, CHAT_SYSTEM_PROMPT
 from .rate_limiter import RateLimiter
+from .semantic_guard import GuardAction, SemanticGuard
 
 logger = logging.getLogger(__name__)
 
@@ -39,6 +41,9 @@ class CommandRouter:
             user_rpm=self.config.rate_limit_user_rpm,
             channel_rpm=self.config.rate_limit_channel_rpm,
         )
+        # S44/R97: Semantic Guards
+        self.semantic_guard = SemanticGuard()
+        self.command_firewall = CommandFirewall()
 
     async def handle(self, req: CommandRequest) -> CommandResponse:
         """Main dispatch loop."""
@@ -719,8 +724,45 @@ class CommandRouter:
         self, llm: LLMClient, message: str, trust_level: str
     ) -> CommandResponse:
         """General chat with assistant."""
+        # S44: Semantic Guard Evaluation
+        decision = self.semantic_guard.evaluate_request(message, {"trust": trust_level})
+
+        if decision.action == GuardAction.DENY:
+            return CommandResponse(
+                text=(
+                    "[Blocked] Request denied by semantic policy "
+                    f"({decision.reason}). {self._policy_kv(decision.to_contract())}"
+                )
+            )
+
         system_prompt = CHAT_SYSTEM_PROMPT.format(trust_level=trust_level)
         response = await llm.chat(system_prompt, message)
+
+        # S44: Output Validation + SAFE_REPLY sanitization.
+        try:
+            response = self.semantic_guard.validate_output(
+                response, "general", decision.action
+            )
+        except ValueError as e:
+            return CommandResponse(
+                text=(
+                    "[Validation Error] Assistant output invalid: "
+                    f"{e}. {self._policy_kv({'code': 'semantic_output_invalid', 'severity': 'medium', 'action': 'deny', 'reason': str(e)})}"
+                )
+            )
+
+        if decision.action == GuardAction.SAFE_REPLY:
+            safe_response = (
+                response
+                or "I can help with general guidance, but commands are restricted for this request."
+            )
+            return CommandResponse(
+                text=(
+                    f"[Safe Mode] {safe_response}\n\n"
+                    f"(Policy: {self._policy_kv(decision.to_contract())})"
+                )
+            )
+
         return CommandResponse(text=response)
 
     async def _chat_run(
@@ -731,6 +773,20 @@ class CommandRouter:
             return CommandResponse(
                 text="Usage: /chat run <description of what you want>"
             )
+
+        # S44: Semantic Guard Evaluation
+        decision = self.semantic_guard.evaluate_request(request, {"trust": trust_level})
+
+        if decision.action == GuardAction.DENY:
+            return CommandResponse(
+                text=(
+                    "[Blocked] Request denied by semantic policy "
+                    f"({decision.reason}). {self._policy_kv(decision.to_contract())}"
+                )
+            )
+
+        # Force Approval Override based on Risk
+        force_approval_policy = decision.action == GuardAction.FORCE_APPROVAL
 
         # Get available templates (simplified - could fetch from API)
         templates = "txt2img, img2img, upscale (examples)"
@@ -746,7 +802,78 @@ Remember: {"add --approval flag" if trust_level == "UNTRUSTED" else "no --approv
 Output only the command in a code block."""
 
         response = await llm.chat(system_prompt, user_prompt)
-        return CommandResponse(text=response)
+
+        # S44: Output Structure Validation
+        try:
+            response = self.semantic_guard.validate_output(
+                response, "run", decision.action
+            )
+        except ValueError as e:
+            return CommandResponse(
+                text=(
+                    "[Validation Error] Assistant output invalid: "
+                    f"{e}. {self._policy_kv({'code': 'semantic_output_invalid', 'severity': 'high', 'action': 'deny', 'reason': str(e)})}"
+                )
+            )
+
+        # R97: Command Firewall - Extract and Validate
+        import re
+
+        cmd_match = re.search(r"```(?:bash)?\s*(.*?)\s*```", response, re.DOTALL)
+        raw_cmd = cmd_match.group(1).strip() if cmd_match else response.strip()
+
+        # Validate through Firewall
+        normalized = self.command_firewall.validate_suggestion(raw_cmd)
+
+        if not normalized.is_safe:
+            return CommandResponse(
+                text=(
+                    "[Safety Block] Assistant suggested unsafe command: "
+                    f"{normalized.safety_reason}. {self._policy_kv(normalized.to_contract())}"
+                )
+            )
+
+        # R97: Strict /run enforcement (Remediation for Medium Severity)
+        # CRITICAL: keep this check. /chat run must never emit non-/run commands.
+        if normalized.command != "/run":
+            return CommandResponse(
+                text=(
+                    "[Policy Block] Only /run commands are allowed in this mode. "
+                    f"Got: {normalized.command}. "
+                    f"{self._policy_kv({'code': 'firewall_non_run_command', 'severity': 'high', 'action': 'deny', 'reason': 'non_run_command_in_run_mode'})}"
+                )
+            )
+
+        # R97/S44: Apply Policy Overrides
+        # If risk was elevated, ensure --approval is present
+        if (
+            force_approval_policy
+            and "--approval" not in normalized.args
+            and "approval" not in normalized.flags
+        ):
+            normalized.args.append("--approval")
+
+        final_cmd = normalized.to_string()
+
+        # Return as code block for easy copy-paste (or auto-execution UI cues)
+        if force_approval_policy:
+            return CommandResponse(
+                text=(
+                    f"```\n{final_cmd}\n```\n"
+                    f"(Policy: {self._policy_kv(decision.to_contract())})"
+                )
+            )
+        return CommandResponse(text=f"```\n{final_cmd}\n```")
+
+    @staticmethod
+    def _policy_kv(contract: Dict[str, Any]) -> str:
+        ordered = ("code", "severity", "action", "reason")
+        parts = []
+        for key in ordered:
+            value = contract.get(key)
+            if value is not None:
+                parts.append(f"{key}={value}")
+        return "[" + ", ".join(parts) + "]"
 
     async def _chat_template(self, llm: LLMClient, request: str) -> CommandResponse:
         """Generate a template JSON suggestion."""
