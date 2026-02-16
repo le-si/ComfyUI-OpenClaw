@@ -584,6 +584,54 @@ export class MoltbotAPI {
             headers: { ...this._adminTokenHeaders() }
         });
     }
+
+    // --- R71: Job Events ---
+
+    /**
+     * Poll for recent events (fallback).
+     * @param {number} lastSeq - Sequence ID to start from
+     */
+    async getEvents(lastSeq = 0) {
+        return this.fetch(`${this._path("/events")}?since=${lastSeq}`);
+    }
+
+    /**
+     * Subscribe to SSE event stream.
+     * @param {function} onEvent - Callback for events (eventData) => void
+     * @param {function} onError - Callback for errors (error) => void
+     * @returns {EventSource} The event source instance (caller must .close() it)
+     */
+    subscribeEvents(onEvent, onError) {
+        // Use apiURL from shim to get full path
+        const url = apiURL(this._path("/events/stream"));
+        const es = new EventSource(url);
+
+        const handle = (e) => {
+            if (!e.data) return;
+            try {
+                const data = JSON.parse(e.data);
+                // Unified event type injection if missing
+                if (!data.event_type && e.type !== "message") {
+                    data.event_type = e.type;
+                }
+                onEvent(data);
+            } catch (err) {
+                console.warn("[OpenClaw] Failed to parse SSE event:", err);
+            }
+        };
+
+        es.onmessage = handle;
+        es.addEventListener("queued", handle);
+        es.addEventListener("running", handle);
+        es.addEventListener("completed", handle);
+        es.addEventListener("failed", handle);
+
+        es.onerror = (err) => {
+            if (onError) onError(err);
+        };
+
+        return es;
+    }
 }
 
 // Export singleton for backwards compatibility

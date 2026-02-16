@@ -74,6 +74,12 @@ if web is not None:
         )
         from ..services.log_tail import tail_log
         from ..services.metrics import metrics
+        from ..services.parameter_lab import (  # F52
+            create_sweep_handler,
+            get_experiment_handler,
+            list_experiments_handler,
+            update_experiment_handler,
+        )
         from ..services.rate_limit import check_rate_limit
         from ..services.redaction import redact_text
 
@@ -118,6 +124,12 @@ if web is not None:
         from services.access_control import require_observability_access  # type: ignore
         from services.log_tail import tail_log  # type: ignore
         from services.metrics import metrics  # type: ignore
+        from services.parameter_lab import (  # F52
+            create_sweep_handler,
+            get_experiment_handler,
+            list_experiments_handler,
+            update_experiment_handler,
+        )
         from services.rate_limit import check_rate_limit  # type: ignore
         from services.redaction import redact_text  # type: ignore
 
@@ -561,6 +573,15 @@ def register_routes(server) -> None:
                 f"{prefix}/tools/{{name}}/run",
                 tools_run_handler,
             ),  # S12: Execute tool (admin only)
+            # F52: Parameter Lab
+            ("POST", f"{prefix}/lab/sweep", create_sweep_handler),
+            ("GET", f"{prefix}/lab/experiments", list_experiments_handler),
+            ("GET", f"{prefix}/lab/experiments/{{exp_id}}", get_experiment_handler),
+            (
+                "POST",
+                f"{prefix}/lab/experiments/{{exp_id}}/runs/{{run_id}}",
+                update_experiment_handler,
+            ),
         ]
 
         for method, path, handler in core_routes:

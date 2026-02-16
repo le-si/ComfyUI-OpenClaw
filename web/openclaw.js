@@ -6,6 +6,7 @@ import { app } from "../../../scripts/app.js";
 import { moltbotUI } from "./openclaw_ui.js";
 import { installGlobalErrorHandlers } from "./global_error_handler.js";
 import { moltbotApi } from "./openclaw_api.js";
+import { registerContextToolbox } from "./extensions/context_toolbox.js"; // F51
 
 // Tabs
 import { tabManager } from "./openclaw_tabs.js";
@@ -18,6 +19,7 @@ import { LibraryTab } from "./tabs/library_tab.js";
 import { ApprovalsTab } from "./tabs/approvals_tab.js";
 import { ExplorerTab } from "./tabs/explorer_tab.js";
 import { PacksTab } from "./tabs/packs_tab.js";
+import { ParameterLabTab } from "./tabs/parameter_lab_tab.js"; // F52
 
 
 
@@ -108,6 +110,10 @@ async function registerSupportedTabs() {
         tabManager.registerTab(ExplorerTab); // Explorer: inventory + preflight + snapshots
     }
     if (fallbackShowAll || features.packs) tabManager.registerTab(PacksTab);
+
+    // F52: Parameter Lab
+    // Always enabled for now, or check capability
+    tabManager.registerTab(ParameterLabTab);
 
     console.log("[OpenClaw] Tabs registered based on capabilities:", Object.keys(tabManager.tabs).length);
 }
@@ -214,6 +220,9 @@ app.registerExtension({
             console.log("[OpenClaw] Sidebar API not found or failed, using legacy menu button:", e);
             installLegacyMenuButton();
         }
+
+        // F51: Register Context Toolbox
+        registerContextToolbox();
 
         console.log("[OpenClaw] Extension loaded.");
     },

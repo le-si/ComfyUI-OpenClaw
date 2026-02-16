@@ -179,26 +179,89 @@ export class MoltbotUI {
 }
 
 /**
- * F48: Queue Lifecycle Monitor.
- * Polls /health to show deduplicated backpressure status banners.
+ * F48/F49: Queue Lifecycle Monitor.
+ * Consumes R71 events (SSE) with polling fallback to show deduplicated status banners.
+ * Handles disconnected state and recovery based on B-Strict/B-Loose contracts.
  */
 class QueueMonitor {
     constructor(ui) {
         this.ui = ui;
         this.lastBannerTime = 0;
-        this.lastStatus = null;
-        this.bannerTTL = 5000; // 5s debounce for same status
+        this.lastStatusId = null;
+        this.bannerTTL = 5000; // 5s debounce for transient statuses
+        this.es = null;
+        this.isConnected = true; // Assume connected initially
     }
 
     start() {
-        // Poll health periodically for backpressure
+        // 1. Start SSE subscription
+        this.connectSSE();
+
+        // 2. Poll health periodically (backup & backpressure check)
         setInterval(() => this.checkHealth(), 10000);
+    }
+
+    connectSSE() {
+        if (this.es) {
+            this.es.close();
+        }
+
+        this.es = moltbotApi.subscribeEvents(
+            (data) => this.handleEvent(data),
+            (err) => this.handleConnectionError(err)
+        );
+    }
+
+    handleEvent(data) {
+        // Recovered connection if we get an event
+        if (!this.isConnected) {
+            this.isConnected = true;
+            this.showBanner("success", "\u2705 OpenClaw Backend Connected", "connection_restored", 3000);
+        }
+
+        const type = data.event_type;
+        const pid = data.prompt_id ? data.prompt_id.slice(0, 8) : "???";
+
+        switch (type) {
+            case "queued":
+                this.showBanner("info", `\u23F3 Job ${pid} queued`, `job_${type}`, 2000);
+                break;
+            case "running":
+                this.showBanner("info", `\u25B6 Job ${pid} running...`, `job_${type}`, 5000);
+                break;
+            case "failed":
+                this.showBanner("error", `\u274C Job ${pid} failed`, `job_${type}`, 10000);
+                break;
+            case "completed":
+                // Optional: distinct success banner or silent
+                // this.showBanner("success", `\u2705 Job ${pid} completed`, `job_${type}`, 3000);
+                break;
+        }
+    }
+
+    handleConnectionError(err) {
+        // EventSource will retry automatically, but we flag UI state
+        // Only show disconnected if it persists (debounce?)
+        // For now, strict feedback:
+        if (this.isConnected) {
+            this.isConnected = false;
+            this.showBanner("error", "\u26A0\uFE0F Backend Disconnected. Retrying...", "connection_lost");
+        }
     }
 
     async checkHealth() {
         try {
             const res = await moltbotApi.getHealth();
             if (res.ok && res.data) {
+                if (!this.isConnected) {
+                    this.isConnected = true;
+                    this.showBanner("success", "\u2705 Connection Restored", "connection_restored", 3000);
+                    // Reconnect SSE if it was closed or dead
+                    if (!this.es || this.es.readyState === 2) {
+                        this.connectSSE();
+                    }
+                }
+
                 const stats = res.data.stats || {};
                 const obs = stats.observability || {};
 
@@ -206,25 +269,41 @@ class QueueMonitor {
                 if (obs.total_dropped > 0) {
                     this.showBanner(
                         "warning",
-                        `High load: ${obs.total_dropped} events dropped.`,
+                        `\u26A0\uFE0F High load: ${obs.total_dropped} events dropped.`,
                         "backpressure"
                     );
                 }
+            } else {
+                if (this.isConnected) {
+                    this.isConnected = false;
+                    this.showBanner("error", "\u26A0\uFE0F Backend Unreachable", "health_check_failed");
+                }
             }
         } catch (e) {
-            // silent fail
+            if (this.isConnected) {
+                this.isConnected = false;
+                this.showBanner("error", "\u26A0\uFE0F Connection Error", "health_check_exception");
+            }
         }
     }
 
-    showBanner(type, message, statusId) {
+    showBanner(type, message, statusId, ttl = this.bannerTTL) {
         const now = Date.now();
-        // Dedupe: Don't show same status banner if recently shown
-        if (this.lastStatus === statusId && (now - this.lastBannerTime < this.bannerTTL)) {
+        // Dedupe: Don't show same status banner if recently shown and within TTL
+        // Exception: Errors usually override Info
+        if (this.lastStatusId === statusId && (now - this.lastBannerTime < ttl)) {
             return;
         }
 
+        // Priority Check (Simple): Don't overwrite Error with Info
+        // (A real priority queue would be better, but this is F48 baseline)
+        const currentIsError = this.lastStatusId && (this.lastStatusId.includes("error") || this.lastStatusId.includes("failed") || this.lastStatusId.includes("lost"));
+        if (currentIsError && type === "info" && (now - this.lastBannerTime < 3000)) {
+            return; // Hold error for at least 3s before info overwrites
+        }
+
         this.ui.showBanner(type, message);
-        this.lastStatus = statusId;
+        this.lastStatusId = statusId;
         this.lastBannerTime = now;
     }
 }
