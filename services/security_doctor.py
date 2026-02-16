@@ -957,7 +957,10 @@ def check_hardening_wave2(report: SecurityReport) -> None:
 
     # 1. S35 Transform Isolation
     try:
-        from .constrained_transforms import get_transform_executor
+        from .constrained_transforms import (
+            TransformExecutorUnavailable,
+            get_transform_executor,
+        )
         from .transform_common import is_transforms_enabled
         from .transform_runner import TransformProcessRunner
 
@@ -993,6 +996,17 @@ def check_hardening_wave2(report: SecurityReport) -> None:
                     )
                 )
 
+    except TransformExecutorUnavailable as e:
+        report.add(
+            SecurityCheckResult(
+                name="s35_isolation",
+                severity=SecuritySeverity.FAIL.value,
+                message="S35: Process isolation unavailable; transforms disabled for safety",
+                category="wave2",
+                detail=str(e),
+                remediation="Restore services.transform_runner and its dependencies.",
+            )
+        )
     except ImportError:
         report.add(
             SecurityCheckResult(
@@ -1000,6 +1014,17 @@ def check_hardening_wave2(report: SecurityReport) -> None:
                 severity=SecuritySeverity.FAIL.value,
                 message="S35: Modules not importable",
                 category="wave2",
+            )
+        )
+    except RuntimeError as e:
+        report.add(
+            SecurityCheckResult(
+                name="s35_isolation",
+                severity=SecuritySeverity.FAIL.value,
+                message="S35: Process isolation check failed at runtime",
+                category="wave2",
+                detail=str(e),
+                remediation="Inspect transform runner initialization and environment dependencies.",
             )
         )
 

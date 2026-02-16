@@ -131,5 +131,43 @@ def transform(data):
                 os.remove(module_path)
 
 
+class TestGetTransformExecutorFailClosed(unittest.TestCase):
+    """Regression tests for fail-closed transform executor initialization."""
+
+    def setUp(self):
+        import services.constrained_transforms as ct
+
+        ct._executor = None
+
+    def tearDown(self):
+        import services.constrained_transforms as ct
+
+        ct._executor = None
+
+    def test_raises_when_process_runner_unavailable(self):
+        import services.constrained_transforms as ct
+
+        sentinel = object()
+        saved = sys.modules.get("services.transform_runner", sentinel)
+        sys.modules["services.transform_runner"] = None  # type: ignore[assignment]
+        try:
+            with self.assertRaises(ct.TransformExecutorUnavailable) as ctx:
+                ct.get_transform_executor()
+            self.assertIn("TransformProcessRunner unavailable", str(ctx.exception))
+        finally:
+            if saved is sentinel:
+                sys.modules.pop("services.transform_runner", None)
+            else:
+                sys.modules["services.transform_runner"] = saved  # type: ignore[assignment]
+
+    def test_returns_process_runner_when_available(self):
+        from services.constrained_transforms import get_transform_executor
+
+        executor = get_transform_executor()
+        from services.transform_runner import TransformProcessRunner
+
+        self.assertIsInstance(executor, TransformProcessRunner)
+
+
 if __name__ == "__main__":
     unittest.main()

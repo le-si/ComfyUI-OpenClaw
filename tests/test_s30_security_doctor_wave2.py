@@ -58,6 +58,21 @@ class TestS30Wave2(unittest.TestCase):
 
         self.assertEqual(check.severity, SecuritySeverity.PASS.value)
 
+    @patch("services.transform_common.is_transforms_enabled")
+    @patch("services.constrained_transforms.get_transform_executor")
+    def test_s35_runtimeerror_reports_fail(self, mock_executor, mock_enabled):
+        mock_enabled.return_value = True
+        mock_executor.side_effect = RuntimeError(
+            "TransformProcessRunner unavailable in current runtime"
+        )
+
+        check_hardening_wave2(self.report)
+
+        check = next(c for c in self.report.checks if c.name == "s35_isolation")
+        self.assertEqual(check.severity, SecuritySeverity.FAIL.value)
+        self.assertIn("runtime", check.message.lower())
+        self.assertIn("unavailable", check.detail.lower())
+
     @patch("services.tool_runner.is_tools_enabled")
     def test_s12_enabled(self, mock_enabled):
         mock_enabled.return_value = True

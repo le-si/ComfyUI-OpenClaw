@@ -60,6 +60,7 @@ __all__ = [
     "TransformStatus",
     "TrustedTransform",
     "TransformExecutor",
+    "TransformExecutorUnavailable",
     "TransformTimeoutError",
     "get_transform_executor",
     "get_transform_registry",
@@ -74,6 +75,12 @@ __all__ = [
 
 class TransformTimeoutError(Exception):
     """Raised when a transform exceeds its timeout budget."""
+
+    pass
+
+
+class TransformExecutorUnavailable(RuntimeError):
+    """Raised when secure transform process isolation cannot be established."""
 
     pass
 
@@ -305,9 +312,15 @@ def get_transform_executor() -> TransformExecutor:
             # We treat TransformProcessRunner as compatible with TransformExecutor interface
             _executor = TransformProcessRunner(registry)  # type: ignore
         except ImportError as e:
-            logger.warning(
-                f"S35: Could not import transform_runner ({e}), falling back to thread executor."
+            # CRITICAL: do not fall back to TransformExecutor here.
+            # Thread-based execution cannot be force-killed and weakens S35 isolation.
+            logger.error(
+                f"S35: Could not import transform_runner ({e}). "
+                "Refusing insecure in-process fallback; transforms disabled."
             )
-            _executor = TransformExecutor(get_transform_registry())
+            raise TransformExecutorUnavailable(
+                "TransformProcessRunner unavailable; transforms disabled for security. "
+                f"Import error: {e}"
+            ) from e
 
     return _executor
