@@ -32,6 +32,17 @@ This project is intentionally **not** a general-purpose assistant platform with 
 ## Latest Updates - Click to expand
 
 <details>
+<summary><strong>Operator UX improvements: context toolbox, parameter lab history/replay, and compare workflow baseline</strong></summary>
+
+- Added in-canvas OpenClaw quick actions on node context menus: Inspect, Doctor, Queue Status, Compare, and Settings.
+- Improved operator recovery flow by wiring quick actions to capability-aware targets with deterministic fallback guidance when optional endpoints are unavailable.
+- Added Parameter Lab history flow so operators can browse saved experiments, load details, and replay run parameters back into the current graph.
+- Added compare workflow baseline in Parameter Lab, including a dedicated compare endpoint with bounded fan-out and stricter payload validation.
+- Expanded auth and regression coverage so compare routes remain admin-protected and route-registration drift is caught earlier.
+
+</details>
+
+<details>
 <summary><strong>Pack security hardening: path traversal defense and strict API validation</strong></summary>
 
 - Added path traversal protection for pack uninstall and pack path resolution.
@@ -168,6 +179,7 @@ This project is intentionally **not** a general-purpose assistant platform with 
   - [Set an Admin Token](#3-optional-recommended-set-an-admin-token)
 - [Nodes](#nodes)
 - [Extension UI](#extension-ui)
+- [Operator UX Features](#operator-ux-features)
 - [API Overview](#api-overview)
   - [Observability](#observability-read-only)
   - [LLM config](#llm-config-non-secret)
@@ -272,6 +284,49 @@ See `web/docs/` for node usage notes.
 ![OpenClaw /sidebar ui example](assets/sidebar.png)
 
 The frontend lives in `web/` and is served by ComfyUI as an extension panel. It uses the backend routes below (preferring `/api/openclaw/*`).
+
+## Operator UX Features
+
+### In-canvas context toolbox
+
+Right-click a node and open the `OpenClaw` menu to access:
+
+- `Inspect`: jump to the Explorer troubleshooting path.
+- `Doctor`: run diagnostics and show readiness feedback.
+- `Queue Status`: jump directly to queue/job monitoring.
+- `Compare`: open Parameter Lab in compare setup mode for the selected node.
+- `Settings`: jump to OpenClaw settings.
+
+These actions are capability-aware and degrade to safe guidance when optional backend capabilities are unavailable.
+
+### Parameter Lab history and replay
+
+Parameter Lab now supports experiment history and run replay:
+
+- `History` lists saved experiments from local state.
+- `Load` opens stored experiment details and run statuses.
+- `Replay` applies a selected run's parameter values back into the active workflow graph.
+
+This makes iterative tuning and backtracking faster without manually retyping prior parameter sets.
+
+### Compare workflow baseline
+
+Parameter Lab includes a baseline compare flow for model/widget A/B style checks:
+
+- Use `Compare` from the node context toolbox, or `Compare Models` inside Parameter Lab.
+- The compare planner generates bounded runs from one selected comparison dimension.
+- Backend compare submission is validated and admin-protected.
+- Compare experiments are persisted and visible in history alongside sweep experiments.
+
+Current scope is focused on bounded compare orchestration and replay-ready records; richer side-by-side evaluation and winner handoff are still being expanded.
+
+### Operator guidance and quick recovery
+
+Operator actions are wired for faster recovery loops:
+
+- queue/status routing prefers the dedicated monitor view when available
+- doctor checks surface immediate readiness feedback
+- compare and history flows are connected so experiments can be reviewed and replayed quickly
 
 ## API Overview
 

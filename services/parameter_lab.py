@@ -30,6 +30,7 @@ logger = logging.getLogger("ComfyUI-OpenClaw.services.parameter_lab")
 
 # Configuration
 MAX_SWEEP_COMBINATIONS = 50  # Hard cap to prevent queue flooding
+MAX_COMPARE_ITEMS = 8  # F50: Hard cap for side-by-side comparison
 EXPERIMENT_RETENTION_COUNT = 20
 
 
@@ -122,6 +123,64 @@ class SweepPlanner:
         return runs
 
 
+class ComparePlanner:
+    """
+    F50: Generates bounded multi-model comparison plans.
+    Enforces stricter fan-out and timeout policies than generic sweeps.
+    """
+
+    def generate(
+        self, workflow: str, items: List[Any], node_id: Any, widget_name: str
+    ) -> SweepPlan:
+        if not isinstance(workflow, str) or not workflow.strip():
+            raise ValueError("workflow_json is required")
+        if not isinstance(items, list) or not items:
+            raise ValueError("items must be a non-empty list")
+        if node_id is None:
+            raise ValueError("node_id is required")
+        if not isinstance(widget_name, str) or not widget_name.strip():
+            raise ValueError("widget_name is required")
+        if len(items) > MAX_COMPARE_ITEMS:
+            raise ValueError(f"Too many items for comparison (max {MAX_COMPARE_ITEMS})")
+
+        normalized_items: List[Any] = []
+        for item in items:
+            if isinstance(item, str):
+                if not item.strip():
+                    raise ValueError("items must not contain empty strings")
+                normalized_items.append(item)
+                continue
+            if isinstance(item, (int, float, bool)):
+                normalized_items.append(item)
+                continue
+            raise ValueError("items must contain only scalar values")
+
+        exp_id = f"cmp_{uuid.uuid4().hex[:8]}"
+
+        # Create a single dimension for the model/item
+        dim = SweepDimension(
+            node_id=str(node_id),
+            widget_name=widget_name,
+            values=normalized_items,
+            strategy="compare",
+        )
+
+        # Generate runs (1 per item)
+        runs = []
+        for val in normalized_items:
+            runs.append({f"{node_id}.{widget_name}": val})
+
+        return SweepPlan(
+            experiment_id=exp_id,
+            workflow_json=workflow,
+            dimensions=[dim],
+            runs=runs,
+        )
+
+
+_compare_planner = ComparePlanner()
+
+
 class ExperimentStore:
     """Persists experiment metadata."""
 
@@ -129,10 +188,19 @@ class ExperimentStore:
         self.store_dir = state_dir / "experiments"
         self.store_dir.mkdir(parents=True, exist_ok=True)
 
+    @staticmethod
+    def _is_experiment_file(path: Path) -> bool:
+        return path.name.startswith("exp_") or path.name.startswith("cmp_")
+
     def _enforce_retention(self) -> None:
         """Delete oldest experiments if count exceeds limit."""
         try:
-            files = [(f, f.stat().st_mtime) for f in self.store_dir.glob("exp_*.json")]
+            # R78/F50: Include both exp_* (sweeps) and cmp_* (compares).
+            files = [
+                (file_path, file_path.stat().st_mtime)
+                for file_path in self.store_dir.glob("*.json")
+                if self._is_experiment_file(file_path)
+            ]
             files.sort(key=lambda item: item[1], reverse=True)
             for file_path, _ in files[EXPERIMENT_RETENTION_COUNT:]:
                 try:
@@ -161,8 +229,13 @@ class ExperimentStore:
 
     def list_experiments(self) -> List[Dict[str, Any]]:
         results: List[Dict[str, Any]] = []
+        # R78/F50: Include both exp_* and cmp_*.
         files = sorted(
-            self.store_dir.glob("exp_*.json"),
+            [
+                file_path
+                for file_path in self.store_dir.glob("*.json")
+                if self._is_experiment_file(file_path)
+            ],
             key=lambda item: item.stat().st_mtime,
             reverse=True,
         )
@@ -175,6 +248,13 @@ class ExperimentStore:
                         "id": data["experiment_id"],
                         "created_at": data.get("created_at"),
                         "run_count": len(data.get("runs", [])),
+                        "completed_count": len(
+                            [
+                                r
+                                for r in data.get("results", {}).values()
+                                if r.get("status") == "completed"
+                            ]
+                        ),
                     }
                 )
             except Exception:
@@ -244,6 +324,50 @@ def _require_admin(request: web.Request) -> Optional[web.Response]:
             {"ok": False, "error": err or "unauthorized"}, status=403
         )
     return None
+
+
+async def create_compare_handler(request: web.Request) -> web.Response:
+    if web is None:
+        raise RuntimeError("aiohttp not available")
+
+    deny = _require_admin(request)
+    if deny:
+        return deny
+
+    try:
+        data = await request.json()
+    except Exception:
+        return web.json_response({"ok": False, "error": "invalid_json"}, status=400)
+
+    # Input validation.
+    if not isinstance(data, dict):
+        return web.json_response({"ok": False, "error": "invalid_payload"}, status=400)
+
+    workflow = data.get("workflow_json")
+    items = data.get("items", [])  # List of comparison values.
+    node_id = data.get("node_id")
+    widget_name = data.get("widget_name")
+
+    if not isinstance(items, list):
+        return web.json_response(
+            {"ok": False, "error": "items_must_be_list"}, status=400
+        )
+    if node_id is None:
+        return web.json_response({"ok": False, "error": "node_id_required"}, status=400)
+    if not isinstance(widget_name, str) or not widget_name.strip():
+        return web.json_response(
+            {"ok": False, "error": "widget_name_required"}, status=400
+        )
+
+    try:
+        plan = _compare_planner.generate(workflow, items, node_id, widget_name)
+        get_store().save_plan(plan)
+        return web.json_response({"ok": True, "plan": asdict(plan)})
+    except ValueError as exc:
+        return web.json_response({"ok": False, "error": str(exc)}, status=400)
+    except Exception as exc:
+        logger.error("Compare creation failed: %s", exc)
+        return web.json_response({"ok": False, "error": "internal_error"}, status=500)
 
 
 async def create_sweep_handler(request: web.Request) -> web.Response:

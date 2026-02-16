@@ -19,6 +19,7 @@ coverage.xml
 REFERENCE/
 AGENT_CONTEXT.md
 AGENTS.md
+AGENT.md
 ROADMAP.md
 tests_output.txt
 node_modules/

@@ -18,22 +18,22 @@ type BannerSeverity = 'info' | 'success' | 'warning' | 'error';
 interface BannerStatus {
   /** Unique identifier for deduplication (e.g., 'backpressure_123') */
   id: string;
-  
+
   /** Visual severity level */
   severity: BannerSeverity;
-  
+
   /** Display message */
   message: string;
-  
+
   /** Source of the banner (e.g., 'system', 'queue', 'connectivity') */
   source: string;
-  
+
   /** Time-to-live in milliseconds. If missing, persists until dismissed or replaced. */
   ttl_ms?: number;
-  
+
   /** Whether the user can manually dismiss the banner */
   dismissible?: boolean;
-  
+
   /** Optional clickable action */
   action?: {
     label: string;
@@ -62,16 +62,16 @@ Defines quick actions available in the node context menu (via ComfyUI extension 
 interface ContextAction {
   /** Unique action ID */
   id: string;
-  
+
   /** Display label */
   label: string;
-  
+
   /** Optional icon class or emoji */
   icon?: string;
-  
+
   /** Primary target category */
   target: 'explorer' | 'jobs' | 'settings' | 'doctor' | 'url';
-  
+
   /** Context data required for the action */
   payload?: {
     node_type?: string;
@@ -79,7 +79,7 @@ interface ContextAction {
     widget_name?: string;
     [key: string]: any;
   };
-  
+
   /** Filter function to determine availability (frontend-side) */
   condition?: (node: any) => boolean;
 }

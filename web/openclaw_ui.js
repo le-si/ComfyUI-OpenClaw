@@ -308,6 +308,98 @@ class QueueMonitor {
     }
 }
 
+
+/**
+ * F51: Unified Action Router.
+ * Centralizes navigation and command logic for key operator tasks.
+ */
+export class MoltbotActions {
+    constructor(ui) {
+        this.ui = ui;
+    }
+
+    /**
+     * Open Settings tab, optionally scrolling to a specific section.
+     */
+    openSettings(section = "general") {
+        tabManager.activateTab("settings");
+        // Future: signal settings tab to scroll to section
+    }
+
+    /**
+     * Open Queue/Jobs view.
+     * Currently mapped to "Queue" or "Jobs" tab if it exists, or just sidebar.
+     * For MVP, we don't have a dedicated Jobs tab yet (it's part of Explorer or separate).
+     * We'll map to Explorer for now as it has "Jobs" sub-view concept in plan.
+     */
+    openQueue(filter = "all") {
+        if (tabManager.tabs["job-monitor"]) {
+            tabManager.activateTab("job-monitor");
+            return;
+        }
+        tabManager.activateTab("explorer");
+    }
+
+    /**
+     * Run Doctor diagnostics.
+     * Opens Doctor view (in Explorer or Settings).
+     */
+    async openDoctor() {
+        tabManager.activateTab("settings");
+        try {
+            const res = await moltbotApi.fetch(moltbotApi._path("/security/doctor"));
+            if (res.ok && res.data) {
+                const issueCount = Array.isArray(res.data.issues)
+                    ? res.data.issues.length
+                    : 0;
+                this.ui.showBanner(
+                    issueCount > 0 ? "warning" : "success",
+                    issueCount > 0
+                        ? `Doctor found ${issueCount} issues. See Settings for details.`
+                        : "Doctor check passed."
+                );
+                return;
+            }
+        } catch (_err) {
+            // Capability fallback below.
+        }
+        this.ui.showBanner(
+            "info",
+            "Doctor diagnostics endpoint unavailable. Open Settings for manual checks."
+        );
+    }
+
+    /**
+     * Open Explorer, optionally filtering by node type.
+     */
+    openExplorer(nodeType = null) {
+        tabManager.activateTab("explorer");
+    }
+
+    /**
+     * Open Parameter Lab for comparison.
+     * Sets the lab to Compare mode for the given node.
+     */
+    openCompare(node = null) {
+        tabManager.activateTab("parameter-lab");
+        // F50: Signal Lab to init comparison for this node
+        // We'll rely on global accessible tab instance or event bus
+        // For now, let's assume tabManager can give us the instance if we need to call methods directly
+        // or we just open the tab and let the user set it up (MVP)
+        if (node) {
+            console.log("OpenClaw: Compare requested for", node.title || node.type);
+            // Dispatch after tab activation tick so listeners are ready.
+            setTimeout(() => {
+                window.dispatchEvent(
+                    new CustomEvent("moltbot:lab:compare", { detail: { node } })
+                );
+            }, 0);
+        }
+    }
+}
+
 export const moltbotUI = new MoltbotUI();
+export const moltbotActions = new MoltbotActions(moltbotUI);
+
 const monitor = new QueueMonitor(moltbotUI);
 monitor.start();

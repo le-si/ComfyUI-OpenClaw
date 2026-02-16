@@ -15,9 +15,12 @@ except Exception:  # pragma: no cover
 
 
 from services.parameter_lab import (  # noqa: E402
+    MAX_COMPARE_ITEMS,
     MAX_SWEEP_COMBINATIONS,
+    ComparePlanner,
     ExperimentStore,
     SweepPlanner,
+    create_compare_handler,
     create_sweep_handler,
     get_experiment_handler,
     list_experiments_handler,
@@ -54,11 +57,64 @@ class TestSweepPlanner(unittest.TestCase):
         self.assertIn("exceeds limit", str(ctx.exception))
 
 
+class TestComparePlanner(unittest.TestCase):
+    def test_generate_compare_plan(self):
+        planner = ComparePlanner()
+        items = ["checkpoint1.ckpt", "checkpoint2.ckpt"]
+        plan = planner.generate(
+            workflow='{"nodes":[]}', items=items, node_id="10", widget_name="ckpt_name"
+        )
+        self.assertEqual(len(plan.runs), 2)
+        self.assertEqual(plan.dimensions[0].strategy, "compare")
+        self.assertIn({"10.ckpt_name": "checkpoint1.ckpt"}, plan.runs)
+
+    def test_generate_rejects_oversized_compare(self):
+        planner = ComparePlanner()
+        items = [f"model_{i}" for i in range(MAX_COMPARE_ITEMS + 1)]
+        with self.assertRaises(ValueError) as ctx:
+            planner.generate(
+                workflow='{"nodes":[]}',
+                items=items,
+                node_id="10",
+                widget_name="ckpt_name",
+            )
+        self.assertIn(f"max {MAX_COMPARE_ITEMS}", str(ctx.exception))
+
+    def test_generate_rejects_non_scalar_items(self):
+        planner = ComparePlanner()
+        with self.assertRaises(ValueError) as ctx:
+            planner.generate(
+                workflow='{"nodes":[]}',
+                items=[{"bad": "item"}],
+                node_id="10",
+                widget_name="ckpt_name",
+            )
+        self.assertIn("scalar values", str(ctx.exception))
+
+
+class TestExperimentStore(unittest.TestCase):
+    def test_list_experiments_includes_compare_plans(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            store = ExperimentStore(Path(tmp_dir))
+            compare = ComparePlanner().generate(
+                workflow='{"nodes":[]}',
+                items=["m1", "m2"],
+                node_id="10",
+                widget_name="ckpt_name",
+            )
+            store.save_plan(compare)
+
+            experiments = store.list_experiments()
+            self.assertEqual(1, len(experiments))
+            self.assertTrue(experiments[0]["id"].startswith("cmp_"))
+
+
 @unittest.skipIf(web is None, "aiohttp not installed")
 class TestParameterLabHandlers(AioHTTPTestCase):
     async def get_application(self):
         app = web.Application()
         app.router.add_post("/openclaw/lab/sweep", create_sweep_handler)
+        app.router.add_post("/openclaw/lab/compare", create_compare_handler)
         app.router.add_get("/openclaw/lab/experiments", list_experiments_handler)
         app.router.add_get("/openclaw/lab/experiments/{exp_id}", get_experiment_handler)
         app.router.add_post(
@@ -115,6 +171,46 @@ class TestParameterLabHandlers(AioHTTPTestCase):
         data = await resp.json()
         self.assertTrue(data["ok"])
         self.assertEqual(len(data["plan"]["runs"]), 2)
+
+    @patch("services.parameter_lab.check_rate_limit", return_value=True)
+    @patch("services.parameter_lab.require_admin_token", return_value=(True, None))
+    @patch("services.parameter_lab.get_store")
+    @unittest_run_loop
+    async def test_create_compare_success(
+        self, mock_get_store, _mock_admin, _mock_rate_limit
+    ):
+        mock_get_store.return_value = self._store
+        payload = {
+            "workflow_json": '{"nodes":[]}',
+            "items": ["model_A", "model_B"],
+            "node_id": "10",
+            "widget_name": "ckpt",
+        }
+        resp = await self.client.post("/openclaw/lab/compare", json=payload)
+        self.assertEqual(resp.status, 200)
+        data = await resp.json()
+        self.assertTrue(data["ok"])
+        self.assertEqual(len(data["plan"]["runs"]), 2)
+
+    @patch("services.parameter_lab.check_rate_limit", return_value=True)
+    @patch("services.parameter_lab.require_admin_token", return_value=(True, None))
+    @patch("services.parameter_lab.get_store")
+    @unittest_run_loop
+    async def test_create_compare_rejects_non_list_items(
+        self, mock_get_store, _mock_admin, _mock_rate_limit
+    ):
+        mock_get_store.return_value = self._store
+        payload = {
+            "workflow_json": '{"nodes":[]}',
+            "items": "model_A",
+            "node_id": "10",
+            "widget_name": "ckpt",
+        }
+        resp = await self.client.post("/openclaw/lab/compare", json=payload)
+        self.assertEqual(resp.status, 400)
+        data = await resp.json()
+        self.assertFalse(data["ok"])
+        self.assertEqual(data["error"], "items_must_be_list")
 
     @patch("services.parameter_lab.check_rate_limit", return_value=True)
     @patch("services.parameter_lab.require_admin_token", return_value=(True, None))

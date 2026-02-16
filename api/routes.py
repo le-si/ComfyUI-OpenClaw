@@ -75,6 +75,7 @@ if web is not None:
         from ..services.log_tail import tail_log
         from ..services.metrics import metrics
         from ..services.parameter_lab import (  # F52
+            create_compare_handler,
             create_sweep_handler,
             get_experiment_handler,
             list_experiments_handler,
@@ -125,6 +126,7 @@ if web is not None:
         from services.log_tail import tail_log  # type: ignore
         from services.metrics import metrics  # type: ignore
         from services.parameter_lab import (  # F52
+            create_compare_handler,
             create_sweep_handler,
             get_experiment_handler,
             list_experiments_handler,
@@ -575,6 +577,7 @@ def register_routes(server) -> None:
             ),  # S12: Execute tool (admin only)
             # F52: Parameter Lab
             ("POST", f"{prefix}/lab/sweep", create_sweep_handler),
+            ("POST", f"{prefix}/lab/compare", create_compare_handler),
             ("GET", f"{prefix}/lab/experiments", list_experiments_handler),
             ("GET", f"{prefix}/lab/experiments/{{exp_id}}", get_experiment_handler),
             (

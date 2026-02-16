@@ -30,6 +30,10 @@ export const ParameterLabTab = {
         header.innerHTML = `
             <h3>Parameter Lab</h3>
             <div class="moltbot-lab-actions">
+                <button id="lab-history" class="moltbot-btn has-icon" title="View History">
+                    \uD83D\uDCDC History
+                </button>
+                <div class="moltbot-separator"></div>
                 <button id="lab-compare-models" class="moltbot-btn has-icon" title="Wizard: Compare Models">
                     \u2696\uFE0F Compare Models
                 </button>
@@ -56,9 +60,79 @@ export const ParameterLabTab = {
         container.querySelector("#lab-add-dim").onclick = () => this.addDimensionUI();
         container.querySelector("#lab-generate").onclick = () => this.generatePlan();
         container.querySelector("#lab-compare-models").onclick = () => this.showCompareWizard();
+        container.querySelector("#lab-history").onclick = () => this.showHistory();
 
         // Initial Render
         this.renderDimensions();
+
+        // F50: Listen for Compare Request (once)
+        if (!this._listeningForCompare) {
+            window.addEventListener("moltbot:lab:compare", (e) => {
+                const node = e.detail.node;
+                if (node) {
+                    this.showCompareWizard(node);
+                }
+            });
+            this._listeningForCompare = true;
+        }
+    },
+
+    async showHistory() {
+        this.resultsContainer.innerHTML = "<div class='moltbot-loading'>Loading history...</div>";
+        try {
+            const res = await moltbotApi.fetch(moltbotApi._path("/lab/experiments"));
+            if (res.ok && res.data) {
+                this.renderHistoryList(res.data.experiments);
+            } else {
+                this.resultsContainer.innerHTML = "<div class='moltbot-error'>Failed to load history.</div>";
+            }
+        } catch (e) {
+            this.resultsContainer.innerHTML = "<div class='moltbot-error'>Error: " + e.message + "</div>";
+        }
+    },
+
+    renderHistoryList(experiments) {
+        this.resultsContainer.innerHTML = "";
+        const header = document.createElement("div");
+        header.className = "moltbot-lab-plan-header";
+        header.innerHTML = `<h4>Experiment History</h4><span>${experiments.length} Records</span>`;
+        this.resultsContainer.appendChild(header);
+
+        const list = document.createElement("div");
+        list.className = "moltbot-lab-run-list";
+
+        if (experiments.length === 0) {
+            list.innerHTML = "<div class='moltbot-hint'>No history found. Run a sweep or compare to see results here.</div>";
+        }
+
+        experiments.forEach(exp => {
+            const item = document.createElement("div");
+            item.className = "moltbot-lab-run-item";
+            const dateStr = new Date(exp.created_at * 1000).toLocaleString();
+            item.innerHTML = `
+                <span class="run-idx">${exp.id.slice(0, 8)}</span>
+                <span class="run-params">${dateStr}</span>
+                <span class="run-status">${exp.completed_count}/${exp.run_count} runs</span>
+                <button class="moltbot-btn-icon load-exp" title="Load Details">\u2192</button>
+             `;
+            item.querySelector(".load-exp").onclick = () => this.loadExperiment(exp.id);
+            list.appendChild(item);
+        });
+        this.resultsContainer.appendChild(list);
+    },
+
+    async loadExperiment(expId) {
+        this.resultsContainer.innerHTML = "<div class='moltbot-loading'>Loading details...</div>";
+        try {
+            const res = await moltbotApi.fetch(moltbotApi._path(`/lab/experiments/${expId}`));
+            if (res.ok && res.data) {
+                this.plan = res.data.experiment;
+                this.experimentId = this.plan.experiment_id;
+                this.renderPlan();
+            }
+        } catch (e) {
+            this.resultsContainer.innerHTML = "<div class='moltbot-error'>Failed to load experiment.</div>";
+        }
     },
 
     addDimensionUI(defaults = null) {
@@ -114,20 +188,25 @@ export const ParameterLabTab = {
     },
 
     // F50: Compare Models Wizard
-    showCompareWizard() {
-        // 1. Scan for loader nodes
-        const nodes = app.graph._nodes.filter(n => n.type === "CheckpointLoaderSimple" || n.type === "LORALoader" || n.type === "UNETLoader");
-        if (nodes.length === 0) {
-            moltbotUI.showBanner("warning", "No Checkpoint/LoRA loaders found in workflow.");
-            return;
+    showCompareWizard(targetNode = null) {
+        // 1. Scan for loader nodes if no target provided
+        let node = targetNode;
+        if (!node) {
+            const nodes = app.graph._nodes.filter(n => n.type === "CheckpointLoaderSimple" || n.type === "LORALoader" || n.type === "UNETLoader");
+            if (nodes.length === 0) {
+                moltbotUI.showBanner("warning", "No Checkpoint/LoRA loaders found in workflow.");
+                return;
+            }
+            node = nodes[0];
         }
 
-        // Simple prompt (In a real UI, use a modal. Here uses window.prompt/confirm for MVP or reuse config)
-        // Let's autopick the first one and show a prompt for models? 
-        // Better: Clear dimensions and set up the first found loader.
-
-        const node = nodes[0];
-        const widget = node.widgets.find(w => w.name === "ckpt_name" || w.name === "lora_name" || w.name === "unet_name");
+        // 2. Find acceptable widget
+        const widget = (node.widgets || []).find(
+            w =>
+                w.name === "ckpt_name" ||
+                w.name === "lora_name" ||
+                w.name === "unet_name"
+        );
 
         if (!widget) {
             moltbotUI.showBanner("error", "Could not find model widget on node " + node.id);
@@ -141,10 +220,6 @@ export const ParameterLabTab = {
         this.dimensions = [];
 
         // Add dimension pre-filled
-        // We can't easily show a checkbox modal in 3 lines of code without a proper dialog system.
-        // So we'll just add the dimension and let the user type/paste the model names, 
-        // OR we can try to get the options.
-
         const options = widget.options?.values || [];
         let defaultValues = "";
         if (options.length > 0) {
@@ -156,7 +231,7 @@ export const ParameterLabTab = {
             node_id: node.id,
             widget_name: widget.name,
             values_str: defaultValues,
-            strategy: "grid"
+            strategy: "compare"
         });
 
         moltbotUI.showBanner("info", `Setup comparison for Node ${node.id} (${node.title}). Edit values to select models.`);
@@ -181,7 +256,7 @@ export const ParameterLabTab = {
                 if (v === "false") return false;
                 // Check if it looks like a number
                 const n = parseFloat(v);
-                // If it parses as a number but was meant as a string (e.g. "1.5" model name), 
+                // If it parses as a number but was meant as a string (e.g. "1.5" model name),
                 // we might have issues. But usually models have extensions.
                 // If it contains non-numeric chars, it's a string.
                 if (!isNaN(n) && isFinite(n) && !v.match(/[a-zA-Z]/)) return n;
@@ -192,24 +267,47 @@ export const ParameterLabTab = {
                 node_id: d.node_id,
                 widget_name: d.widget_name,
                 values: values,
-                strategy: "grid"
+                strategy: d.strategy || "grid"
             };
         });
 
-        moltbotUI.showBanner("info", "Generating sweep plan...");
+        const hasCompare = params.some(p => p.strategy === "compare");
+        if (hasCompare && params.length !== 1) {
+            moltbotUI.showBanner(
+                "error",
+                "Compare mode supports exactly one comparison dimension."
+            );
+            return;
+        }
 
         try {
             // Serialize current workflow
             // Use app.graph.serialize() to get state
             const graphJson = JSON.stringify(app.graph.serialize());
 
-            const res = await moltbotApi.fetch(moltbotApi._path("/lab/sweep"), {
-                method: "POST",
-                body: JSON.stringify({
-                    workflow_json: graphJson,
-                    params: params
-                })
-            });
+            let res;
+            if (hasCompare) {
+                const compare = params[0];
+                moltbotUI.showBanner("info", "Generating compare plan...");
+                res = await moltbotApi.fetch(moltbotApi._path("/lab/compare"), {
+                    method: "POST",
+                    body: JSON.stringify({
+                        workflow_json: graphJson,
+                        items: compare.values,
+                        node_id: compare.node_id,
+                        widget_name: compare.widget_name
+                    })
+                });
+            } else {
+                moltbotUI.showBanner("info", "Generating sweep plan...");
+                res = await moltbotApi.fetch(moltbotApi._path("/lab/sweep"), {
+                    method: "POST",
+                    body: JSON.stringify({
+                        workflow_json: graphJson,
+                        params: params
+                    })
+                });
+            }
 
             if (res.ok && res.data) {
                 this.plan = res.data.plan;
@@ -246,13 +344,25 @@ export const ParameterLabTab = {
             item.innerHTML = `
                 <span class="run-idx">#${idx + 1}</span>
                 <span class="run-params">${JSON.stringify(run).slice(0, 50)}...</span>
-                <span class="run-status pending">Pending</span>
+                <span class="run-status ${run.status || 'pending'}">${run.status || 'Pending'}</span>
+                <button class="moltbot-btn-icon replay-run" title="Replay (Apply Values)">\u21A9\uFE0F</button>
             `;
             item.dataset.idx = idx;
+            item.querySelector(".replay-run").onclick = (e) => {
+                e.stopPropagation();
+                this.replayRun(run);
+            };
             list.appendChild(item);
         });
 
         this.resultsContainer.appendChild(list);
+
+        // F50: Side-by-Side Comparison Layout
+        if (this.plan.dimensions.some(d => d.strategy === "compare")) {
+            this.resultsContainer.classList.add("moltbot-lab-compare-mode");
+        } else {
+            this.resultsContainer.classList.remove("moltbot-lab-compare-mode");
+        }
 
         this.resultsContainer.querySelector("#lab-run-all").onclick = () => this.runExperiment();
     },
@@ -340,6 +450,13 @@ export const ParameterLabTab = {
         } finally {
             // Keep monitoring
             moltbotUI.showBanner("success", "All runs queued. Monitoring progress...");
+        }
+    },
+
+    replayRun(run) {
+        if (confirm("Apply these parameter values to the current workflow?")) {
+            this.applyOverrides(run);
+            moltbotUI.showBanner("success", "Values applied to nodes.");
         }
     },
 

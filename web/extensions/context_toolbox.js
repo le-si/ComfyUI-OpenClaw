@@ -1,7 +1,4 @@
 import { app } from "../../scripts/app.js";
-import { tabManager } from "../openclaw_tabs.js";
-import { moltbotUI } from "../openclaw_ui.js";
-import { moltbotApi } from "../openclaw_api.js";
 
 /**
  * F51: In-Canvas Context Toolbox
@@ -11,6 +8,10 @@ export function registerContextToolbox() {
     app.registerExtension({
         name: "OpenClaw.ContextToolbox",
         async setup() {
+            // Wait for MoltbotActions to be available (defer slightly if needed, or import directly)
+            // Since we import moltbotActions, it should be ready.
+            const { moltbotActions } = await import("../openclaw_ui.js");
+
             const originalGetNodeMenuOptions = LGraphCanvas.prototype.getNodeMenuOptions;
 
             LGraphCanvas.prototype.getNodeMenuOptions = function (node) {
@@ -22,50 +23,49 @@ export function registerContextToolbox() {
 
                 // 1. Inspect in Explorer
                 options.push({
-                    content: "\uD83D\uDD0D OpenClaw: Inspect Node", // Magnifying glass
+                    content: "\uD83D\uDD0D OpenClaw: Inspect",
                     callback: () => {
-                        // Switch to Explorer tab
-                        const explorerTab = tabManager.tabs["explorer"];
-                        if (explorerTab) {
-                            tabManager.activateTab("explorer");
-                            // If Explorer has a filter/search API, use it
-                            if (explorerTab.instance && typeof explorerTab.instance.search === "function") {
-                                explorerTab.instance.search(node.type);
-                            } else {
-                                // Fallback: try to set input value if exposed
-                                const input = document.querySelector(".moltbot-explorer-search");
-                                if (input) {
-                                    input.value = node.type;
-                                    input.dispatchEvent(new Event("input"));
-                                }
-                            }
-                        } else {
-                            moltbotUI.showBanner("warning", "Explorer tab not available.");
-                        }
+                        moltbotActions.openExplorer(node.type);
                     }
                 });
 
-                // 2. View Stats (Placeholder for now, maybe deep link to metrics)
-                // options.push({ content: "OpenClaw: View Stats", ... });
-
-                // 3. Jump to Settings (if node has settings, generic for now)
+                // 2. Doctor / Stats
                 options.push({
-                    content: "\u2699\uFE0F OpenClaw: Settings", // Gear
+                    content: "\uD83D\uDC89 OpenClaw: Doctor",
                     callback: () => {
-                        tabManager.activateTab("settings");
+                        moltbotActions.openDoctor();
                     }
                 });
 
-                // 4. Missing Node Guidance (if node is red/missing)
-                if (node.type === "undefined" || node.type === undefined || node.has_errors) {
+                // 3. Queue / Status
+                options.push({
+                    content: "\u23F3 OpenClaw: Queue Status",
+                    callback: () => {
+                        moltbotActions.openQueue("all");
+                    }
+                });
+
+                // F50: OpenClaw Compare
+                // Only show if node has inputs/widgets that can be compared
+                if (node.widgets && node.widgets.length > 0) {
                     options.push({
-                        content: "\uD83E\uDE79 OpenClaw: Find Replacements", // Bandage
-                        callback: async () => {
-                            // Deep link to packs/manager or show replacements
-                            moltbotUI.showBanner("info", "Searching for replacements... (Simulated)");
+                        content: "\u2696\uFE0F OpenClaw: Compare...",
+                        callback: () => {
+                            moltbotActions.openCompare(node);
                         }
                     });
                 }
+
+                // 4. Settings
+                options.push({
+                    content: "\u2699\uFE0F OpenClaw: Settings",
+                    callback: () => {
+                        moltbotActions.openSettings();
+                    }
+                });
+
+                // 5. History (if applicable)
+                // options.push({ ... });
 
                 return options;
             };

@@ -63,6 +63,7 @@ AUTH_CLASS_BY_ROUTE = {
     ("GET", "/lab/experiments"): "admin",
     ("GET", "/lab/experiments/{exp_id}"): "admin",
     ("POST", "/lab/experiments/{exp_id}/runs/{run_id}"): "admin",
+    ("POST", "/lab/compare"): "admin",
 }
 
 OPTIONAL_SUFFIX_PREFIXES = (
