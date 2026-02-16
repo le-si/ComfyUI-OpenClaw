@@ -7,7 +7,7 @@ import unittest
 import zipfile
 from unittest.mock import ANY, AsyncMock, MagicMock, patch
 
-from api.packs import CleanupFileResponse, PacksHandlers
+from api.packs import CleanupFileResponse, PacksHandlers, _is_safe_pack_segment
 from services.packs.pack_archive import PackArchive, PackError
 from services.packs.pack_manifest import create_manifest
 
@@ -191,6 +191,61 @@ class TestPacksApiAsync(unittest.IsolatedAsyncioTestCase):
 
             # Verify file deleted
             self.assertFalse(os.path.exists(path), "File should be deleted")
+
+
+class TestPacksApiInputValidation(unittest.IsolatedAsyncioTestCase):
+    """Test that API handlers reject path traversal in URL route parameters."""
+
+    def setUp(self):
+        self.test_dir = tempfile.mkdtemp()
+        self.handlers = PacksHandlers(self.test_dir)
+        self.handlers._check_auth = AsyncMock(return_value=True)
+
+    def tearDown(self):
+        shutil.rmtree(self.test_dir)
+
+    def test_safe_segment_rejects_traversal(self):
+        self.assertFalse(_is_safe_pack_segment("../../etc"))
+        self.assertFalse(_is_safe_pack_segment(".."))
+        self.assertFalse(_is_safe_pack_segment("."))
+        self.assertFalse(_is_safe_pack_segment(""))
+        self.assertFalse(_is_safe_pack_segment("foo/bar"))
+        self.assertFalse(_is_safe_pack_segment("foo\\bar"))
+
+    def test_safe_segment_accepts_valid(self):
+        self.assertTrue(_is_safe_pack_segment("my-pack"))
+        self.assertTrue(_is_safe_pack_segment("1.0.0"))
+        self.assertTrue(_is_safe_pack_segment("pack_v2.1"))
+
+    @patch("api.packs.web")
+    async def test_delete_rejects_traversal_name(self, mock_web):
+        mock_web.json_response = MagicMock()
+        request = MockRequest()
+        request.match_info = {"name": "../../etc", "version": "1.0.0"}
+        await self.handlers.delete_pack_handler(request)
+        mock_web.json_response.assert_called_with(
+            {"ok": False, "error": "Invalid name or version format"}, status=400
+        )
+
+    @patch("api.packs.web")
+    async def test_delete_rejects_traversal_version(self, mock_web):
+        mock_web.json_response = MagicMock()
+        request = MockRequest()
+        request.match_info = {"name": "my-pack", "version": "../.."}
+        await self.handlers.delete_pack_handler(request)
+        mock_web.json_response.assert_called_with(
+            {"ok": False, "error": "Invalid name or version format"}, status=400
+        )
+
+    @patch("api.packs.web")
+    async def test_export_rejects_traversal(self, mock_web):
+        mock_web.json_response = MagicMock()
+        request = MockRequest()
+        request.match_info = {"name": "../../etc", "version": "passwd"}
+        await self.handlers.export_pack_handler(request)
+        mock_web.json_response.assert_called_with(
+            {"ok": False, "error": "Invalid name or version format"}, status=400
+        )
 
 
 if __name__ == "__main__":
