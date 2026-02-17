@@ -100,9 +100,42 @@
     padding: var(--moltbot-space-sm) var(--moltbot-space-lg);
     border-bottom: 1px solid var(--moltbot-color-border);
     font-size: var(--moltbot-font-sm);
+    display: flex;
+    align-items: center;
+    gap: var(--moltbot-space-md);
+    justify-content: space-between;
 }
+.moltbot-banner > span { flex: 1; }
+
 .moltbot-banner-warning { background: rgba(255, 170, 0, 0.10); color: #ffd27a; }
 .moltbot-banner-info { background: rgba(0, 120, 255, 0.10); color: #a8d1ff; }
+.moltbot-banner-success { background: rgba(42, 170, 42, 0.15); color: #bfffc0; }
+.moltbot-banner-error { background: rgba(200, 50, 50, 0.15); color: #ffb4b4; }
+
+.moltbot-banner-action {
+    background: rgba(255,255,255,0.1);
+    border: 1px solid rgba(255,255,255,0.2);
+    color: inherit;
+    padding: 2px 8px;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: var(--moltbot-font-xs);
+    text-transform: uppercase;
+    font-weight: bold;
+}
+.moltbot-banner-action:hover { background: rgba(255,255,255,0.2); }
+
+.moltbot-banner-close {
+    background: none;
+    border: none;
+    color: inherit;
+    opacity: 0.7;
+    cursor: pointer;
+    font-size: 16px;
+    line-height: 1;
+    padding: 0 4px;
+}
+.moltbot-banner-close:hover { opacity: 1; }
 
 .moltbot-tabs {
     display: grid;

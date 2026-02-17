@@ -34,7 +34,7 @@ export class MoltbotUI {
 
             const close = document.createElement("button");
             close.className = "moltbot-floating-close";
-            close.textContent = "×";
+            close.textContent = "\u00D7";
             close.title = "Close";
             close.addEventListener("click", () => {
                 panel.classList.remove("visible");
@@ -164,17 +164,108 @@ export class MoltbotUI {
         }
     }
 
-    showBanner(type, message) {
-        // Create banner if not exists, or replace content
-        let banner = this.container.querySelector(".moltbot-banner");
-        if (!banner) {
-            banner = document.createElement("div");
-            banner.className = `moltbot-banner moltbot-banner-${type}`;
+    /**
+     * F49: Display a banner with id, severity, ttl, and optional action.
+     * @param {Object} banner - { id, severity, message, source, ttl_ms, dismissible, action }
+     */
+    showBanner(banner) {
+        // If passed raw args (legacy compatibility)
+        if (arguments.length > 1 && typeof arguments[0] === "string") {
+            banner = {
+                severity: arguments[0],
+                message: arguments[1],
+                id: "legacy_" + Date.now(),
+                ttl_ms: 5000
+            };
+        }
+
+        const { id, severity, message, ttl_ms, action, dismissible = true } = banner;
+
+        // 1. Priority Check
+        // If an error is currently shown, don't replace with info/warning unless it's a new error
+        const currentBanner = this.container.querySelector(".moltbot-banner");
+        if (currentBanner) {
+            const currentSeverity = currentBanner.dataset.severity;
+            const isCurrentError = currentSeverity === "error";
+            const isNewError = severity === "error";
+
+            // If current is error and new is not, ignore new (unless current is stale? handled by TTL)
+            // Exception: update content if same ID
+            const sameId = currentBanner.dataset.id === id;
+            if (isCurrentError && !isNewError && !sameId) {
+                return; // Suppress lower priority
+            }
+        }
+
+        // 2. Clear existing timer
+        if (this._bannerTimer) {
+            clearTimeout(this._bannerTimer);
+            this._bannerTimer = null;
+        }
+
+        // 3. Render
+        let bannerEl = currentBanner; // Reuse or create
+        if (!bannerEl) {
+            bannerEl = document.createElement("div");
             // Insert after header
             const header = this.container.querySelector(".moltbot-header");
-            header.after(banner);
+            header.after(bannerEl);
         }
-        banner.textContent = message;
+
+        bannerEl.className = `moltbot-banner moltbot-banner-${severity}`;
+        bannerEl.dataset.id = id;
+        bannerEl.dataset.severity = severity;
+        bannerEl.innerHTML = ""; // Clear content
+
+        // Message
+        const msgSpan = document.createElement("span");
+        msgSpan.textContent = message;
+        bannerEl.appendChild(msgSpan);
+
+        // Action Button
+        if (action) {
+            const btn = document.createElement("button");
+            btn.className = "moltbot-banner-action";
+            btn.textContent = action.label;
+            btn.addEventListener("click", () => this.handleAction(action));
+            bannerEl.appendChild(btn);
+        }
+
+        // Dismiss Button
+        if (dismissible) {
+            const close = document.createElement("button");
+            close.className = "moltbot-banner-close";
+            close.textContent = "\u00D7";
+            close.addEventListener("click", () => {
+                bannerEl.remove();
+                if (this._bannerTimer) clearTimeout(this._bannerTimer);
+            });
+            bannerEl.appendChild(close);
+        }
+
+        // 4. TTL / Auto-dismiss
+        if (ttl_ms > 0) {
+            this._bannerTimer = setTimeout(() => {
+                if (bannerEl.isConnected) bannerEl.remove();
+            }, ttl_ms);
+        }
+    }
+
+    handleAction(action) {
+        if (!action) return;
+        switch (action.type) {
+            case "url":
+                window.open(action.payload, "_blank");
+                break;
+            case "tab":
+                // CRITICAL: TabManager exposes `activateTab`; `switchTab` is not a valid API.
+                tabManager.activateTab(action.payload);
+                break;
+            case "action":
+                // Execute internal command (todo)
+                console.log("Action triggered:", action.payload);
+                break;
+        }
     }
 }
 
@@ -289,23 +380,27 @@ class QueueMonitor {
 
     showBanner(type, message, statusId, ttl = this.bannerTTL) {
         const now = Date.now();
-        // Dedupe: Don't show same status banner if recently shown and within TTL
-        // Exception: Errors usually override Info
+        // Dedupe at Monitor level (still useful to avoid spamming UI)
         if (this.lastStatusId === statusId && (now - this.lastBannerTime < ttl)) {
             return;
         }
 
-        // Priority Check (Simple): Don't overwrite Error with Info
-        // (A real priority queue would be better, but this is F48 baseline)
-        const currentIsError = this.lastStatusId && (this.lastStatusId.includes("error") || this.lastStatusId.includes("failed") || this.lastStatusId.includes("lost"));
-        if (currentIsError && type === "info" && (now - this.lastBannerTime < 3000)) {
-            return; // Hold error for at least 3s before info overwrites
-        }
-
-        this.ui.showBanner(type, message);
+        // Update state
         this.lastStatusId = statusId;
         this.lastBannerTime = now;
+
+        // F49: Delegate to UI with full schema
+        this.ui.showBanner({
+            id: statusId || "monitor_" + now,
+            severity: type,
+            message: message,
+            source: "QueueMonitor",
+            ttl_ms: ttl,
+            dismissible: true
+        });
     }
+
+
 }
 
 

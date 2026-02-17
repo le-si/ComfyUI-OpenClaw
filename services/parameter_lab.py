@@ -50,6 +50,11 @@ class SweepPlan:
     dimensions: List[SweepDimension]
     runs: List[Dict[str, Any]]
     created_at: float = field(default_factory=time.time)
+    # F52: Data Model v1
+    schema_version: str = "1.0"
+    combination_cap: int = MAX_SWEEP_COMBINATIONS
+    budget_cap: int = MAX_SWEEP_COMBINATIONS  # Currently same as combo cap
+    replay_metadata: Dict[str, Any] = field(default_factory=dict)
 
 
 class SweepPlanner:
@@ -94,6 +99,13 @@ class SweepPlanner:
             workflow_json=workflow,
             dimensions=dimensions,
             runs=overrides_list,
+            schema_version="1.0",
+            combination_cap=MAX_SWEEP_COMBINATIONS,
+            budget_cap=MAX_SWEEP_COMBINATIONS,
+            replay_metadata={
+                "replay_input_version": "1.0",
+                "compat_state": "supported",
+            },
         )
 
     def _generate_combinations(
@@ -110,6 +122,14 @@ class SweepPlanner:
             key = f"{dim.node_id}.{dim.widget_name}"
             value_lists.append(vals)
             keys.append(key)
+
+        # F50: Deterministic sort of keys?
+        # Actually, dimensions order matters for the user (UI order).
+        # We should respect input order but ensure the algorithm is stable.
+        # Reference implementation uses input order.
+        # "Deterministic" here means: same input -> same output.
+        # Python dicts preserve insertion order (3.7+).
+        # We'll rely on input list order stability.
 
         if not value_lists:
             return []
@@ -175,6 +195,13 @@ class ComparePlanner:
             workflow_json=workflow,
             dimensions=[dim],
             runs=runs,
+            schema_version="1.0",
+            combination_cap=MAX_COMPARE_ITEMS,
+            budget_cap=MAX_COMPARE_ITEMS,  # F50: Budget aligns with compare limit
+            replay_metadata={
+                "replay_input_version": "1.0",
+                "compat_state": "supported",
+            },
         )
 
 
@@ -223,7 +250,18 @@ class ExperimentStore:
             return None
         try:
             with open(path, "r", encoding="utf-8") as handle:
-                return json.load(handle)
+                data = json.load(handle)
+
+            # F52: Legacy compatibility guard
+            if "schema_version" not in data:
+                data["schema_version"] = "0.9"  # Mark as pre-F52
+                data["replay_metadata"] = {
+                    "compat_state": "legacy",
+                    "replay_input_version": "0.9",
+                    "note": "Legacy experiment; full replay guarantees not active",
+                }
+
+            return data
         except Exception:
             return None
 
@@ -457,3 +495,83 @@ async def update_experiment_handler(request: web.Request) -> web.Response:
     if success:
         return web.json_response({"ok": True})
     return web.json_response({"ok": False, "error": "update_failed"}, status=500)
+
+
+async def select_apply_winner_handler(request: web.Request) -> web.Response:
+    """
+    F50: Winner-Handoff Safety Gate.
+    Validates selection and returns canonical params for "apply" action.
+    """
+    if web is None:
+        raise RuntimeError("aiohttp not available")
+
+    deny = _require_admin(request)
+    if deny:
+        return deny
+
+    exp_id = request.match_info.get("exp_id")
+    if not exp_id:
+        return web.json_response({"ok": False, "error": "missing_id"}, status=400)
+
+    try:
+        data = await request.json()
+    except Exception:
+        return web.json_response({"ok": False, "error": "invalid_json"}, status=400)
+
+    if not isinstance(data, dict):
+        return web.json_response({"ok": False, "error": "invalid_payload"}, status=400)
+
+    run_id = data.get("run_id")
+    if not run_id:
+        return web.json_response({"ok": False, "error": "run_id_required"}, status=400)
+    run_id = str(run_id)
+
+    store = get_store()
+    plan = store.get_plan(exp_id)
+    if not plan:
+        return web.json_response(
+            {"ok": False, "error": "experiment_not_found"}, status=404
+        )
+
+    runs = plan.get("runs", [])
+    if not isinstance(runs, list):
+        return web.json_response(
+            {"ok": False, "error": "invalid_plan_runs"}, status=500
+        )
+
+    # CRITICAL: winner selection is index-based against canonical persisted `runs`.
+    # Do not infer/accept ad-hoc client payload as winner params.
+    try:
+        run_index = int(str(run_id))
+    except (TypeError, ValueError):
+        return web.json_response(
+            {"ok": False, "error": "invalid_run_id_format"}, status=400
+        )
+
+    if run_index < 0 or run_index >= len(runs):
+        return web.json_response({"ok": False, "error": "run_not_found"}, status=404)
+
+    results = plan.get("results", {})
+    if run_id not in results:
+        return web.json_response(
+            {"ok": False, "error": "run_result_not_found_or_incomplete"}, status=404
+        )
+
+    run_result = results[run_id]
+    if run_result.get("status") != "completed":
+        return web.json_response(
+            {"ok": False, "error": "run_not_completed"}, status=400
+        )
+
+    # Perform the "Handoff" -> Mark as winner.
+    updated = store.update_experiment(exp_id, run_id, status="winner")
+    if not updated:
+        return web.json_response({"ok": False, "error": "update_failed"}, status=500)
+
+    params = runs[run_index]
+    if not isinstance(params, dict):
+        return web.json_response(
+            {"ok": False, "error": "winner_params_lookup_failed"}, status=500
+        )
+
+    return web.json_response({"ok": True, "winner": params})

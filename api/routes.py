@@ -74,11 +74,12 @@ if web is not None:
         )
         from ..services.log_tail import tail_log
         from ..services.metrics import metrics
-        from ..services.parameter_lab import (  # F52
+        from ..services.parameter_lab import (
             create_compare_handler,
             create_sweep_handler,
             get_experiment_handler,
             list_experiments_handler,
+            select_apply_winner_handler,
             update_experiment_handler,
         )
         from ..services.rate_limit import check_rate_limit
@@ -125,11 +126,12 @@ if web is not None:
         from services.access_control import require_observability_access  # type: ignore
         from services.log_tail import tail_log  # type: ignore
         from services.metrics import metrics  # type: ignore
-        from services.parameter_lab import (  # F52
+        from services.parameter_lab import (  # type: ignore
             create_compare_handler,
             create_sweep_handler,
             get_experiment_handler,
             list_experiments_handler,
+            select_apply_winner_handler,
             update_experiment_handler,
         )
         from services.rate_limit import check_rate_limit  # type: ignore
@@ -584,6 +586,11 @@ def register_routes(server) -> None:
                 "POST",
                 f"{prefix}/lab/experiments/{{exp_id}}/runs/{{run_id}}",
                 update_experiment_handler,
+            ),
+            (
+                "POST",
+                f"{prefix}/lab/experiments/{{exp_id}}/winner",
+                select_apply_winner_handler,
             ),
         ]
 
