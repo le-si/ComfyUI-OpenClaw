@@ -1,8 +1,14 @@
 import { expect } from '@playwright/test';
 
 export async function mockComfyUiCore(page) {
-  // Mock ComfyUI core module import used by web/openclaw.js
+  // CRITICAL: only fulfill root /scripts/app.js.
+  // Do NOT accept /extensions/<pack>/scripts/app.js, otherwise bad relative imports are masked in E2E.
   await page.route('**/scripts/app.js', async (route) => {
+    const url = new URL(route.request().url());
+    if (url.pathname !== '/scripts/app.js') {
+      await route.abort();
+      return;
+    }
     await route.fulfill({
       status: 200,
       contentType: 'application/javascript',
@@ -10,8 +16,13 @@ export async function mockComfyUiCore(page) {
     });
   });
 
-  // Mock ComfyUI api module used by web/openclaw_comfy_api.js
+  // CRITICAL: same rule for /scripts/api.js to avoid false-green import paths.
   await page.route('**/scripts/api.js', async (route) => {
+    const url = new URL(route.request().url());
+    if (url.pathname !== '/scripts/api.js') {
+      await route.abort();
+      return;
+    }
     await route.fulfill({
       status: 200,
       contentType: 'application/javascript',

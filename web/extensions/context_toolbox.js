@@ -1,4 +1,6 @@
-import { app } from "../../scripts/app.js";
+// CRITICAL: this module is served from /extensions/<pack>/web/extensions/*.js in ComfyUI.
+// Keep ../../../scripts/app.js so it resolves to ComfyUI core /scripts/app.js (not /extensions/<pack>/scripts/app.js).
+import { app } from "../../../scripts/app.js";
 
 /**
  * F51: In-Canvas Context Toolbox

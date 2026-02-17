@@ -6,6 +6,9 @@ import { app } from "../../../scripts/app.js";
 import { moltbotUI } from "./openclaw_ui.js";
 import { installGlobalErrorHandlers } from "./global_error_handler.js";
 import { moltbotApi } from "./openclaw_api.js";
+// CRITICAL: registerContextToolbox transitively imports app.js from web/extensions/context_toolbox.js.
+// If that module uses a wrong relative path (e.g. ../../scripts/app.js), the import chain fails at module-load time
+// and this whole extension never reaches setup(), which makes the OpenClaw sidebar disappear.
 import { registerContextToolbox } from "./extensions/context_toolbox.js"; // F51
 
 // Tabs

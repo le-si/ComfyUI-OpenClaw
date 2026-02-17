@@ -1,4 +1,6 @@
-import { app } from "../../scripts/app.js";
+// CRITICAL: this tab module is loaded under /extensions/<pack>/web/tabs/*.js.
+// Must resolve ComfyUI core app from /scripts/app.js via ../../../ prefix.
+import { app } from "../../../scripts/app.js";
 import { moltbotApi } from "../openclaw_api.js";
 import { moltbotUI } from "../openclaw_ui.js";
 
