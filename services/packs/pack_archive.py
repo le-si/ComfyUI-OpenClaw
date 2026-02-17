@@ -2,6 +2,7 @@ import json
 import os
 import shutil
 import tempfile
+import unicodedata
 import zipfile
 from typing import Optional
 
@@ -151,13 +152,20 @@ class PackArchive:
 
             # 2. Safety Check
             for info in infos:
+                # S53: Unicode normalization to prevent homoglyph attacks (e.g. fullwidth dots)
+                # Normalize to NFKC to catch compatibility characters like '．．' -> '..'
+                norm_name = unicodedata.normalize("NFKC", info.filename)
+
                 if (
-                    info.filename.startswith("/")
-                    or ".." in info.filename
-                    or "\\" in info.filename
-                    or any(c < " " for c in info.filename)  # Control chars
+                    norm_name.startswith("/")
+                    or ".." in norm_name
+                    or "\\" in norm_name
+                    or ":" in norm_name  # Block drive-relative paths (C:foo)
+                    or any(c < " " for c in norm_name)  # Control chars
                 ):
-                    raise PackError(f"Unsafe filename: {info.filename}")
+                    raise PackError(
+                        f"Unsafe filename: {info.filename} (normalized: {norm_name})"
+                    )
 
                 # Check for symlinks (S_IFLNK - 0xA000)
                 # ZipInfo.external_attr: upper 16 bits are Unix permissions

@@ -8,7 +8,7 @@ from __future__ import annotations
 import hmac
 import logging
 import os
-from typing import Optional, Set, Tuple
+from typing import Dict, Optional, Set, Tuple
 
 try:
     from aiohttp import web  # type: ignore
@@ -26,6 +26,11 @@ ENV_BRIDGE_DEVICE_TOKEN = "OPENCLAW_BRIDGE_DEVICE_TOKEN"
 LEGACY_ENV_BRIDGE_DEVICE_TOKEN = "MOLTBOT_BRIDGE_DEVICE_TOKEN"
 ENV_BRIDGE_ALLOWED_DEVICE_IDS = "OPENCLAW_BRIDGE_ALLOWED_DEVICE_IDS"
 LEGACY_ENV_BRIDGE_ALLOWED_DEVICE_IDS = "MOLTBOT_BRIDGE_ALLOWED_DEVICE_IDS"
+# R104: mTLS Contract
+ENV_BRIDGE_MTLS_ENABLED = "OPENCLAW_BRIDGE_MTLS_ENABLED"
+ENV_BRIDGE_DEVICE_CERT_MAP = (
+    "OPENCLAW_BRIDGE_DEVICE_CERT_MAP"  # device_id:fingerprint,...
+)
 
 # Headers
 HEADER_DEVICE_ID = "X-OpenClaw-Device-Id"
@@ -34,6 +39,8 @@ HEADER_DEVICE_TOKEN = "X-OpenClaw-Device-Token"
 LEGACY_HEADER_DEVICE_TOKEN = "X-Moltbot-Device-Token"
 HEADER_SCOPES = "X-OpenClaw-Scopes"
 LEGACY_HEADER_SCOPES = "X-Moltbot-Scopes"
+# R104: mTLS Headers
+HEADER_CLIENT_CERT_HASH = "X-Client-Cert-Hash"  # SHA256 fingerprint from proxy
 
 
 def _env_get(primary: str, legacy: str, default: str = "") -> str:
@@ -70,6 +77,62 @@ def get_allowed_device_ids() -> Optional[Set[str]]:
     if not ids_str:
         return None
     return set(id.strip() for id in ids_str.split(",") if id.strip())
+
+
+def is_mtls_enabled() -> bool:
+    """Check if mTLS enforcement is enabled."""
+    return os.environ.get(ENV_BRIDGE_MTLS_ENABLED, "false").lower() in (
+        "true",
+        "1",
+        "yes",
+        "on",
+    )
+
+
+def get_device_cert_map() -> Dict[str, str]:
+    """
+    Get map of device_id -> certificate fingerprint.
+    Format: device_id:fingerprint,device_id2:fingerprint2
+    """
+    mapping_str = os.environ.get(ENV_BRIDGE_DEVICE_CERT_MAP, "")
+    if not mapping_str:
+        return {}
+
+    result = {}
+    for entry in mapping_str.split(","):
+        if ":" in entry:
+            parts = entry.split(":", 1)
+            result[parts[0].strip()] = parts[1].strip()
+    return result
+
+
+def validate_mtls_binding(request: web.Request, device_id: str) -> Tuple[bool, str]:
+    """
+    R104: Validate mTLS certificate binding for the device.
+    """
+    if not is_mtls_enabled():
+        return True, ""
+
+    cert_hash = request.headers.get(HEADER_CLIENT_CERT_HASH, "")
+    if not cert_hash:
+        # Strict mode: mTLS enabled but no cert header -> fail
+        return False, "Missing client certificate header (mTLS required)"
+
+    cert_map = get_device_cert_map()
+    expected_hash = cert_map.get(device_id)
+
+    if not expected_hash:
+        # Strict mode: mTLS enabled implies explicit device binding
+        return False, f"Device not bound to a certificate (Device ID: {device_id})"
+
+    # Constant-time comparison not strictly required for public fingerprints but good practice
+    if not hmac.compare_digest(cert_hash, expected_hash):
+        logger.warning(
+            f"mTLS violation: Device {device_id} presented {cert_hash}, expected {expected_hash}"
+        )
+        return False, "Certificate fingerprint mismatch"
+
+    return True, ""
 
 
 def validate_device_token(
@@ -137,6 +200,12 @@ def validate_device_token(
                 f"Device {device_id[:8]} missing scope {required_scope}. Granted: {granted_scopes}"
             )
             return False, f"Missing required scope: {required_scope}", None
+
+    # R104: mTLS Binding Check
+    is_mtls_valid, mtls_error = validate_mtls_binding(request, device_id)
+    if not is_mtls_valid:
+        logger.warning(f"mTLS validation failed for {device_id}: {mtls_error}")
+        return False, mtls_error, None
 
     return True, "", device_id
 

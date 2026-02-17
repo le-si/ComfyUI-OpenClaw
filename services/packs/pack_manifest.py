@@ -60,8 +60,10 @@ def validate_manifest_integrity(base_dir: str, manifest: PackManifest) -> List[s
     if len(manifest.get("files", [])) > MAX_MANIFEST_FILES:
         return [f"Manifest exceeds maximum file count ({MAX_MANIFEST_FILES})"]
 
+    manifest_paths = set()
     for item in manifest.get("files", []):
         rel_path = item.get("path")
+        manifest_paths.add(rel_path)
         expected_hash = item.get("sha256")
 
         # S4: Path Traversal Check (Redundant but critical)
@@ -88,6 +90,20 @@ def validate_manifest_integrity(base_dir: str, manifest: PackManifest) -> List[s
                 )
         except Exception as e:
             errors.append(f"Error reading {rel_path}: {str(e)}")
+
+    # S52: Manifest Completeness Check
+    # Ensure no files on disk are missing from manifest (except metadata files)
+    allowed_extras = {"manifest.json", "pack.json"}
+    for root, _, files in os.walk(base_dir):
+        for file in files:
+            full_path = os.path.join(root, file)
+            rel_path = os.path.relpath(full_path, base_dir).replace("\\", "/")
+
+            if rel_path in allowed_extras:
+                continue
+
+            if rel_path not in manifest_paths:
+                errors.append(f"Unlisted file found: {rel_path} (S52 Violations)")
 
     return errors
 

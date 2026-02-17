@@ -58,6 +58,9 @@ class RateLimiter:
             "logs": (60, 60.0 / 60.0),  # 60 req/min
             "admin": (20, 20.0 / 60.0),  # 20 req/min
             "bridge": (20, 20.0 / 60.0),  # 20 req/min
+            # R101: New Quotas
+            "connector": (20, 20.0 / 60.0),  # 20 req/min (aligned with bridge)
+            "trigger": (60, 60.0 / 60.0),  # 60 req/min (higher due to automation)
         }
 
     def check(self, limit_type: str, ip: str) -> bool:

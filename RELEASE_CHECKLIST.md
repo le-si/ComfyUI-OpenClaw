@@ -65,6 +65,16 @@ npm test
 
 ---
 
+## Gate C: Supply Chain Provenance (R100)
+
+**Goal**: Ensure integrity and traceability of release artifacts.
+
+- [ ] **Provenance Generation**: Run `python scripts/generate_provenance.py dist/ dist/provenance.json` to create manifest and SBOM.
+- [ ] **Verification**: Run `python scripts/verify_provenance.py dist/ dist/provenance.json` on staging environment to verify integrity and completeness.
+- [ ] **Completeness**: Ensure `provenance.json` contains SHA256 for all distributed wheels/zips and correct git commit hash.
+
+---
+
 ## Release Metadata
 
 - [ ] **Version**: `pyproject.toml` version matches git tag.

@@ -76,10 +76,19 @@ class SandboxProfile:
             return []
         violations: List[str] = []
         for p in paths:
-            resolved = os.path.abspath(p)
-            if not any(
-                resolved.startswith(os.path.abspath(allowed)) for allowed in allowlist
-            ):
+            # S54: Canonicalize path to resolve symlinks and '..'
+            resolved = os.path.realpath(p)
+
+            # Check against allowed prefixes
+            is_allowed = False
+            for allowed in allowlist:
+                allowed_abs = os.path.realpath(allowed)
+                # Ensure we match directory boundary (exact match or subdir)
+                if resolved == allowed_abs or resolved.startswith(allowed_abs + os.sep):
+                    is_allowed = True
+                    break
+
+            if not is_allowed:
                 mode = "write" if write else "read"
                 violations.append(
                     f"Path '{resolved}' not in allow_fs_{mode}: {allowlist}"

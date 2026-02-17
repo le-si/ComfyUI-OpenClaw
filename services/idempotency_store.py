@@ -247,6 +247,10 @@ class IdempotencyStore:
         S50: Delegates to durable backend when available.
         strict_mode: fail-closed if durable backend is unavailable.
         """
+        # R101: Ensure cleanup runs periodically to prevent storage DoS
+        # This uses an internal timer (300s) to avoid excessive cleanup calls
+        self._cleanup()
+
         # S50: strict_mode fail-closed
         if self._strict_mode and not self._durable:
             raise IdempotencyStoreError(
@@ -269,7 +273,6 @@ class IdempotencyStore:
                     ) from e
 
         # In-memory path
-        self._cleanup()
         now = time.time()
 
         with self._store_lock:

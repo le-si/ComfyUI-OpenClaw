@@ -1,18 +1,18 @@
-
 import os
+import shutil
 import sqlite3
+import tempfile
 import time
 import unittest
-import tempfile
-import shutil
 from unittest.mock import MagicMock, patch
 
 from services.idempotency_store import (
-    IdempotencyStore,
-    SQLiteDurableBackend,
     DurableBackend,
-    IdempotencyStoreError
+    IdempotencyStore,
+    IdempotencyStoreError,
+    SQLiteDurableBackend,
 )
+
 
 class TestSQLiteDurableBackend(unittest.TestCase):
     def setUp(self):
@@ -25,7 +25,7 @@ class TestSQLiteDurableBackend(unittest.TestCase):
             self.backend.close()
         except:
             pass
-        
+
         # Retry cleanup for Windows file locking
         for _ in range(5):
             try:
@@ -45,18 +45,18 @@ class TestSQLiteDurableBackend(unittest.TestCase):
             backend2 = SQLiteDurableBackend(self.db_path)
             # If key exists, it returns True (fresh) if expired, or False (dup) if valid?
             # check_and_record returns (True, pid) if existing
-            # WAIT: Protocol says: 
+            # WAIT: Protocol says:
             # Check if key exists; if not, record it. Returns (not_exists, existing_prompt_id) ??
             # Docstring: "Returns (is_dup, existing_prompt_id)." in Protocol.
             # Impl: if row: return True, existing_pid (meaning IS DUP).
             # Impl: if not row: insert, return False, None (meaning NOT DUP).
-            
+
             # So duplicate -> True.
             is_dup, pid = backend2.check_and_record("key1", 3600)
             self.assertTrue(is_dup)
             self.assertEqual(pid, "prompt1")
         finally:
-            if 'backend2' in locals():
+            if "backend2" in locals():
                 backend2.close()
 
     def test_ttl_expiry(self):
@@ -64,14 +64,15 @@ class TestSQLiteDurableBackend(unittest.TestCase):
         # Insert with short TTL
         self.backend.check_and_record("key_ttl", 1)
         time.sleep(2)  # Wait for expiry
-        
+
         # Cleanup should remove it
         self.backend.cleanup()
-        
+
         # Should be fresh again
         # Impl: if fresh, returns (False, None) -> is_dup=False
         is_dup, pid = self.backend.check_and_record("key_ttl", 3600)
         self.assertFalse(is_dup)
+
 
 class TestIdempotencyStoreS50(unittest.TestCase):
     def setUp(self):
@@ -88,11 +89,11 @@ class TestIdempotencyStoreS50(unittest.TestCase):
         """Test fail-closed behavior in strict mode."""
         mock_backend = MagicMock(spec=DurableBackend)
         mock_backend.check_and_record.side_effect = Exception("Disk failure")
-        
+
         # Singleton instantiation
         store = IdempotencyStore()
         store.configure_durable(backend=mock_backend, strict_mode=True)
-        
+
         with self.assertRaises(IdempotencyStoreError):
             store.check_and_record("test_key", ttl=60)
 
@@ -100,17 +101,17 @@ class TestIdempotencyStoreS50(unittest.TestCase):
         """Test fallback behavior in lenient mode."""
         mock_backend = MagicMock(spec=DurableBackend)
         mock_backend.check_and_record.side_effect = Exception("Disk failure")
-        
+
         store = IdempotencyStore()
         store.configure_durable(backend=mock_backend, strict_mode=False)
-        
+
         # Should NOT raise, but log error and fallback (or just return False? or True?)
         # Implementation of IdempotencyStore in strict_mode=False absorbs errors?
         # Let's check implementation behavior assumption:
         # If backend fails, and not strict, it might default to "allow" (True) or "deny"?
         # Actually existing implementation likely just logs and returns True (allow execution) or False?
         # Typically fail-open for availability means returning True (fresh).
-        
+
         # Taking a peek at IdempotencyStore implementation would help, but assuming fail-open for now based on standard patterns.
         # If it raises, I'll fix the test.
         try:
@@ -119,6 +120,7 @@ class TestIdempotencyStoreS50(unittest.TestCase):
             # If it returns, verification passed (didn't crash)
         except IdempotencyStoreError:
             self.fail("Should not raise IdempotencyStoreError in lenient mode")
+
 
 if __name__ == "__main__":
     unittest.main()
