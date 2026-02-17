@@ -161,6 +161,68 @@ class TestSecurityDoctor(unittest.TestCase):
                 else:
                     os.environ[key] = val
 
+    def test_ssrf_posture_prefers_callback_allow_hosts(self):
+        """S30: SSRF posture must read canonical callback allow-host env keys."""
+        from services.security_doctor import SecurityReport, check_ssrf_posture
+
+        keys = (
+            "OPENCLAW_CALLBACK_ALLOW_HOSTS",
+            "MOLTBOT_CALLBACK_ALLOW_HOSTS",
+            "OPENCLAW_CALLBACK_ALLOWLIST",
+            "MOLTBOT_CALLBACK_ALLOWLIST",
+        )
+        old_env = {k: os.environ.get(k) for k in keys}
+
+        try:
+            for k in keys:
+                os.environ.pop(k, None)
+            os.environ["OPENCLAW_CALLBACK_ALLOW_HOSTS"] = "example.com,api.example.com"
+
+            report = SecurityReport()
+            check_ssrf_posture(report)
+            allowlist = next(
+                (c for c in report.checks if c.name == "callback_allowlist"), None
+            )
+            self.assertIsNotNone(allowlist)
+            self.assertEqual(allowlist.severity, "pass")
+        finally:
+            for key, val in old_env.items():
+                if val is None:
+                    os.environ.pop(key, None)
+                else:
+                    os.environ[key] = val
+
+    def test_ssrf_posture_legacy_allowlist_alias_still_supported(self):
+        """S30: keep backward compatibility for legacy callback allowlist keys."""
+        from services.security_doctor import SecurityReport, check_ssrf_posture
+
+        keys = (
+            "OPENCLAW_CALLBACK_ALLOW_HOSTS",
+            "MOLTBOT_CALLBACK_ALLOW_HOSTS",
+            "OPENCLAW_CALLBACK_ALLOWLIST",
+            "MOLTBOT_CALLBACK_ALLOWLIST",
+        )
+        old_env = {k: os.environ.get(k) for k in keys}
+
+        try:
+            for k in keys:
+                os.environ.pop(k, None)
+            os.environ["OPENCLAW_CALLBACK_ALLOWLIST"] = "legacy.example.com"
+
+            report = SecurityReport()
+            check_ssrf_posture(report)
+            allowlist = next(
+                (c for c in report.checks if c.name == "callback_allowlist"), None
+            )
+            self.assertIsNotNone(allowlist)
+            self.assertEqual(allowlist.severity, "pass")
+        finally:
+            for key, val in old_env.items():
+                if val is None:
+                    os.environ.pop(key, None)
+                else:
+                    os.environ[key] = val
+
     def test_redaction_drift_check(self):
         """S30: verify redaction coverage passes."""
         from services.security_doctor import SecurityReport, check_redaction_drift

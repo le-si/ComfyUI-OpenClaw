@@ -397,13 +397,18 @@ def check_token_boundaries(report: SecurityReport) -> None:
 
 def check_ssrf_posture(report: SecurityReport) -> None:
     """Check callback/base_url configurations for SSRF risk indicators."""
-    # Check OPENCLAW_CALLBACK_ALLOWLIST for wildcard abuse
-    callback_allowlist = os.environ.get(
-        "OPENCLAW_CALLBACK_ALLOWLIST", ""
-    ) or os.environ.get("MOLTBOT_CALLBACK_ALLOWLIST", "")
+    # CRITICAL: keep canonical *_ALLOW_HOSTS keys first. Runtime callback policy
+    # and deployment-profile checks use these names; drifting to legacy-only
+    # aliases makes Security Doctor miss live SSRF posture violations.
+    callback_allowlist = (
+        os.environ.get("OPENCLAW_CALLBACK_ALLOW_HOSTS", "").strip()
+        or os.environ.get("MOLTBOT_CALLBACK_ALLOW_HOSTS", "").strip()
+        or os.environ.get("OPENCLAW_CALLBACK_ALLOWLIST", "").strip()
+        or os.environ.get("MOLTBOT_CALLBACK_ALLOWLIST", "").strip()
+    )
     if callback_allowlist:
         hosts = [h.strip() for h in callback_allowlist.split(",") if h.strip()]
-        if "*" in hosts or "*.com" in hosts or "*.net" in hosts:
+        if any("*" in host for host in hosts):
             report.add(
                 SecurityCheckResult(
                     name="callback_wildcard",

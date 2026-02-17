@@ -14,6 +14,16 @@ Use this guide together with:
 - `docs/deploy/reverse-proxy.md`
 - `docs/security_checklist.md`
 
+## 0. Pre-deployment Disclaimer (Public Exposure)
+
+Before using OpenClaw in any internet-facing setup, you must explicitly accept:
+
+1. This project is local-first by design; exposing it to public networks increases attack surface.
+2. This guide reduces risk but does not guarantee security, compliance, or incident-free operation.
+3. The operator/deployer is responsible for network isolation, auth boundaries, key management, monitoring, and incident response.
+4. If you cannot satisfy the `public` profile baseline and checklist, do not deploy publicly. Use `local` or private/VPN-only access instead.
+5. High-risk capabilities (external tools, registry sync, transforms, remote admin) must remain disabled unless there is a reviewed and time-bounded operational requirement.
+
 ## 1. Profile Matrix
 
 | Profile | Intended Use | Minimum Security Baseline |
