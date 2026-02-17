@@ -206,6 +206,7 @@ This project is intentionally **not** a general-purpose assistant platform with 
   - [Set an Admin Token](#3-optional-recommended-set-an-admin-token)
 - [Nodes](#nodes)
 - [Extension UI](#extension-ui)
+  - [Sidebar Modules](#sidebar-modules)
 - [Operator UX Features](#operator-ux-features)
 - [API Overview](#api-overview)
   - [Observability](#observability-read-only)
@@ -311,6 +312,25 @@ See `web/docs/` for node usage notes.
 ![OpenClaw /sidebar ui example](assets/sidebar.png)
 
 The frontend lives in `web/` and is served by ComfyUI as an extension panel. It uses the backend routes below (preferring `/api/openclaw/*`).
+
+### Sidebar Modules
+
+![OpenClaw /sidebar ui example](assets/sidebar_modules.png)
+
+The OpenClaw sidebar includes these built-in tabs. Some tabs are capability-gated and may be hidden when the related backend feature is disabled.
+
+| Tab | What it does | Related docs |
+| --- | --- | --- |
+| `Settings` | Health/config/log visibility, provider/model setup, model connectivity checks, and optional localhost key storage. | [Quick Start](#quick-start-minimal), [LLM config](#llm-config-non-secret), [Troubleshooting](#troubleshooting) |
+| `Jobs` | Tracks prompt IDs, polls trace/history, and shows output previews for recent jobs. | [Observability](#observability-read-only), [Remote Control (Connector)](#remote-control-connector) |
+| `Planner` | Uses assist endpoint to generate structured prompt plans (positive/negative/params). | [Configure an LLM key](#1-configure-an-llm-key-for-plannerrefinervision-helpers), [Nodes](#nodes) |
+| `Refiner` | Refines existing prompts with optional image context and issue/goal input. | [Configure an LLM key](#1-configure-an-llm-key-for-plannerrefinervision-helpers), [Nodes](#nodes) |
+| `Variants` | Local helper for generating batch variant parameter JSON (seed/range-style sweeps). | [Nodes](#nodes), [Operator UX Features](#operator-ux-features) |
+| `Library` | Manages reusable prompt/params presets and provides pack-oriented library operations in one place. | [Presets](#presets-admin), [Packs](#packs-admin) |
+| `Approvals` | Lists approval gates and supports approve/reject operations. | [Triggers + approvals](#triggers--approvals-admin), [Remote Control (Connector)](#remote-control-connector) |
+| `Explorer` | Inventory/preflight diagnostics and snapshot/checkpoint troubleshooting workflows. | [Operator UX Features](#operator-ux-features), [Troubleshooting](#troubleshooting) |
+| `Packs` | Dedicated pack lifecycle tab for import/export/delete under admin boundary. | [Packs](#packs-admin) |
+| `Parameter Lab` | Runs bounded sweep/compare experiments, stores history, and replays parameters back into the graph. | [Operator UX Features](#operator-ux-features) |
 
 ## Operator UX Features
 
