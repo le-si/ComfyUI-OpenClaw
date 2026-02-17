@@ -31,9 +31,52 @@ import sys
 from dataclasses import asdict, dataclass, field
 from enum import Enum
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Set
+from typing import Any, Dict, List, Optional, Set, Tuple
 
 logger = logging.getLogger("ComfyUI-OpenClaw.services.security_doctor")
+
+# ---------------------------------------------------------------------------
+# WP1: S30 Violation Code Mapping Table (bounded vocabulary)
+# ---------------------------------------------------------------------------
+
+VIOLATION_CODE_MAP: Dict[str, str] = {
+    # Endpoint exposure
+    "endpoint_exposure": "SEC-EP-001",
+    "admin_token_missing": "SEC-EP-002",
+    # Token boundaries
+    "token_reuse": "SEC-TK-001",
+    "admin_token_weak": "SEC-TK-002",
+    "observability_token_weak": "SEC-TK-002",
+    # SSRF
+    "callback_wildcard": "SEC-SR-001",
+    "base_url_private_ip": "SEC-SR-002",
+    # State directory
+    "state_dir_world_writable": "SEC-SD-001",
+    "state_dir_world_readable": "SEC-SD-002",
+    "state_dir_writable": "SEC-SD-003",
+    "secrets_file_perms": "SEC-SD-004",
+    # Redaction
+    "redaction_coverage": "SEC-RD-001",
+    # Runtime
+    "venv_isolation": "SEC-RT-001",
+    "python_security": "SEC-RT-002",
+    # Feature flags
+    "high_risk_flags": "SEC-FF-001",
+    # API key
+    "api_key_length": "SEC-AK-001",
+    # Connector
+    "s32_allowlist_coverage": "SEC-CN-001",
+    # Wave 2
+    "s35_isolation": "SEC-W2-001",
+    "r77_integrity": "SEC-W2-002",
+    # S45 exposure parity
+    "s45_exposed_no_auth": "SEC-S45-001",
+    "s45_dangerous_override": "SEC-S45-002",
+    "s45_hardened_loopback_no_admin": "SEC-S45-003",
+}
+
+# Reason codes that trigger high_risk_mode
+_HIGH_RISK_CODES = {"SEC-S45-001", "SEC-S45-002", "SEC-FF-001"}
 
 # ---------------------------------------------------------------------------
 # Severity + Result types (reuse operator_doctor patterns)
@@ -106,14 +149,66 @@ class SecurityReport:
                 score += 3
         return score
 
+    def _build_violations(self) -> List[Dict[str, Any]]:
+        """Build normalized violation list from fail/warn checks with stable codes."""
+        violations: List[Dict[str, Any]] = []
+        for c in self.checks:
+            if c.severity not in (
+                SecuritySeverity.FAIL.value,
+                SecuritySeverity.WARN.value,
+            ):
+                continue
+            code = VIOLATION_CODE_MAP.get(c.name)
+            if not code:
+                continue  # unmapped checks are not surfaced as violations
+            entry: Dict[str, Any] = {
+                "code": code,
+                "severity": c.severity,
+                "check": c.name,
+                "message": c.message,
+            }
+            if c.remediation:
+                entry["remediation"] = c.remediation
+            violations.append(entry)
+        return violations
+
+    def _compute_posture(self) -> str:
+        """Deterministic posture: 'fail' if ANY check has fail severity, else 'pass'.
+
+        Scans self.checks directly — not just mapped violations — so that
+        unmapped fail checks also force posture='fail'.
+        """
+        return "fail" if self.has_failures else "pass"
+
+    @staticmethod
+    def _compute_high_risk(violations: List[Dict[str, Any]]) -> Tuple[bool, List[str]]:
+        """Determine high-risk mode from violation codes."""
+        reasons: List[str] = []
+        seen: set = set()
+        for v in violations:
+            code = v["code"]
+            if code in _HIGH_RISK_CODES and code not in seen:
+                seen.add(code)
+                reasons.append(code)
+        return (bool(reasons), reasons)
+
     def to_dict(self) -> Dict[str, Any]:
         self.build_summary()
+        violations = self._build_violations()
+        high_risk, hr_reasons = self._compute_high_risk(violations)
         return {
+            # Legacy fields (preserved for backward compat)
             "environment": self.environment,
             "checks": [c.to_dict() for c in self.checks],
             "summary": self.summary,
             "risk_score": self.risk_score,
             "remediation_applied": self.remediation_applied,
+            # S30 contract fields
+            "schema_version": "1.0",
+            "posture": self._compute_posture(),
+            "high_risk_mode": high_risk,
+            "high_risk_reasons": hr_reasons,
+            "violations": violations,
         }
 
     def to_human(self) -> str:
@@ -1078,6 +1173,93 @@ def check_hardening_wave2(report: SecurityReport) -> None:
 
 
 # ---------------------------------------------------------------------------
+# Security checks — S45 exposure posture parity
+# ---------------------------------------------------------------------------
+
+
+def check_s45_exposure_posture(report: SecurityReport) -> None:
+    """S45 parity: mirror SecurityGate exposure logic as doctor violations."""
+    import sys as _sys
+
+    # Mirror SecurityGate._check_network_exposure()
+    is_exposed = "--listen" in _sys.argv
+
+    try:
+        from .access_control import is_any_token_configured
+    except ImportError:
+        try:
+            from services.access_control import is_any_token_configured  # type: ignore
+        except ImportError:
+            return  # cannot evaluate
+
+    auth_ready = is_any_token_configured()
+
+    if is_exposed and not auth_ready:
+        # Check for dangerous override
+        try:
+            from .runtime_config import get_config
+        except ImportError:
+            from services.runtime_config import get_config  # type: ignore
+
+        config = get_config()
+        if config.security_dangerous_bind_override:
+            report.add(
+                SecurityCheckResult(
+                    name="s45_dangerous_override",
+                    severity=SecuritySeverity.WARN.value,
+                    message="Server exposed without auth but dangerous override is active",
+                    category="exposure",
+                    detail="OPENCLAW_SECURITY_DANGEROUS_BIND_OVERRIDE=1",
+                    remediation="Remove override and configure authentication tokens.",
+                )
+            )
+        else:
+            report.add(
+                SecurityCheckResult(
+                    name="s45_exposed_no_auth",
+                    severity=SecuritySeverity.FAIL.value,
+                    message="Server exposed (--listen) without any authentication token",
+                    category="exposure",
+                    remediation="Set OPENCLAW_ADMIN_TOKEN or OPENCLAW_OBSERVABILITY_TOKEN.",
+                )
+            )
+    elif not auth_ready:
+        # Loopback + no auth — warn in hardened mode
+        try:
+            from .runtime_profile import is_hardened_mode
+        except ImportError:
+            try:
+                from services.runtime_profile import is_hardened_mode  # type: ignore
+            except ImportError:
+                return
+
+        try:
+            from .access_control import is_auth_configured
+        except ImportError:
+            from services.access_control import is_auth_configured  # type: ignore
+
+        if is_hardened_mode() and not is_auth_configured():
+            report.add(
+                SecurityCheckResult(
+                    name="s45_hardened_loopback_no_admin",
+                    severity=SecuritySeverity.WARN.value,
+                    message="HARDENED profile requires admin auth even on loopback",
+                    category="exposure",
+                    remediation="Set OPENCLAW_ADMIN_TOKEN for hardened deployments.",
+                )
+            )
+    else:
+        report.add(
+            SecurityCheckResult(
+                name="s45_exposure_posture",
+                severity=SecuritySeverity.PASS.value,
+                message="S45 exposure posture OK",
+                category="exposure",
+            )
+        )
+
+
+# ---------------------------------------------------------------------------
 # Main runner
 # ---------------------------------------------------------------------------
 
@@ -1103,6 +1285,7 @@ def run_security_doctor(
     )
 
     # Run all checks
+    check_s45_exposure_posture(report)  # S45 parity (first — sets high_risk_mode)
     check_endpoint_exposure(report)
     check_token_boundaries(report)
     check_ssrf_posture(report)
