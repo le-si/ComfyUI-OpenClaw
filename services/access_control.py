@@ -3,13 +3,37 @@ Access Control Service (S14).
 Provides secure-by-default access policies for observability endpoints.
 """
 
+import datetime
 import hmac
 import ipaddress
 import logging
 import os
-from typing import Optional, Tuple
+import uuid
+from dataclasses import dataclass, field
+from typing import Dict, List, Optional, Set, Tuple
+
+try:
+    from aiohttp import web
+except ImportError:
+    web = None
 
 from .request_ip import get_client_ip
+
+# S46: Scoped RBAC & Tiered Access
+try:
+    from .endpoint_manifest import AuthTier, get_metadata
+except ImportError:
+    # Fallback/Circular import handling
+    class AuthTier:
+        ADMIN = "admin"
+        OBSERVABILITY = "obs"
+        INTERNAL = "internal"
+        PUBLIC = "public"
+        WEBHOOK = "webhook"
+
+    def get_metadata(handler):
+        return None
+
 
 logger = logging.getLogger("ComfyUI-OpenClaw.services.access_control")
 
@@ -32,108 +56,6 @@ def is_loopback(remote_addr: str) -> bool:
     except ValueError:
         # Invalid IP
         return False
-
-
-def require_observability_access(request) -> Tuple[bool, Optional[str]]:
-    """
-    Enforce S14 access control policy for observability endpoints.
-
-    Policy:
-    1. If client is loopback -> Allow.
-    2. If `OPENCLAW_OBSERVABILITY_TOKEN` (or legacy `MOLTBOT_OBSERVABILITY_TOKEN`) set and valid header -> Allow.
-    3. Otherwise -> Deny.
-
-    Args:
-        request: aiohttp request object
-
-    Returns:
-        (allowed, error_message)
-    """
-    # 1. Loopback check
-    # Use S6 get_client_ip to support trusted proxies
-    remote = get_client_ip(request)
-    if is_loopback(remote):
-        return True, None
-
-    # 2. Token check (if configured)
-    expected_token = (
-        os.environ.get("OPENCLAW_OBSERVABILITY_TOKEN")
-        or os.environ.get("MOLTBOT_OBSERVABILITY_TOKEN")
-        or ""
-    ).strip()
-    if expected_token:
-        # Check header - use constant time compare
-        client_token = request.headers.get(
-            "X-OpenClaw-Obs-Token", ""
-        ) or request.headers.get("X-Moltbot-Obs-Token", "")
-        # Prevent length-based timing attacks by checking existance first?
-        # hmac.compare_digest handles equal strings safely.
-        if hmac.compare_digest(client_token, expected_token):
-            return True, None
-        return False, "Invalid or missing observability token."
-
-    # 3. Default deny for remote
-    return (
-        False,
-        "Remote access denied. Set OPENCLAW_OBSERVABILITY_TOKEN (or legacy MOLTBOT_OBSERVABILITY_TOKEN) to allow.",
-    )
-
-
-def require_admin_token(request) -> Tuple[bool, Optional[str]]:
-    """
-    Enforce token-based access for Administrative/Write actions (Assist, Config, etc).
-
-    Uses the same header as config.py: X-Moltbot-Admin-Token
-
-    Policy (Simplified):
-    1. If `OPENCLAW_ADMIN_TOKEN` (or legacy `MOLTBOT_ADMIN_TOKEN`) is set:
-       - Require a matching admin token header (loopback included).
-    2. If no admin token is configured:
-       - Allow loopback only (localhost convenience mode).
-       - Deny remote by default.
-    """
-    remote = get_client_ip(request)
-    expected_token = (
-        os.environ.get("OPENCLAW_ADMIN_TOKEN")
-        or os.environ.get("MOLTBOT_ADMIN_TOKEN")
-        or ""
-    ).strip()
-    if expected_token:
-        # Header: X-OpenClaw-Admin-Token (preferred) or legacy X-Moltbot-Admin-Token
-        client_token = request.headers.get(
-            "X-OpenClaw-Admin-Token", ""
-        ) or request.headers.get("X-Moltbot-Admin-Token", "")
-        if hmac.compare_digest(client_token, expected_token):
-            return True, None
-        return False, "Invalid admin token."
-
-    # No token configured: allow loopback-only for convenience.
-    if is_loopback(remote):
-        # S27: CSRF Hardening for convenience mode
-        # We must ensure this is a same-origin request to prevent browser-based attacks.
-        try:
-            from .csrf_protection import is_same_origin_request
-        except ImportError:
-            try:
-                from services.csrf_protection import is_same_origin_request
-            except ImportError:
-                # Fallback if csrf_protection module missing (should not happen in prod)
-                logger.warning(
-                    "S27: CSRF protection module missing, allowing loopback (unsafe)"
-                )
-                return True, None
-
-        if not is_same_origin_request(request):
-            return (
-                False,
-                "Cross-origin request denied (S33). Set OPENCLAW_ADMIN_TOKEN to use token-based auth.",
-            )
-        return True, None
-
-    return (
-        False,
-        "Remote admin access denied. Set OPENCLAW_ADMIN_TOKEN (or legacy MOLTBOT_ADMIN_TOKEN) to allow.",
-    )
 
 
 def is_auth_configured() -> bool:
@@ -163,3 +85,348 @@ def is_any_token_configured() -> bool:
         or ""
     )
     return bool(obs_val.strip())
+
+
+# --- S46 Token Infrastructure ---
+
+
+@dataclass
+class TokenInfo:
+    token_id: str
+    role: "AuthTier"
+    scopes: Set[str] = field(default_factory=set)
+    created_at: float = 0.0
+    expires_at: Optional[float] = None
+
+    def has_scope(self, required: str) -> bool:
+        """Check if token has scope, supporting wildcards."""
+        if "*" in self.scopes:
+            return True
+        if required in self.scopes:
+            return True
+        # Check prefixes (e.g. "read:*" matches "read:logs")
+        for s in self.scopes:
+            if s.endswith(":*"):
+                prefix = s[:-2]
+                if required.startswith(prefix + ":"):
+                    return True
+        return False
+
+
+class TokenRegistry:
+    """
+    S46: Token Lifecycle Management.
+    Currently In-Memory. Future: Database.
+    """
+
+    _tokens: Dict[str, TokenInfo] = {}  # secret -> TokenInfo
+
+    @classmethod
+    def issue(
+        cls, role: "AuthTier", scopes: List[str], ttl_seconds: int = 0
+    ) -> Tuple[str, TokenInfo]:
+        """Issue a new token."""
+        secret = f"oc_{role.value}_{uuid.uuid4().hex}"
+        now = datetime.datetime.now().timestamp()
+        expires = (now + ttl_seconds) if ttl_seconds > 0 else None
+
+        info = TokenInfo(
+            token_id=f"kid-{uuid.uuid4().hex[:8]}",
+            role=role,
+            scopes=set(scopes),
+            created_at=now,
+            expires_at=expires,
+        )
+        cls._tokens[secret] = info
+        return secret, info
+
+    @classmethod
+    def revoke(cls, token_id: str) -> bool:
+        """Revoke a token by ID."""
+        to_delete = [s for s, i in cls._tokens.items() if i.token_id == token_id]
+        for s in to_delete:
+            del cls._tokens[s]
+        return len(to_delete) > 0
+
+    @classmethod
+    def lookup(cls, secret: str) -> Optional[TokenInfo]:
+        return cls._tokens.get(secret)
+
+
+def resolve_token_info(request) -> Optional[TokenInfo]:
+    """
+    Resolve the request's authentication token into a TokenInfo object.
+    1. Check TokenRegistry (Dynamic)
+    2. Check Environment Variables (Static)
+    """
+    # Extract token from headers
+    client_token = (
+        request.headers.get("X-OpenClaw-Admin-Token")
+        or request.headers.get("X-Moltbot-Admin-Token")
+        or request.headers.get("X-OpenClaw-Obs-Token")
+        or request.headers.get("X-Moltbot-Obs-Token")
+        or ""
+    )
+
+    # 1. Registry Check
+    if client_token:
+        info = TokenRegistry.lookup(client_token)
+        if info:
+            return info
+
+    # 2. Static Env Check (Legacy/Bootstrap)
+    # Admin
+    admin_token = (
+        os.environ.get("OPENCLAW_ADMIN_TOKEN")
+        or os.environ.get("MOLTBOT_ADMIN_TOKEN")
+        or ""
+    ).strip()
+
+    if admin_token and client_token:
+        if hmac.compare_digest(client_token, admin_token):
+            return TokenInfo(token_id="env-admin", role=AuthTier.ADMIN, scopes={"*"})
+
+    # Observability
+    obs_token = (
+        os.environ.get("OPENCLAW_OBSERVABILITY_TOKEN")
+        or os.environ.get("MOLTBOT_OBSERVABILITY_TOKEN")
+        or ""
+    ).strip()
+
+    if obs_token and client_token:
+        # Note: If admin header was sent but matched Obs token, we accept it as Obs role?
+        # Ideally strict separation, but for now match value.
+        if hmac.compare_digest(client_token, obs_token):
+            return TokenInfo(
+                token_id="env-obs",
+                role=AuthTier.OBSERVABILITY,
+                scopes={"read:*"},  # S46: Wildcard for Obs
+            )
+
+    # 3. Loopback
+    remote = get_client_ip(request)
+    if is_loopback(remote):
+        is_admin_configured = bool(admin_token)
+        if not is_admin_configured:
+            return TokenInfo(token_id="local-admin", role=AuthTier.ADMIN, scopes={"*"})
+        else:
+            return TokenInfo(
+                token_id="local-internal",
+                role=AuthTier.INTERNAL,
+                scopes={"internal:call"},
+            )
+
+    return None
+
+
+def get_current_auth_tier(request) -> AuthTier:
+    """
+    Determine the authentication tier of the current request.
+    Hierarchy: ADMIN > OBSERVABILITY > INTERNAL > PUBLIC.
+    """
+    token_info = resolve_token_info(request)
+    if token_info:
+        return token_info.role
+
+    # No token? Check if public or internal loopback without token (if allowed?)
+    # Wait, resolve_token_info handles Loopback!
+    # If resolve_token_info returns None, it is strictly PUBLIC (Remote, No Token).
+
+    return AuthTier.PUBLIC
+
+
+def verify_tier_access(request, required_tier: AuthTier) -> Tuple[bool, Optional[str]]:
+    """
+    Check if the request meets the required AuthTier.
+    Enforces hierarchy: ADMIN > OBSERVABILITY > INTERNAL > PUBLIC.
+    """
+    current_tier = get_current_auth_tier(request)
+
+    if required_tier == AuthTier.PUBLIC:
+        return True, None
+
+    # S46 Strict: Internal means "Local Network Only".
+    # Even Admin cannot access Internal endpoints from remote.
+    if required_tier == AuthTier.INTERNAL:
+        # We need to re-verify source IP because get_current_auth_tier abstracts it away into Roles.
+        # But wait, TokenInfo for Loopback has role=INTERNAL or ADMIN.
+        # TokenInfo for Remote Admin has role=ADMIN.
+        # If I am Remote Admin, my role is ADMIN.
+        # If I access INTERNAL endpoint, logic:
+        # if current == INTERNAL (Localhost): OK.
+        # if current == ADMIN (Remote): Fail?
+
+        # But wait, if Localhost is acting as Admin (Convenience Mode), role is ADMIN.
+        # So checking `current_tier == INTERNAL` might fail for Localhost Admin!
+
+        # We need to allow if underlying connection is Loopback.
+        remote = get_client_ip(request)
+        if is_loopback(remote):
+            return True, None
+
+        return False, "Internal (Loopback) access required."
+
+    # Admin is allowed everything else
+    if current_tier == AuthTier.ADMIN:
+        return True, None
+
+    if required_tier == AuthTier.ADMIN:
+        # Admin required. Current is not Admin (checked above).
+        return False, "Admin access required."
+
+    if required_tier == AuthTier.OBSERVABILITY:
+        if current_tier in (
+            AuthTier.OBSERVABILITY,
+            AuthTier.ADMIN,
+        ):  # Admin covered, but explicit is fine
+            return True, None
+        # Internal Loopback?
+        # get_current_auth_tier converts Loopback -> INTERNAL (or ADMIN).
+        # If Loopback is INTERNAL, does it satisfy OBS?
+        # Yes, Loopback should satisfy Obs.
+        if current_tier == AuthTier.INTERNAL:
+            return True, None
+
+        return False, "Observability access required."
+
+    return False, f"Access denied. Required: {required_tier}, Current: {current_tier}"
+
+
+def verify_scope_access(
+    request, required_scopes: List[str]
+) -> Tuple[bool, Optional[str]]:
+    """
+    Verify that the request has ALL required scopes.
+    """
+    if not required_scopes:
+        return True, None
+
+    token_info = resolve_token_info(request)
+    if not token_info:
+        return False, "Authentication required for scoped access."
+
+    missing = []
+    for req in required_scopes:
+        if not token_info.has_scope(req):
+            missing.append(req)
+
+    if missing:
+        return False, f"Missing required scopes: {', '.join(missing)}"
+
+    return True, None
+
+
+def enforce_security(handler):
+    """
+    S46 Decorator: Per-handler scope enforcement.
+    Wraps an aiohttp handler to enforce AuthTier and Scope requirements defined in metadata.
+    """
+    import functools
+
+    @functools.wraps(handler)
+    async def wrapper(request, *args, **kwargs):
+        meta = get_metadata(handler)
+        if not meta:
+            # S99: Drift Detection - Unclassified endpoint!
+            return web.Response(status=403, text="Access Denied: Unclassified Endpoint")
+
+        # 1. Tier Check
+        passed, err = verify_tier_access(request, meta.auth_tier)
+        if not passed:
+            return web.Response(status=403, text=f"Access Denied: {err}")
+
+        # 2. Scope Check (S46)
+        if meta.required_scopes:
+            passed, err = verify_scope_access(request, meta.required_scopes)
+            if not passed:
+                return web.Response(status=403, text=f"Forbidden: {err}")
+
+        return await handler(request, *args, **kwargs)
+
+    return wrapper
+
+
+# --- Legacy Support (Keep until refactor complete) ---
+# CRITICAL: keep legacy wrappers behavior/message-compatible with S13/S14/S27 contracts.
+# Do not replace these wrappers with direct tier/scope checks; loopback CSRF semantics would regress.
+
+
+def require_observability_access(request) -> Tuple[bool, Optional[str]]:
+    """
+    Enforce S14 access control policy for observability endpoints.
+
+    Keep legacy behavior/messages stable for existing handlers/tests:
+    1. Loopback -> allow
+    2. Valid observability token -> allow
+    3. Otherwise -> deny
+    """
+    remote = get_client_ip(request)
+    if is_loopback(remote):
+        return True, None
+
+    expected_token = (
+        os.environ.get("OPENCLAW_OBSERVABILITY_TOKEN")
+        or os.environ.get("MOLTBOT_OBSERVABILITY_TOKEN")
+        or ""
+    ).strip()
+    if expected_token:
+        client_token = request.headers.get(
+            "X-OpenClaw-Obs-Token", ""
+        ) or request.headers.get("X-Moltbot-Obs-Token", "")
+        if hmac.compare_digest(client_token, expected_token):
+            return True, None
+        return False, "Invalid or missing observability token."
+
+    return (
+        False,
+        "Remote access denied. Set OPENCLAW_OBSERVABILITY_TOKEN (or legacy MOLTBOT_OBSERVABILITY_TOKEN) to allow.",
+    )
+
+
+def require_admin_token(request) -> Tuple[bool, Optional[str]]:
+    """
+    Enforce token-based access for administrative/write actions.
+
+    Keep S13/S27 legacy behavior stable:
+    - If admin token configured -> require matching token header.
+    - If no admin token configured -> allow loopback with same-origin CSRF check.
+    - Deny remote by default.
+    """
+    remote = get_client_ip(request)
+    expected_token = (
+        os.environ.get("OPENCLAW_ADMIN_TOKEN")
+        or os.environ.get("MOLTBOT_ADMIN_TOKEN")
+        or ""
+    ).strip()
+    if expected_token:
+        client_token = request.headers.get(
+            "X-OpenClaw-Admin-Token", ""
+        ) or request.headers.get("X-Moltbot-Admin-Token", "")
+        if hmac.compare_digest(client_token, expected_token):
+            return True, None
+        return False, "Invalid admin token."
+
+    # No token configured: loopback convenience with S27 CSRF protection.
+    if is_loopback(remote):
+        try:
+            from .csrf_protection import is_same_origin_request
+        except ImportError:
+            try:
+                from services.csrf_protection import is_same_origin_request
+            except ImportError:
+                logger.warning(
+                    "S27: CSRF protection module missing, allowing loopback (unsafe)"
+                )
+                return True, None
+
+        if not is_same_origin_request(request):
+            return (
+                False,
+                "Cross-origin request denied (S33). Set OPENCLAW_ADMIN_TOKEN to use token-based auth.",
+            )
+        return True, None
+
+    return (
+        False,
+        "Remote admin access denied. Set OPENCLAW_ADMIN_TOKEN (or legacy MOLTBOT_ADMIN_TOKEN) to allow.",
+    )
