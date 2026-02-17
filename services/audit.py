@@ -1,89 +1,393 @@
 """
-S26+: Audit Events Service
-
-Minimal audit trail for admin actions (config/secret writes) without logging sensitive data.
-
-Events emitted:
-- settings.config_write
-- settings.secret_write
-- settings.secret_delete
-
-Each event includes: {timestamp, event_type, actor_ip, provider, ok, error}
-Never includes: API keys, admin tokens, or other secrets
+R99 Audit Service.
+Standardized, append-only audit events for sensitive operations.
 """
 
+import hashlib
+import json
 import logging
+import os
 import time
-from typing import Any, Dict, Optional
+import uuid
+from typing import Any, Dict, Iterable, Optional, Tuple
 
 logger = logging.getLogger("ComfyUI-OpenClaw.services.audit")
 
-# Audit log level (separate from app logs)
-audit_logger = logging.getLogger("ComfyUI-OpenClaw.audit")
+_TRUTHY = {"1", "true", "yes", "on"}
+_AUDIT_MAX_BYTES_DEFAULT = 5 * 1024 * 1024
+_AUDIT_BACKUPS_DEFAULT = 3
 
 
-def emit_audit_event(
+def _default_audit_log_path() -> str:
+    # Keep this lazy/fault-tolerant for unit tests that patch import topology.
+    try:
+        from .state_dir import get_state_dir
+    except Exception:
+        try:
+            from services.state_dir import get_state_dir  # type: ignore
+        except Exception:
+            get_state_dir = None
+    if get_state_dir:
+        return os.path.join(get_state_dir(), "audit.log")
+    return "audit.log"
+
+
+AUDIT_LOG_PATH = (
+    os.environ.get("OPENCLAW_AUDIT_LOG_PATH")
+    or os.environ.get("MOLTBOT_AUDIT_LOG_PATH")
+    or _default_audit_log_path()
+)
+
+
+def _env_int(primary: str, legacy: str, default: int) -> int:
+    raw = os.environ.get(primary) or os.environ.get(legacy)
+    if raw is None:
+        return default
+    try:
+        value = int(raw)
+        return value if value >= 0 else default
+    except Exception:
+        return default
+
+
+def _audit_limits() -> Tuple[int, int]:
+    max_bytes = _env_int(
+        "OPENCLAW_AUDIT_MAX_BYTES",
+        "MOLTBOT_AUDIT_MAX_BYTES",
+        _AUDIT_MAX_BYTES_DEFAULT,
+    )
+    backups = _env_int(
+        "OPENCLAW_AUDIT_MAX_BACKUPS",
+        "MOLTBOT_AUDIT_MAX_BACKUPS",
+        _AUDIT_BACKUPS_DEFAULT,
+    )
+    return max_bytes, backups
+
+
+def _json_safe(value: Any) -> Any:
+    if value is None or isinstance(value, (str, int, float, bool)):
+        return value
+    if isinstance(value, dict):
+        out: Dict[str, Any] = {}
+        for k, v in value.items():
+            out[str(k)] = _json_safe(v)
+        return out
+    if isinstance(value, (list, tuple, set)):
+        return [_json_safe(v) for v in value]
+    return str(value)
+
+
+def _normalize_role(role: Any) -> str:
+    if role is None:
+        return "unknown"
+    value = getattr(role, "value", None)
+    if isinstance(value, str) and value:
+        return value
+    text = str(role)
+    if text.startswith("AuthTier."):
+        return text.split(".", 1)[1].lower()
+    return text
+
+
+def _normalize_scopes(scopes: Any) -> list[str]:
+    if scopes is None:
+        return []
+    if isinstance(scopes, str):
+        return [scopes]
+    if isinstance(scopes, Iterable):
+        out = []
+        for s in scopes:
+            if s is None:
+                continue
+            out.append(str(s))
+        return sorted(set(out))
+    return [str(scopes)]
+
+
+def _resolve_request_token_info(request: Any) -> Any:
+    if request is None:
+        return None
+    try:
+        from .access_control import resolve_token_info
+    except Exception:
+        try:
+            from services.access_control import resolve_token_info  # type: ignore
+        except Exception:
+            return None
+    try:
+        return resolve_token_info(request)
+    except Exception:
+        return None
+
+
+def _resolve_trace_id(request: Any, details: Dict[str, Any]) -> str:
+    if isinstance(details.get("trace_id"), str) and details.get("trace_id"):
+        return details["trace_id"]
+    if request is not None:
+        headers = getattr(request, "headers", None) or {}
+        for key in ("X-Trace-Id", "X-OpenClaw-Trace-Id", "X-Request-Id"):
+            try:
+                value = headers.get(key)
+            except Exception:
+                value = None
+            if isinstance(value, str) and value.strip():
+                return value.strip()
+    return uuid.uuid4().hex
+
+
+def _chain_hash(prev_hash: str, entry: Dict[str, Any]) -> str:
+    payload = json.dumps(
+        entry, sort_keys=True, separators=(",", ":"), ensure_ascii=True
+    )
+    return hashlib.sha256(f"{prev_hash}|{payload}".encode("utf-8")).hexdigest()
+
+
+def _rotate_if_needed(path: str) -> None:
+    max_bytes, backups = _audit_limits()
+    if max_bytes <= 0 or backups < 0:
+        return
+    if not os.path.exists(path):
+        return
+    try:
+        if os.path.getsize(path) < max_bytes:
+            return
+        if backups == 0:
+            os.remove(path)
+            return
+        for idx in range(backups, 0, -1):
+            src = f"{path}.{idx}"
+            dst = f"{path}.{idx + 1}"
+            if os.path.exists(src):
+                if idx == backups:
+                    os.remove(src)
+                else:
+                    os.replace(src, dst)
+        os.replace(path, f"{path}.1")
+    except Exception as exc:
+        logger.error("Audit rotation failed: %s", exc)
+
+
+def _read_last_entry_hash(path: str) -> str:
+    # Best-effort bootstrap. Fall back to genesis if file is empty/unreadable.
+    if not os.path.exists(path):
+        return "GENESIS"
+    try:
+        with open(path, "rb") as f:
+            f.seek(0, os.SEEK_END)
+            size = f.tell()
+            if size <= 0:
+                return "GENESIS"
+            step = min(size, 8192)
+            f.seek(size - step)
+            data = f.read().decode("utf-8", errors="ignore")
+        lines = [line.strip() for line in data.splitlines() if line.strip()]
+        if not lines:
+            return "GENESIS"
+        last = json.loads(lines[-1])
+        last_hash = last.get("entry_hash")
+        if isinstance(last_hash, str) and last_hash:
+            return last_hash
+    except Exception:
+        pass
+    return "GENESIS"
+
+
+_LAST_HASH: Optional[str] = None
+
+
+def _write_audit_entry(entry: Dict[str, Any]) -> None:
+    global _LAST_HASH
+    try:
+        os.makedirs(os.path.dirname(os.path.abspath(AUDIT_LOG_PATH)), exist_ok=True)
+    except Exception:
+        # Path may be relative to CWD with no parent folder.
+        pass
+
+    _rotate_if_needed(AUDIT_LOG_PATH)
+    if _LAST_HASH is None:
+        _LAST_HASH = _read_last_entry_hash(AUDIT_LOG_PATH)
+
+    prev_hash = _LAST_HASH or "GENESIS"
+    event_hash = _chain_hash(prev_hash, entry)
+    wrapped = dict(entry)
+    wrapped["prev_hash"] = prev_hash
+    wrapped["entry_hash"] = event_hash
+
+    line = json.dumps(wrapped, sort_keys=True, ensure_ascii=True) + "\n"
+    try:
+        with open(AUDIT_LOG_PATH, "a", encoding="utf-8") as f:
+            f.write(line)
+        _LAST_HASH = event_hash
+    except Exception as exc:
+        logger.error("Failed to write audit entry: %s", exc)
+
+
+def _emit_modern(
+    *,
+    action: str,
+    target: str,
+    outcome: str,
+    token_info: Optional[Any] = None,
+    status_code: int = 0,
+    details: Optional[Dict[str, Any]] = None,
+    request: Optional[Any] = None,
+    source: str = "openclaw",
+) -> Dict[str, Any]:
+    details_dict = _json_safe(details or {})
+    token = token_info or _resolve_request_token_info(request)
+    token_id = "anonymous"
+    role = "unknown"
+    scopes: list[str] = []
+    if token is not None:
+        token_id = str(getattr(token, "token_id", "anonymous"))
+        role = _normalize_role(getattr(token, "role", "unknown"))
+        scopes = _normalize_scopes(getattr(token, "scopes", []))
+    scope = scopes[0] if scopes else ""
+    trace_id = _resolve_trace_id(
+        request, details_dict if isinstance(details_dict, dict) else {}
+    )
+    entry = {
+        "ts": time.time(),
+        "source": source,
+        "token_id": token_id,
+        "role": role,
+        "scope": scope,
+        "scopes": scopes,
+        "trace_id": trace_id,
+        "action": action,
+        "target": target,
+        "outcome": outcome,
+        "status_code": int(status_code),
+        "details": details_dict,
+    }
+    _write_audit_entry(entry)
+    logger.info(
+        "AUDIT action=%s target=%s outcome=%s token_id=%s",
+        action,
+        target,
+        outcome,
+        token_id,
+    )
+    return entry
+
+
+def _emit_legacy(
     event_type: str,
     actor_ip: str,
     ok: bool,
     provider: Optional[str] = None,
     error: Optional[str] = None,
     metadata: Optional[Dict[str, Any]] = None,
-) -> None:
-    """
-    Emit an audit event (never logs secrets).
-
-    Args:
-        event_type: Event type (e.g., "settings.config_write")
-        actor_ip: Client IP address
-        ok: True if successful, False if failed
-        provider: Provider ID (if applicable)
-        error: Error message (if failed)
-        metadata: Additional non-sensitive metadata
-    """
-    event = {
-        "ts": time.time(),
-        "event": event_type,
-        "actor_ip": actor_ip,
-        "ok": ok,
-    }
-
+) -> Dict[str, Any]:
+    details = {"actor_ip": actor_ip}
     if provider:
-        event["provider"] = provider
-
+        details["provider"] = provider
     if error:
-        event["error"] = error
-
+        details["error"] = error
     if metadata:
-        event["metadata"] = metadata
+        details["metadata"] = metadata
+    return _emit_modern(
+        action=event_type,
+        target=provider or "settings",
+        outcome="allow" if ok else "error",
+        status_code=200 if ok else 500,
+        details=details,
+    )
 
-    # Log as JSON-like structure for easy parsing
-    audit_logger.info(f"AUDIT: {event}")
+
+def emit_audit_event(*args, **kwargs) -> Dict[str, Any]:
+    """
+    Backward-compatible audit API.
+
+    Modern signature:
+    - action, target, outcome, token_info=None, status_code=0, details=None, request=None
+
+    Legacy signature:
+    - event_type, actor_ip, ok, provider=None, error=None, metadata=None
+    """
+    if "action" in kwargs or "target" in kwargs or "outcome" in kwargs:
+        return _emit_modern(
+            action=kwargs.get("action", ""),
+            target=kwargs.get("target", ""),
+            outcome=kwargs.get("outcome", ""),
+            token_info=kwargs.get("token_info"),
+            status_code=kwargs.get("status_code", 0),
+            details=kwargs.get("details"),
+            request=kwargs.get("request"),
+            source=kwargs.get("source", "openclaw"),
+        )
+
+    if len(args) >= 3 and isinstance(args[0], str) and isinstance(args[2], bool):
+        event_type = args[0]
+        actor_ip = str(args[1])
+        ok = bool(args[2])
+        provider = args[3] if len(args) > 3 else kwargs.get("provider")
+        error = args[4] if len(args) > 4 else kwargs.get("error")
+        metadata = args[5] if len(args) > 5 else kwargs.get("metadata")
+        return _emit_legacy(event_type, actor_ip, ok, provider, error, metadata)
+
+    raise TypeError("Unsupported emit_audit_event signature")
 
 
 def audit_config_write(actor_ip: str, ok: bool, error: Optional[str] = None) -> None:
-    """Audit log for config write operations."""
     emit_audit_event("settings.config_write", actor_ip, ok, error=error)
+    emit_audit_event(
+        action="config.update",
+        target="config.json",
+        outcome="allow" if ok else "error",
+        status_code=200 if ok else 400,
+        details=(
+            {"actor_ip": actor_ip, "error": error} if error else {"actor_ip": actor_ip}
+        ),
+    )
 
 
 def audit_secret_write(
     actor_ip: str, provider: str, ok: bool, error: Optional[str] = None
 ) -> None:
-    """Audit log for secret write operations (never logs secret value)."""
     emit_audit_event(
         "settings.secret_write", actor_ip, ok, provider=provider, error=error
+    )
+    emit_audit_event(
+        action="secrets.write",
+        target=provider,
+        outcome="allow" if ok else "error",
+        status_code=200 if ok else 500,
+        details=(
+            {"actor_ip": actor_ip, "provider": provider, "error": error}
+            if error
+            else {"actor_ip": actor_ip, "provider": provider}
+        ),
     )
 
 
 def audit_secret_delete(
     actor_ip: str, provider: str, ok: bool, error: Optional[str] = None
 ) -> None:
-    """Audit log for secret delete operations."""
     emit_audit_event(
         "settings.secret_delete", actor_ip, ok, provider=provider, error=error
+    )
+    emit_audit_event(
+        action="secrets.delete",
+        target=provider,
+        outcome="allow" if ok else "error",
+        status_code=200 if ok else 404,
+        details=(
+            {"actor_ip": actor_ip, "provider": provider, "error": error}
+            if error
+            else {"actor_ip": actor_ip, "provider": provider}
+        ),
     )
 
 
 def audit_llm_test(actor_ip: str, ok: bool, error: Optional[str] = None) -> None:
-    """Audit log for LLM test operations."""
     emit_audit_event("settings.llm_test", actor_ip, ok, error=error)
+    emit_audit_event(
+        action="llm.test_connection",
+        target="llm",
+        outcome="allow" if ok else "error",
+        status_code=200 if ok else 500,
+        details=(
+            {"actor_ip": actor_ip, "error": error} if error else {"actor_ip": actor_ip}
+        ),
+    )

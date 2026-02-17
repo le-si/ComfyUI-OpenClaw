@@ -26,8 +26,8 @@ from aiohttp import web
 # - Unit tests: allow top-level fallbacks.
 if __package__ and "." in __package__:
     from ..models.schemas import MAX_BODY_SIZE
-    from ..services.access_control import require_admin_token
-    from ..services.audit import audit_secret_delete, audit_secret_write
+    from ..services.access_control import require_admin_token, resolve_token_info
+    from ..services.audit import emit_audit_event
     from ..services.csrf_protection import require_same_origin_if_no_token
     from ..services.metrics import metrics
     from ..services.rate_limit import check_rate_limit
@@ -37,8 +37,8 @@ if __package__ and "." in __package__:
 else:  # pragma: no cover (test-only import mode)
     from models.schemas import MAX_BODY_SIZE  # type: ignore
     from services.access_control import require_admin_token  # type: ignore
-    from services.audit import audit_secret_delete  # type: ignore
-    from services.audit import audit_secret_write
+    from services.access_control import resolve_token_info  # type: ignore
+    from services.audit import emit_audit_event  # type: ignore
     from services.csrf_protection import require_same_origin_if_no_token  # type: ignore
     from services.metrics import metrics  # type: ignore
     from services.rate_limit import check_rate_limit  # type: ignore
@@ -68,6 +68,15 @@ def _deny_if_remote_admin_not_allowed(request: web.Request) -> Optional[web.Resp
         return None
     remote = request.remote or ""
     if not is_loopback_client(remote):
+        # R99: audit deny path
+        emit_audit_event(
+            action="secrets.access",
+            target="secrets",
+            outcome="deny",
+            status_code=403,
+            details={"reason": "remote_admin_denied", "remote": remote},
+            request=request,
+        )
         return web.json_response(
             {
                 "ok": False,
@@ -82,6 +91,15 @@ def _deny_if_remote_admin_not_allowed(request: web.Request) -> Optional[web.Resp
 def _require_admin(request: web.Request) -> Optional[web.Response]:
     allowed, error = require_admin_token(request)
     if not allowed:
+        # R99: audit deny path
+        emit_audit_event(
+            action="secrets.access",
+            target="secrets",
+            outcome="deny",
+            status_code=403,
+            details={"reason": error or "admin_token_required"},
+            request=request,
+        )
         return web.json_response(
             {"ok": False, "error": error or "Unauthorized"}, status=403
         )
@@ -176,6 +194,8 @@ async def secrets_put_handler(request: web.Request) -> web.Response:
     if resp:
         return resp
 
+    token_info = resolve_token_info(request)
+
     resp = _rate_limit_admin(request)
     if resp:
         return resp
@@ -239,15 +259,30 @@ async def secrets_put_handler(request: web.Request) -> web.Response:
         # Never log the secret value
         logger.info(f"S25: Saved secret for provider '{provider}' via UI")
 
-        # S26+: Audit event (no secrets)
-        audit_secret_write(actor_ip, provider, ok=True)
+        emit_audit_event(
+            action="secrets.write",
+            target=provider,
+            outcome="allow",
+            token_info=token_info,
+            status_code=200,
+            details={"actor_ip": actor_ip},
+            request=request,
+        )
 
         return web.json_response(
             {"ok": True, "message": f"Secret saved for provider '{provider}'"}
         )
     except Exception as e:
         logger.error(f"S25: Failed to save secret: {e}")
-        audit_secret_write(actor_ip, provider, ok=False, error=str(e))
+        emit_audit_event(
+            action="secrets.write",
+            target=provider,
+            outcome="error",
+            token_info=token_info,
+            status_code=500,
+            details={"actor_ip": actor_ip, "error": str(e)},
+            request=request,
+        )
         return web.json_response(
             {"ok": False, "error": "save_failed", "message": str(e)}, status=500
         )
@@ -285,6 +320,8 @@ async def secrets_delete_handler(request: web.Request) -> web.Response:
     if resp:
         return resp
 
+    token_info = resolve_token_info(request)
+
     resp = _rate_limit_admin(request)
     if resp:
         return resp
@@ -306,12 +343,28 @@ async def secrets_delete_handler(request: web.Request) -> web.Response:
 
         if removed:
             logger.info(f"S25: Cleared secret for provider '{provider}' via UI")
-            audit_secret_delete(actor_ip, provider, ok=True)
+            emit_audit_event(
+                action="secrets.delete",
+                target=provider,
+                outcome="allow",
+                token_info=token_info,
+                status_code=200,
+                details={"actor_ip": actor_ip},
+                request=request,
+            )
             return web.json_response(
                 {"ok": True, "message": f"Secret cleared for provider '{provider}'"}
             )
         else:
-            audit_secret_delete(actor_ip, provider, ok=False, error="not_found")
+            emit_audit_event(
+                action="secrets.delete",
+                target=provider,
+                outcome="deny",
+                token_info=token_info,
+                status_code=404,
+                details={"actor_ip": actor_ip, "reason": "not_found"},
+                request=request,
+            )
             return web.json_response(
                 {
                     "ok": False,
@@ -322,7 +375,15 @@ async def secrets_delete_handler(request: web.Request) -> web.Response:
             )
     except Exception as e:
         logger.error(f"S25: Failed to clear secret: {e}")
-        audit_secret_delete(actor_ip, provider, ok=False, error=str(e))
+        emit_audit_event(
+            action="secrets.delete",
+            target=provider,
+            outcome="error",
+            token_info=token_info,
+            status_code=500,
+            details={"actor_ip": actor_ip, "error": str(e)},
+            request=request,
+        )
         return web.json_response(
             {"ok": False, "error": "clear_failed", "message": str(e)}, status=500
         )

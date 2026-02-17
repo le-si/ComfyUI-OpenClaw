@@ -9,13 +9,17 @@ from typing import Callable, Optional
 from aiohttp import web
 
 try:
+    from ..services.access_control import resolve_token_info
     from ..services.approvals.models import ApprovalStatus
     from ..services.approvals.service import get_approval_service
+    from ..services.audit import emit_audit_event
     from ..services.webhook_auth import AuthError
 except ImportError:
     # Fallback for ComfyUI's non-package loader or ad-hoc imports.
+    from services.access_control import resolve_token_info  # type: ignore
     from services.approvals.models import ApprovalStatus
     from services.approvals.service import get_approval_service
+    from services.audit import emit_audit_event  # type: ignore
     from services.webhook_auth import AuthError
 
 logger = logging.getLogger("ComfyUI-OpenClaw.api.approvals")
@@ -51,13 +55,53 @@ class ApprovalHandlers:
                 if not allowed:
                     raise AuthError(error or "Unauthorized")
 
+    def _audit(
+        self,
+        *,
+        request: web.Request,
+        action: str,
+        target: str,
+        outcome: str,
+        status_code: int,
+        details: Optional[dict] = None,
+    ) -> None:
+        try:
+            token_info = resolve_token_info(request)
+        except Exception:
+            token_info = None
+        emit_audit_event(
+            action=action,
+            target=target,
+            outcome=outcome,
+            token_info=token_info,
+            status_code=status_code,
+            details=details or {},
+            request=request,
+        )
+
     async def list_approvals(self, request: web.Request) -> web.Response:
         """GET /moltbot/approvals - List approval requests."""
         try:
             await self._check_auth(request)
         except AuthError as e:
+            self._audit(
+                request=request,
+                action="approvals.list",
+                target="approvals",
+                outcome="deny",
+                status_code=403,
+                details={"reason": str(e)},
+            )
             return web.json_response({"error": str(e)}, status=403)
         except Exception:
+            self._audit(
+                request=request,
+                action="approvals.list",
+                target="approvals",
+                outcome="deny",
+                status_code=403,
+                details={"reason": "unauthorized"},
+            )
             return web.json_response({"error": "Unauthorized"}, status=403)
 
         # Parse query params
@@ -95,8 +139,24 @@ class ApprovalHandlers:
         try:
             await self._check_auth(request)
         except AuthError as e:
+            self._audit(
+                request=request,
+                action="approvals.get",
+                target=request.match_info.get("approval_id", ""),
+                outcome="deny",
+                status_code=403,
+                details={"reason": str(e)},
+            )
             return web.json_response({"error": str(e)}, status=403)
         except Exception:
+            self._audit(
+                request=request,
+                action="approvals.get",
+                target=request.match_info.get("approval_id", ""),
+                outcome="deny",
+                status_code=403,
+                details={"reason": "unauthorized"},
+            )
             return web.json_response({"error": "Unauthorized"}, status=403)
 
         approval_id = request.match_info.get("approval_id", "")
@@ -112,8 +172,24 @@ class ApprovalHandlers:
         try:
             await self._check_auth(request)
         except AuthError as e:
+            self._audit(
+                request=request,
+                action="approvals.approve",
+                target=request.match_info.get("approval_id", ""),
+                outcome="deny",
+                status_code=403,
+                details={"reason": str(e)},
+            )
             return web.json_response({"error": str(e)}, status=403)
         except Exception:
+            self._audit(
+                request=request,
+                action="approvals.approve",
+                target=request.match_info.get("approval_id", ""),
+                outcome="deny",
+                status_code=403,
+                details={"reason": "unauthorized"},
+            )
             return web.json_response({"error": "Unauthorized"}, status=403)
 
         approval_id = request.match_info.get("approval_id", "")
@@ -179,9 +255,25 @@ class ApprovalHandlers:
             else:
                 result["executed"] = False
 
+            self._audit(
+                request=request,
+                action="approvals.approve",
+                target=approval_id,
+                outcome="allow",
+                status_code=200,
+                details={"executed": result.get("executed", False), "actor": actor},
+            )
             return web.json_response(result)
 
         except ValueError as e:
+            self._audit(
+                request=request,
+                action="approvals.approve",
+                target=approval_id,
+                outcome="error",
+                status_code=400,
+                details={"error": str(e), "actor": actor},
+            )
             return web.json_response({"error": str(e)}, status=400)
 
     async def reject_request(self, request: web.Request) -> web.Response:
@@ -189,8 +281,24 @@ class ApprovalHandlers:
         try:
             await self._check_auth(request)
         except AuthError as e:
+            self._audit(
+                request=request,
+                action="approvals.reject",
+                target=request.match_info.get("approval_id", ""),
+                outcome="deny",
+                status_code=403,
+                details={"reason": str(e)},
+            )
             return web.json_response({"error": str(e)}, status=403)
         except Exception:
+            self._audit(
+                request=request,
+                action="approvals.reject",
+                target=request.match_info.get("approval_id", ""),
+                outcome="deny",
+                status_code=403,
+                details={"reason": "unauthorized"},
+            )
             return web.json_response({"error": "Unauthorized"}, status=403)
 
         approval_id = request.match_info.get("approval_id", "")
@@ -207,6 +315,14 @@ class ApprovalHandlers:
             approval = self._service.reject(approval_id, actor=actor)
 
             logger.info(f"Rejected request: {approval_id}")
+            self._audit(
+                request=request,
+                action="approvals.reject",
+                target=approval_id,
+                outcome="allow",
+                status_code=200,
+                details={"actor": actor},
+            )
             return web.json_response(
                 {
                     "rejected": True,
@@ -215,6 +331,14 @@ class ApprovalHandlers:
             )
 
         except ValueError as e:
+            self._audit(
+                request=request,
+                action="approvals.reject",
+                target=approval_id,
+                outcome="error",
+                status_code=400,
+                details={"error": str(e), "actor": actor},
+            )
             return web.json_response({"error": str(e)}, status=400)
 
 

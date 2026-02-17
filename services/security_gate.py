@@ -50,6 +50,22 @@ class SecurityGate:
         warnings = []
         fatal_errors = []
 
+        def _emit_startup_audit(action: str, outcome: str, details: dict) -> None:
+            try:
+                from .audit import emit_audit_event
+            except Exception:
+                try:
+                    from services.audit import emit_audit_event  # type: ignore
+                except Exception:
+                    return
+            emit_audit_event(
+                action=action,
+                target="startup",
+                outcome=outcome,
+                status_code=0,
+                details=details,
+            )
+
         # 1. Access Control (S45 Update)
         try:
             from .access_control import is_any_token_configured, is_auth_configured
@@ -69,6 +85,15 @@ class SecurityGate:
                     warnings.append(
                         "WARNING: Server is exposed (--listen) without Authentication, but override is active.\n"
                         "  This is a DANGEROUS configuration. Remote Code Execution is possible if port is accessible."
+                    )
+                    _emit_startup_audit(
+                        action="startup.dangerous_override",
+                        outcome="allow",
+                        details={
+                            "reason": "exposed_without_auth",
+                            "override": True,
+                            "profile": get_runtime_profile().value,
+                        },
                     )
                     # Do NOT block startup (S45 Override Contract)
                 else:
@@ -113,6 +138,18 @@ class SecurityGate:
                 warnings.append(
                     "Webhook module enabled but OPENCLAW_WEBHOOK_AUTH_MODE not set"
                 )
+
+        # 3.5 Tool Sandbox Posture (S47)
+        try:
+            from .tool_runner import evaluate_tool_sandbox_posture, is_tools_enabled
+
+            if is_tools_enabled():
+                sandbox_ok, sandbox_issues = evaluate_tool_sandbox_posture()
+                if not sandbox_ok:
+                    for issue in sandbox_issues:
+                        warnings.append(f"Tool Sandbox FAILED: {issue}")
+        except ImportError:
+            warnings.append("Tool sandbox posture checker failed to import")
 
         # 4. Redaction
         try:

@@ -1,0 +1,96 @@
+import json
+import os
+import unittest
+from unittest.mock import patch
+
+from services.access_control import AuthTier, TokenInfo
+from services.audit import (
+    audit_config_write,
+    audit_llm_test,
+    audit_secret_delete,
+    audit_secret_write,
+    emit_audit_event,
+)
+
+
+class TestAudit(unittest.TestCase):
+    def setUp(self):
+        self.test_log = "test_audit.log"
+        self.path_patcher = patch("services.audit.AUDIT_LOG_PATH", self.test_log)
+        self.path_patcher.start()
+        self.hash_patcher = patch("services.audit._LAST_HASH", None)
+        self.hash_patcher.start()
+        if os.path.exists(self.test_log):
+            os.remove(self.test_log)
+
+    def tearDown(self):
+        self.path_patcher.stop()
+        self.hash_patcher.stop()
+        if os.path.exists(self.test_log):
+            os.remove(self.test_log)
+
+    def _read_entries(self):
+        with open(self.test_log, "r", encoding="utf-8") as f:
+            return [json.loads(line) for line in f if line.strip()]
+
+    def test_emit_audit_structure(self):
+        token = TokenInfo(token_id="adm-1", role=AuthTier.ADMIN, scopes={"*"})
+        emit_audit_event(
+            action="config.update",
+            target="settings.json",
+            outcome="allow",
+            token_info=token,
+            status_code=200,
+            details={"key": "value"},
+        )
+
+        entries = self._read_entries()
+        self.assertEqual(len(entries), 1)
+        entry = entries[0]
+        for field in (
+            "ts",
+            "source",
+            "token_id",
+            "scope",
+            "scopes",
+            "trace_id",
+            "action",
+            "target",
+            "outcome",
+            "status_code",
+            "details",
+            "prev_hash",
+            "entry_hash",
+        ):
+            self.assertIn(field, entry)
+        self.assertEqual(entry["token_id"], "adm-1")
+        self.assertEqual(entry["role"], "admin")
+        self.assertEqual(entry["action"], "config.update")
+        self.assertEqual(entry["target"], "settings.json")
+        self.assertEqual(entry["outcome"], "allow")
+        self.assertIn("*", entry["scopes"])
+
+    def test_append_only_hash_chain(self):
+        emit_audit_event("settings.config_write", "127.0.0.1", True)
+        emit_audit_event("settings.config_write", "127.0.0.1", False, error="x")
+        entries = self._read_entries()
+        self.assertEqual(len(entries), 2)
+        self.assertEqual(entries[0]["prev_hash"], "GENESIS")
+        self.assertEqual(entries[1]["prev_hash"], entries[0]["entry_hash"])
+
+    def test_legacy_shims(self):
+        audit_config_write("1.2.3.4", ok=True)
+        audit_llm_test("1.2.3.4", ok=False, error="bad")
+        audit_secret_write("1.2.3.4", "openai", ok=True)
+        audit_secret_delete("1.2.3.4", "openai", ok=False, error="not_found")
+
+        entries = self._read_entries()
+        actions = [e["action"] for e in entries]
+        self.assertIn("settings.config_write", actions)
+        self.assertIn("config.update", actions)
+        self.assertIn("settings.llm_test", actions)
+        self.assertIn("llm.test_connection", actions)
+        self.assertIn("settings.secret_write", actions)
+        self.assertIn("secrets.write", actions)
+        self.assertIn("settings.secret_delete", actions)
+        self.assertIn("secrets.delete", actions)

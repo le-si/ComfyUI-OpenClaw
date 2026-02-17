@@ -46,10 +46,12 @@ except ImportError:  # pragma: no cover (optional for unit tests)
 # - In unit tests, modules may be imported as top-level (e.g., `api.*`), so we allow top-level fallbacks.
 if __package__ and "." in __package__:
     from ..services.access_control import (
+        is_loopback,
         require_admin_token,
         require_observability_access,
+        resolve_token_info,
     )
-    from ..services.audit import audit_config_write, audit_llm_test
+    from ..services.audit import emit_audit_event
 
     try:
         from ..services.csrf_protection import require_same_origin_if_no_token
@@ -75,10 +77,11 @@ if __package__ and "." in __package__:
         update_config,
     )
 else:  # pragma: no cover (test-only import mode)
+    from services.access_control import is_loopback  # type: ignore
     from services.access_control import require_admin_token  # type: ignore
     from services.access_control import require_observability_access  # type: ignore
-    from services.audit import audit_config_write  # type: ignore
-    from services.audit import audit_llm_test
+    from services.access_control import resolve_token_info  # type: ignore
+    from services.audit import emit_audit_event  # type: ignore
 
     try:
         from services.csrf_protection import (
@@ -330,6 +333,15 @@ async def llm_models_handler(request: web.Request) -> web.Response:
     # Admin boundary
     allowed, err = require_admin_token(request)
     if not allowed:
+        emit_audit_event(
+            action="config.update",
+            target="config.json",
+            outcome="deny",
+            token_info=token_info,
+            status_code=403,
+            details={"reason": err or "unauthorized"},
+            request=request,
+        )
         return web.json_response(
             {
                 "ok": False,
@@ -532,9 +544,21 @@ async def config_put_handler(request: web.Request) -> web.Response:
             {"ok": False, "error": "Rate limit exceeded"}, status=429
         )
 
-    # S13: Validate admin boundary
+    # R99/S46: resolve identity context for non-repudiation audits.
+    token_info = resolve_token_info(request)
+
+    # Still enforce admin requirement (which checks hierarchy)
     allowed, err = require_admin_token(request)
     if not allowed:
+        emit_audit_event(
+            action="config.update",
+            target="config.json",
+            outcome="deny",
+            token_info=token_info,
+            status_code=403,
+            details={"reason": err or "admin_token_required"},
+            request=request,
+        )
         return web.json_response(
             {
                 "ok": False,
@@ -552,8 +576,18 @@ async def config_put_handler(request: web.Request) -> web.Response:
         or ""
     ).lower()
     if allow_remote not in ("1", "true", "yes", "on"):
-        remote = request.remote or ""
-        if not is_loopback_client(remote):
+        # Use S14 is_loopback which handles ipv6/mapped
+        remote = get_client_ip(request)
+        if not is_loopback(remote):
+            emit_audit_event(
+                action="config.update",
+                target="config.json",
+                outcome="deny",
+                token_info=token_info,
+                status_code=403,
+                details={"reason": "remote_admin_denied", "remote": remote},
+                request=request,
+            )
             return web.json_response(
                 {
                     "ok": False,
@@ -585,10 +619,19 @@ async def config_put_handler(request: web.Request) -> web.Response:
         )
 
     success, errors = update_config(updates)
-    actor_ip = get_client_ip(request)
+
+    # R99: Standardized Audit Emission
+    emit_audit_event(
+        action="config.update",
+        target="config.json",
+        outcome="allow" if success else "error",
+        token_info=token_info,
+        status_code=200 if success else 400,
+        details={"errors": errors} if errors else None,
+        request=request,
+    )
 
     if not success:
-        audit_config_write(actor_ip, ok=False, error=" | ".join(errors))
         return web.json_response(
             {
                 "ok": False,
@@ -596,9 +639,6 @@ async def config_put_handler(request: web.Request) -> web.Response:
             },
             status=400,
         )
-
-    # S26+: Audit event
-    audit_config_write(actor_ip, ok=True)
 
     # Return updated config
     effective, sources = get_effective_config()
@@ -653,9 +693,20 @@ async def llm_test_handler(request: web.Request) -> web.Response:
             {"ok": False, "error": "Rate limit exceeded"}, status=429
         )
 
+    token_info = resolve_token_info(request)
+
     # S13: Validate admin boundary
     allowed, err = require_admin_token(request)
     if not allowed:
+        emit_audit_event(
+            action="llm.test_connection",
+            target="llm",
+            outcome="deny",
+            token_info=token_info,
+            status_code=403,
+            details={"reason": err or "unauthorized"},
+            request=request,
+        )
         return web.json_response(
             {
                 "ok": False,
@@ -664,7 +715,6 @@ async def llm_test_handler(request: web.Request) -> web.Response:
             status=403,
         )
 
-    actor_ip = get_client_ip(request)
     try:
         # IMPORTANT (Settings UX / provider mismatch):
         # - The Settings UI allows selecting provider/model/base_url without persisting config immediately.
@@ -744,7 +794,15 @@ async def llm_test_handler(request: web.Request) -> web.Response:
 
         # Check result
         if result and "text" in result:
-            audit_llm_test(actor_ip, ok=True)
+            emit_audit_event(
+                action="llm.test_connection",
+                target=f"{client.provider}:{client.model}",
+                outcome="allow",
+                token_info=token_info,
+                status_code=200,
+                details={"provider": client.provider, "model": client.model},
+                request=request,
+            )
             return web.json_response(
                 {
                     "ok": True,
@@ -755,7 +813,19 @@ async def llm_test_handler(request: web.Request) -> web.Response:
                 }
             )
         else:
-            audit_llm_test(actor_ip, ok=False, error="Empty response")
+            emit_audit_event(
+                action="llm.test_connection",
+                target=f"{client.provider}:{client.model}",
+                outcome="error",
+                token_info=token_info,
+                status_code=500,
+                details={
+                    "provider": client.provider,
+                    "model": client.model,
+                    "error": "Empty response",
+                },
+                request=request,
+            )
             return web.json_response(
                 {
                     "ok": False,
@@ -764,7 +834,15 @@ async def llm_test_handler(request: web.Request) -> web.Response:
             )
     except Exception as e:
         logger.exception("LLM test failed")
-        audit_llm_test(actor_ip, ok=False, error=str(e))
+        emit_audit_event(
+            action="llm.test_connection",
+            target="llm",
+            outcome="error",
+            token_info=token_info,
+            status_code=500,
+            details={"error": str(e)},
+            request=request,
+        )
         return web.json_response(
             {
                 "ok": False,

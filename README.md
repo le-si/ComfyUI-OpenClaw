@@ -29,8 +29,24 @@ This project is intentionally **not** a general-purpose assistant platform with 
 - Profile-driven startup hardening with fail-closed enforcement in hardened mode
 - Startup module capability gates (disabled modules do not register routes/workers)
 - Endpoint inventory metadata and route drift tests to catch unclassified API exposure regressions
+- Tamper-evident, append-only audit trails for sensitive write/admin paths
+- Hardened external tool sandbox posture with fail-closed checks and filesystem path guards
 
 ## Latest Updates - Click to expand
+
+<details>
+
+<summary><strong>Audit trail and external tool sandbox hardening closeout</strong></summary>
+
+- Added non-repudiation audit coverage for sensitive config/secrets/tools/approvals/bridge and startup-dangerous-override paths.
+- Standardized audit envelopes and append-only hash-chain logging to improve forensic traceability.
+- Added stricter external tool sandbox controls:
+  - hardened-mode fail-closed when sandbox posture/runtime is unsafe
+  - explicit network allowlist requirement when tooling enables egress
+  - pre-exec filesystem path allowlist enforcement for tool arguments
+- Expanded security regression coverage for audit contract paths and sandbox policy enforcement.
+
+</details>
 
 <details>
 <summary><strong>Endpoint inventory hardening and route drift detection coverage</strong></summary>

@@ -8,6 +8,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import time
+from types import SimpleNamespace
 from typing import Any, Dict, Optional
 
 try:
@@ -17,6 +18,7 @@ except ModuleNotFoundError:  # pragma: no cover (optional for unit tests)
 
 try:
     from ..services.async_utils import run_in_thread
+    from ..services.audit import emit_audit_event
 
     # CRITICAL: handshake verifier must be imported in package mode;
     # missing this causes NameError at runtime on /bridge/handshake.
@@ -37,6 +39,7 @@ try:
 except ImportError:
     # Fallback for ComfyUI's non-package loader or ad-hoc imports.
     from services.async_utils import run_in_thread
+    from services.audit import emit_audit_event
     from services.bridge_handshake import verify_handshake
     from services.cache import TTLCache
     from services.execution_budgets import BudgetExceededError
@@ -91,6 +94,36 @@ class BridgeHandlers:
         self._worker_results: dict = {}
         # F46: Worker heartbeats
         self._worker_heartbeats: dict = {}
+
+    def _bridge_token(self, device_id: Optional[str], scope: Optional[str] = None):
+        scopes = {scope} if scope else set()
+        return SimpleNamespace(
+            token_id=f"bridge:{device_id or 'unknown'}",
+            role="bridge",
+            scopes=scopes,
+        )
+
+    def _audit(
+        self,
+        *,
+        request: web.Request,
+        action: str,
+        target: str,
+        outcome: str,
+        status_code: int,
+        device_id: Optional[str] = None,
+        scope: Optional[str] = None,
+        details: Optional[Dict[str, Any]] = None,
+    ) -> None:
+        emit_audit_event(
+            action=action,
+            target=target,
+            outcome=outcome,
+            token_info=self._bridge_token(device_id, scope),
+            status_code=status_code,
+            details=details or {},
+            request=request,
+        )
 
     @endpoint_metadata(
         auth=AuthTier.PUBLIC,  # Guarded by is_bridge_enabled internally, effectively public if enabled
@@ -178,16 +211,44 @@ class BridgeHandlers:
             request, BridgeScope.JOB_SUBMIT
         )
         if not is_valid:
+            self._audit(
+                request=request,
+                action="bridge.submit",
+                target="bridge.submit",
+                outcome="deny",
+                status_code=getattr(error_resp, "status", 403),
+                details={"reason": "auth_failed"},
+            )
             return error_resp
 
         # Rate limit
         if not check_rate_limit(request, "bridge"):
+            self._audit(
+                request=request,
+                action="bridge.submit",
+                target="bridge.submit",
+                outcome="deny",
+                status_code=429,
+                device_id=device_id,
+                scope=BridgeScope.JOB_SUBMIT.value,
+                details={"reason": "rate_limit"},
+            )
             return web.json_response({"error": "Rate limit exceeded"}, status=429)
 
         # Parse payload
         try:
             data = await request.json()
         except Exception:
+            self._audit(
+                request=request,
+                action="bridge.submit",
+                target="bridge.submit",
+                outcome="deny",
+                status_code=400,
+                device_id=device_id,
+                scope=BridgeScope.JOB_SUBMIT.value,
+                details={"reason": "invalid_json"},
+            )
             return web.json_response({"error": "Invalid JSON"}, status=400)
 
         # R25: Trace context
@@ -199,8 +260,28 @@ class BridgeHandlers:
         idempotency_key = data.get("idempotency_key")
 
         if not template_id:
+            self._audit(
+                request=request,
+                action="bridge.submit",
+                target="bridge.submit",
+                outcome="deny",
+                status_code=400,
+                device_id=device_id,
+                scope=BridgeScope.JOB_SUBMIT.value,
+                details={"reason": "missing_template_id"},
+            )
             return web.json_response({"error": "template_id required"}, status=400)
         if not idempotency_key:
+            self._audit(
+                request=request,
+                action="bridge.submit",
+                target="bridge.submit",
+                outcome="deny",
+                status_code=400,
+                device_id=device_id,
+                scope=BridgeScope.JOB_SUBMIT.value,
+                details={"reason": "missing_idempotency_key"},
+            )
             return web.json_response({"error": "idempotency_key required"}, status=400)
 
         # Payload size check
@@ -208,6 +289,16 @@ class BridgeHandlers:
 
         inputs_size = len(json.dumps(inputs))
         if inputs_size > MAX_INPUTS_SIZE:
+            self._audit(
+                request=request,
+                action="bridge.submit",
+                target="bridge.submit",
+                outcome="deny",
+                status_code=400,
+                device_id=device_id,
+                scope=BridgeScope.JOB_SUBMIT.value,
+                details={"reason": "inputs_too_large", "size": inputs_size},
+            )
             return web.json_response(
                 {"error": f"inputs exceeds {MAX_INPUTS_SIZE // 1024}KB"}, status=400
             )
@@ -264,10 +355,30 @@ class BridgeHandlers:
             # Cache response
             self._idempotency_store.put(idempotency_key, response_data)
 
+            self._audit(
+                request=request,
+                action="bridge.submit",
+                target=template_id,
+                outcome="allow",
+                status_code=200,
+                device_id=device_id,
+                scope=BridgeScope.JOB_SUBMIT.value,
+                details={"prompt_id": prompt_id, "trace_id": trace_id},
+            )
             return web.json_response(response_data)
 
         except BudgetExceededError as e:
             logger.warning(f"Bridge submit denied by execution budget: {e}")
+            self._audit(
+                request=request,
+                action="bridge.submit",
+                target=template_id,
+                outcome="deny",
+                status_code=429,
+                device_id=device_id,
+                scope=BridgeScope.JOB_SUBMIT.value,
+                details={"reason": "budget_exceeded", "error": str(e)},
+            )
             return web.json_response(
                 {"error": "budget_exceeded", "detail": str(e)},
                 status=429,
@@ -275,6 +386,16 @@ class BridgeHandlers:
             )
         except Exception as e:
             logger.exception("Bridge submit failed")
+            self._audit(
+                request=request,
+                action="bridge.submit",
+                target=template_id or "bridge.submit",
+                outcome="error",
+                status_code=500,
+                device_id=device_id,
+                scope=BridgeScope.JOB_SUBMIT.value,
+                details={"error": str(e)},
+            )
             return web.json_response({"error": "Internal server error"}, status=500)
 
     @endpoint_metadata(
@@ -294,16 +415,44 @@ class BridgeHandlers:
             request, BridgeScope.DELIVERY
         )
         if not is_valid:
+            self._audit(
+                request=request,
+                action="bridge.deliver",
+                target="bridge.deliver",
+                outcome="deny",
+                status_code=getattr(error_resp, "status", 403),
+                details={"reason": "auth_failed"},
+            )
             return error_resp
 
         # Rate limit
         if not check_rate_limit(request, "bridge"):
+            self._audit(
+                request=request,
+                action="bridge.deliver",
+                target="bridge.deliver",
+                outcome="deny",
+                status_code=429,
+                device_id=device_id,
+                scope=BridgeScope.DELIVERY.value,
+                details={"reason": "rate_limit"},
+            )
             return web.json_response({"error": "Rate limit exceeded"}, status=429)
 
         # Parse payload
         try:
             data = await request.json()
         except Exception:
+            self._audit(
+                request=request,
+                action="bridge.deliver",
+                target="bridge.deliver",
+                outcome="deny",
+                status_code=400,
+                device_id=device_id,
+                scope=BridgeScope.DELIVERY.value,
+                details={"reason": "invalid_json"},
+            )
             return web.json_response({"error": "Invalid JSON"}, status=400)
 
         # R25: Trace context
@@ -316,16 +465,56 @@ class BridgeHandlers:
         files = data.get("files", [])
 
         if not target:
+            self._audit(
+                request=request,
+                action="bridge.deliver",
+                target="bridge.deliver",
+                outcome="deny",
+                status_code=400,
+                device_id=device_id,
+                scope=BridgeScope.DELIVERY.value,
+                details={"reason": "missing_target"},
+            )
             return web.json_response({"error": "target required"}, status=400)
         if not idempotency_key:
+            self._audit(
+                request=request,
+                action="bridge.deliver",
+                target=target or "bridge.deliver",
+                outcome="deny",
+                status_code=400,
+                device_id=device_id,
+                scope=BridgeScope.DELIVERY.value,
+                details={"reason": "missing_idempotency_key"},
+            )
             return web.json_response({"error": "idempotency_key required"}, status=400)
 
         # Payload size checks
         if len(text) > MAX_TEXT_LENGTH:
+            self._audit(
+                request=request,
+                action="bridge.deliver",
+                target=target,
+                outcome="deny",
+                status_code=400,
+                device_id=device_id,
+                scope=BridgeScope.DELIVERY.value,
+                details={"reason": "text_too_large", "length": len(text)},
+            )
             return web.json_response(
                 {"error": f"text exceeds {MAX_TEXT_LENGTH} chars"}, status=400
             )
         if len(files) > MAX_FILES_COUNT:
+            self._audit(
+                request=request,
+                action="bridge.deliver",
+                target=target,
+                outcome="deny",
+                status_code=400,
+                device_id=device_id,
+                scope=BridgeScope.DELIVERY.value,
+                details={"reason": "too_many_files", "count": len(files)},
+            )
             return web.json_response(
                 {"error": f"files exceeds {MAX_FILES_COUNT}"}, status=400
             )
@@ -347,6 +536,17 @@ class BridgeHandlers:
                 logger.warning("BridgeHandlers.delivery_router not wired")
                 success = True
 
+            self._audit(
+                request=request,
+                action="bridge.deliver",
+                target=target,
+                outcome="allow" if success else "error",
+                status_code=200 if success else 500,
+                device_id=device_id,
+                scope=BridgeScope.DELIVERY.value,
+                details={"trace_id": trace_id},
+            )
+
             return web.json_response(
                 {
                     "ok": success,
@@ -356,6 +556,16 @@ class BridgeHandlers:
 
         except Exception as e:
             logger.exception("Bridge deliver failed")
+            self._audit(
+                request=request,
+                action="bridge.deliver",
+                target=target if "target" in locals() else "bridge.deliver",
+                outcome="error",
+                status_code=500,
+                device_id=device_id,
+                scope=BridgeScope.DELIVERY.value,
+                details={"error": str(e)},
+            )
             return web.json_response({"error": "Internal server error"}, status=500)
 
     # ------------------------------------------------------------------
@@ -414,10 +624,28 @@ class BridgeHandlers:
             request, BridgeScope.JOB_SUBMIT
         )
         if not is_valid:
+            self._audit(
+                request=request,
+                action="bridge.worker.result",
+                target="bridge.worker.result",
+                outcome="deny",
+                status_code=getattr(error_resp, "status", 403),
+                details={"reason": "auth_failed"},
+            )
             return error_resp
 
         job_id = request.match_info.get("job_id", "")
         if not job_id:
+            self._audit(
+                request=request,
+                action="bridge.worker.result",
+                target="bridge.worker.result",
+                outcome="deny",
+                status_code=400,
+                device_id=device_id,
+                scope=BridgeScope.JOB_SUBMIT.value,
+                details={"reason": "missing_job_id"},
+            )
             return web.json_response({"error": "job_id required"}, status=400)
 
         # Idempotency check
@@ -431,6 +659,16 @@ class BridgeHandlers:
         try:
             data = await request.json()
         except Exception:
+            self._audit(
+                request=request,
+                action="bridge.worker.result",
+                target=job_id,
+                outcome="deny",
+                status_code=400,
+                device_id=device_id,
+                scope=BridgeScope.JOB_SUBMIT.value,
+                details={"reason": "invalid_json"},
+            )
             return web.json_response({"error": "Invalid JSON"}, status=400)
 
         # Store result
@@ -446,6 +684,16 @@ class BridgeHandlers:
         if idempotency_key:
             self._idempotency_store.put(f"wr:{idempotency_key}", response_data)
 
+        self._audit(
+            request=request,
+            action="bridge.worker.result",
+            target=job_id,
+            outcome="allow",
+            status_code=201,
+            device_id=device_id,
+            scope=BridgeScope.JOB_SUBMIT.value,
+            details={"status": data.get("status", "completed")},
+        )
         logger.info(f"F46: Worker result accepted for job={job_id} from={device_id}")
         return web.json_response(response_data, status=201)
 
