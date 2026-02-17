@@ -11,7 +11,7 @@ from typing import Optional, Set
 
 from ..async_utils import run_in_thread
 from ..chatops.transport_contract import DeliveryMessage, DeliveryTarget, TransportType
-from ..safe_io import SSRFError, safe_request_json
+from ..safe_io import STANDARD_OUTBOUND_POLICY, SSRFError, safe_request_json
 
 logger = logging.getLogger("ComfyUI-OpenClaw.delivery.http_callback")
 
@@ -81,6 +81,7 @@ class HttpCallbackAdapter:
                 json_body=payload,
                 allow_hosts=allow_hosts,
                 timeout_sec=30,
+                policy=STANDARD_OUTBOUND_POLICY,
             )
             return True
         except SSRFError as e:

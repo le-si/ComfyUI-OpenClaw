@@ -15,6 +15,7 @@ from ..config import ConnectorConfig
 from ..contract import CommandRequest, CommandResponse
 from ..router import CommandRouter
 from ..security_profile import AllowlistPolicy, ReplayGuard, verify_hmac_signature
+from ..transport_contract import RelayResponseClassifier
 
 logger = logging.getLogger(__name__)
 
@@ -46,6 +47,7 @@ class LINEWebhookServer:
         self.runner = None
         self.site = None
         self.session = None
+        self._session_invalid = False  # R93: Track session validity
 
         # S32: shared replay guard (replaces inline F32 nonce cache)
         self._replay_guard = ReplayGuard(
@@ -84,6 +86,7 @@ class LINEWebhookServer:
             f"Starting LINE Webhook on {self.config.line_bind_host}:{self.config.line_bind_port}{self.config.line_webhook_path}"
         )
         self.session = aiohttp.ClientSession()
+        self._session_invalid = False  # Reset on start
 
         self.app = web.Application()
         self.app.router.add_post(self.config.line_webhook_path, self.handle_webhook)
@@ -236,6 +239,10 @@ class LINEWebhookServer:
 
     async def _reply_message(self, reply_token: str, text: str):
         """Send reply via LINE Messaging API."""
+        if self._session_invalid:
+            logger.warning("R93: Connector session invalid - blocking outbound")
+            return
+
         aiohttp, _ = _import_aiohttp_web()
         if aiohttp is None:
             raise RuntimeError("aiohttp not available")
@@ -257,6 +264,13 @@ class LINEWebhookServer:
         # Remediation: Use persistent session
         try:
             async with self.session.post(url, headers=headers, json=body) as resp:
+                if RelayResponseClassifier.is_auth_invalid(resp.status):
+                    self._session_invalid = True
+                    logger.error(
+                        f"R93: Auth Invalid (LINE {resp.status}) - Locking session"
+                    )
+                    return
+
                 if resp.status == 429:  # Check Rate Limit first
                     logger.warning("LINE API Rate Limit Hit")
                 elif resp.status != 200:
@@ -276,6 +290,10 @@ class LINEWebhookServer:
         """
         Send image via LINE using public URL.
         """
+        if self._session_invalid:
+            logger.warning("R93: Connector session invalid - blocking outbound image")
+            return
+
         if not self.config.public_base_url:
             logger.warning("LINE send_image: No public_base_url configured.")
             text = (
@@ -314,6 +332,9 @@ class LINEWebhookServer:
         self, channel_id: str, url: str, preview_url: Optional[str] = None
     ):
         """Low-level push image."""
+        if self._session_invalid:
+            return
+
         aiohttp, _ = _import_aiohttp_web()
         if not self.session:
             return
@@ -336,12 +357,23 @@ class LINEWebhookServer:
         }
 
         async with self.session.post(api_url, headers=headers, json=body) as resp:
+            if RelayResponseClassifier.is_auth_invalid(resp.status):
+                self._session_invalid = True
+                logger.error(
+                    f"R93: Auth Invalid (LINE {resp.status}) - Locking session"
+                )
+                return
+
             if resp.status != 200:
                 err = await resp.text()
                 logger.error(f"LINE image push failed: {resp.status} {err}")
 
     async def send_message(self, channel_id: str, text: str):
         """Send push message."""
+        if self._session_invalid:
+            logger.warning("R93: Connector session invalid - blocking outbound message")
+            return
+
         aiohttp, _ = _import_aiohttp_web()
         if not aiohttp or not self.session:
             return
@@ -359,6 +391,13 @@ class LINEWebhookServer:
 
         try:
             async with self.session.post(url, headers=headers, json=body) as resp:
+                if RelayResponseClassifier.is_auth_invalid(resp.status):
+                    self._session_invalid = True
+                    logger.error(
+                        f"R93: Auth Invalid (LINE {resp.status}) - Locking session"
+                    )
+                    return
+
                 if resp.status != 200:
                     err = await resp.text()
                     logger.error(f"LINE send_message failed: {resp.status} {err}")

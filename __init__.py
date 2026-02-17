@@ -73,6 +73,18 @@ def _register_routes_once():
         enable_module(ModuleCapability.SECURITY)
         enable_module(ModuleCapability.OBSERVABILITY)
 
+        # S50: Initialize Durable Idempotency Store
+        # Must happen early to protect webhook/bridge paths
+        from .services.idempotency_store import IdempotencyStore
+        from .services.state_dir import get_state_dir
+
+        db_path = os.path.join(get_state_dir(), "idempotency.db")
+        # CRITICAL: pass db_path as keyword (first positional arg is backend object).
+        IdempotencyStore().configure_durable(db_path=db_path, strict_mode=True)
+        logging.getLogger("ComfyUI-OpenClaw").info(
+            f"IdempotencyStore durable backend configured at: {db_path} (strict_mode=True)"
+        )
+
         # 3. Conditional Modules (Config-driven)
         # Bridge
         if config.bridge_enabled:

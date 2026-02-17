@@ -433,54 +433,190 @@ def check_core_imports(report: DoctorReport) -> None:
             )
 
 
+# ---------------------------------------------------------------------------
+# R91: Runtime Provenance v2 — structured schema
+# ---------------------------------------------------------------------------
+
+_PROVENANCE_SOURCES = ("system", "venv", "conda", "manager", "shim")
+_PROVENANCE_STATUSES = ("ok", "version_low", "not_found", "shim_drift")
+
+
+@dataclass
+class RuntimeProvenance:
+    """Deterministic provenance record for a single runtime executable."""
+
+    runtime: str  # "python" | "node" | "pip"
+    executable: str  # actual path used
+    path_executable: str  # PATH-resolved path
+    version: str  # version string or ""
+    source: str  # one of _PROVENANCE_SOURCES
+    status: str  # one of _PROVENANCE_STATUSES
+    managers: List[str] = field(default_factory=list)
+
+    def to_dict(self) -> Dict[str, Any]:
+        return asdict(self)
+
+
+def _detect_python_source() -> str:
+    """Classify Python executable source."""
+    sys_exe = sys.executable
+    if sys.prefix != sys.base_prefix:
+        return "venv"
+    if os.environ.get("CONDA_PREFIX"):
+        return "conda"
+    path_exe = shutil.which("python")
+    if (
+        platform.system() == "Windows"
+        and path_exe
+        and "WindowsApps" in str(path_exe)
+        and "WindowsApps" not in sys_exe
+    ):
+        return "shim"
+    for mgr in ("MISE_DATA_DIR", "MISE_CONFIG_DIR", "PYENV_ROOT"):
+        if os.environ.get(mgr):
+            return "manager"
+    return "system"
+
+
+def _detect_node_source() -> str:
+    """Classify Node.js executable source."""
+    for env, label in (
+        ("NVM_DIR", "manager"),
+        ("FNM_DIR", "manager"),
+        ("MISE_DATA_DIR", "manager"),
+    ):
+        if os.environ.get(env):
+            return label
+    return "system"
+
+
+def _detect_managers() -> List[str]:
+    """Detect active environment managers."""
+    managers: List[str] = []
+    if os.environ.get("NVM_DIR"):
+        managers.append("nvm")
+    if os.environ.get("FNM_DIR"):
+        managers.append("fnm")
+    if os.environ.get("MISE_DATA_DIR") or os.environ.get("MISE_CONFIG_DIR"):
+        managers.append("mise")
+    if os.environ.get("CONDA_PREFIX"):
+        managers.append("conda")
+    if os.environ.get("PYENV_ROOT"):
+        managers.append("pyenv")
+    return managers
+
+
 def check_runtime_provenance(report: DoctorReport) -> None:
     """
-    R86: Verify runtime provenance (Python/Node/Pip/Managers).
-    Detects shim drift and version manager conflicts.
+    R91: Runtime provenance v2 — deterministic provenance for Python/Node/Pip.
+    Emits structured RuntimeProvenance records + backward-compatible check results.
     """
-    # 1. Python Provenance & Shim Detection
-    sys_exe = sys.executable
-    path_exe = shutil.which("python")
+    managers = _detect_managers()
+    provenance_records: List[Dict[str, Any]] = []
 
+    # --- Python ---
+    sys_exe = sys.executable
+    path_exe = shutil.which("python") or ""
+    py_ver = (
+        f"{sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}"
+    )
+    py_source = _detect_python_source()
+    py_status = "shim_drift" if py_source == "shim" else "ok"
+
+    py_prov = RuntimeProvenance(
+        runtime="python",
+        executable=sys_exe,
+        path_executable=str(path_exe),
+        version=py_ver,
+        source=py_source,
+        status=py_status,
+        managers=[m for m in managers if m in ("conda", "pyenv", "mise")],
+    )
+    provenance_records.append(py_prov.to_dict())
+
+    # Backward-compatible environment keys
     report.environment["sys_executable"] = sys_exe
     report.environment["path_python"] = str(path_exe)
 
-    if platform.system() == "Windows" and path_exe:
-        # Detect Windows Store Shim (common pitfall)
-        if "WindowsApps" in str(path_exe) and "WindowsApps" not in sys_exe:
-            report.add(
-                CheckResult(
-                    name="python_shim_drift",
-                    severity=Severity.WARN.value,
-                    message="Python token on PATH is a Windows Store shim",
-                    detail=f"PATH points to: {path_exe}\nRunning as: {sys_exe}",
-                    remediation="Adjust PATH to prioritize your installed Python 'Scripts' directory.",
-                )
+    if py_status == "shim_drift":
+        report.add(
+            CheckResult(
+                name="python_shim_drift",
+                severity=Severity.WARN.value,
+                message="Python token on PATH is a Windows Store shim",
+                detail=f"PATH points to: {path_exe}\nRunning as: {sys_exe}",
+                remediation="Adjust PATH to prioritize your installed Python 'Scripts' directory.",
             )
+        )
 
-    # 2. Pip Provenance
-    pip_exe = shutil.which("pip")
+    # --- Node ---
+    node_exe = shutil.which("node") or ""
+    node_ver = ""
+    node_status = "not_found"
+    if node_exe:
+        try:
+            node_ver = subprocess.check_output(
+                [node_exe, "--version"], text=True, timeout=5
+            ).strip()
+            major = int(node_ver.lstrip("v").split(".")[0])
+            node_status = "ok" if major >= 18 else "version_low"
+        except Exception:
+            node_status = "not_found"
+    node_source = _detect_node_source() if node_exe else "system"
+
+    node_prov = RuntimeProvenance(
+        runtime="node",
+        executable=node_exe,
+        path_executable=node_exe,
+        version=node_ver,
+        source=node_source,
+        status=node_status,
+        managers=[m for m in managers if m in ("nvm", "fnm", "mise")],
+    )
+    provenance_records.append(node_prov.to_dict())
+
+    # --- Pip ---
+    pip_exe = shutil.which("pip") or ""
+    pip_ver = ""
+    pip_status = "not_found"
     if pip_exe:
         try:
-            pip_ver = subprocess.check_output(
+            pip_out = subprocess.check_output(
                 [pip_exe, "--version"], text=True, timeout=5
             ).strip()
-            report.environment["pip_version"] = pip_ver
-            report.add(
-                CheckResult(
-                    name="pip_provenance",
-                    severity=Severity.PASS.value,
-                    message=f"Pip found: {pip_ver.split()[1] if ' ' in pip_ver else 'valid'}",
-                )
-            )
+            pip_ver = pip_out.split()[1] if " " in pip_out else pip_out
+            pip_status = "ok"
+            report.environment["pip_version"] = pip_out
         except Exception:
-            report.add(
-                CheckResult(
-                    name="pip_provenance",
-                    severity=Severity.WARN.value,
-                    message="Pip found but failed to run",
-                )
+            pip_status = "not_found"
+
+    pip_prov = RuntimeProvenance(
+        runtime="pip",
+        executable=pip_exe,
+        path_executable=pip_exe,
+        version=pip_ver,
+        source=py_source,  # pip inherits Python source
+        status=pip_status,
+    )
+    provenance_records.append(pip_prov.to_dict())
+
+    # Backward-compat check results for pip
+    if pip_status == "ok":
+        report.add(
+            CheckResult(
+                name="pip_provenance",
+                severity=Severity.PASS.value,
+                message=f"Pip found: {pip_ver}",
             )
+        )
+    elif pip_exe:
+        report.add(
+            CheckResult(
+                name="pip_provenance",
+                severity=Severity.WARN.value,
+                message="Pip found but failed to run",
+            )
+        )
     else:
         report.add(
             CheckResult(
@@ -490,17 +626,7 @@ def check_runtime_provenance(report: DoctorReport) -> None:
             )
         )
 
-    # 3. Environment Manager Detection
-    managers = []
-    if os.environ.get("NVM_DIR"):
-        managers.append("nvm")
-    if os.environ.get("FNM_DIR"):
-        managers.append("fnm")
-    if os.environ.get("MISE_DATA_DIR") or os.environ.get("MISE_CONFIG_DIR"):
-        managers.append("mise")
-    if os.environ.get("CONDA_PREFIX"):
-        managers.append("conda")
-
+    # --- Managers ---
     if managers:
         report.environment["env_managers"] = ", ".join(managers)
         report.add(
@@ -511,6 +637,9 @@ def check_runtime_provenance(report: DoctorReport) -> None:
                 detail="Ensure IDE/Terminal profiles share the same manager context.",
             )
         )
+
+    # R91: Structured provenance output (machine-readable)
+    report.environment["runtime_provenance"] = json.dumps(provenance_records)
 
 
 def check_os_environment(report: DoctorReport) -> None:

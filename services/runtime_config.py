@@ -450,6 +450,7 @@ def validate_config_update(updates: Dict[str, Any]) -> Tuple[Dict[str, Any], lis
                 )
                 try:
                     from .providers.catalog import get_default_public_llm_hosts
+                    from .safe_io import STANDARD_OUTBOUND_POLICY
 
                     allowed_hosts = (
                         set(get_default_public_llm_hosts()) | allowed_hosts_env
@@ -469,6 +470,7 @@ def validate_config_update(updates: Dict[str, Any]) -> Tuple[Dict[str, Any], lis
                         val,
                         allow_hosts=allowed_hosts if not allow_any else None,
                         allow_any_public_host=allow_any,
+                        policy=STANDARD_OUTBOUND_POLICY,
                     )
                 except SSRFError as e:
                     # Allow override via insecure flag (legacy/risk acceptance)
@@ -527,6 +529,59 @@ def get_apply_semantics(updated_keys: list) -> Dict[str, list]:
     }
 
 
+def _merge_config_value(base: Any, patch: Any, key: str = "") -> Any:
+    """
+    R94: Non-destructive merge for a single config value.
+
+    Rules:
+    - Both dicts → recursive merge
+    - Both lists of objects with "id" keys → merge-by-id (update matched, append new)
+    - Base is id-keyed list but patch is not → keep base (log warning)
+    - All other cases → patch overwrites base
+    """
+    # Dict merge
+    if isinstance(base, dict) and isinstance(patch, dict):
+        merged = dict(base)
+        for k, v in patch.items():
+            merged[k] = _merge_config_value(merged.get(k), v, key=k)
+        return merged
+
+    # List merge-by-id
+    if isinstance(base, list) and isinstance(patch, list):
+        # Check if base is id-keyed (all dicts with "id")
+        base_is_id_keyed = len(base) > 0 and all(
+            isinstance(item, dict) and "id" in item for item in base
+        )
+        if base_is_id_keyed:
+            patch_is_id_keyed = all(
+                isinstance(item, dict) and "id" in item for item in patch
+            )
+            if not patch_is_id_keyed:
+                logger.warning(
+                    f"R94: Config key '{key}' base is id-keyed but patch is not. "
+                    f"Keeping base array to prevent destructive replacement."
+                )
+                return base
+
+            # Merge by id
+            merged_map: Dict[str, Any] = {item["id"]: dict(item) for item in base}
+            for patch_item in patch:
+                pid = patch_item["id"]
+                if pid in merged_map:
+                    # Update existing entry (shallow merge)
+                    merged_map[pid].update(patch_item)
+                else:
+                    # Append new entry
+                    merged_map[pid] = dict(patch_item)
+            return list(merged_map.values())
+
+        # Non-id-keyed: patch overwrites
+        return patch
+
+    # All other types: patch overwrites
+    return patch
+
+
 def update_config(updates: Dict[str, Any]) -> Tuple[bool, list]:
     """
     Update LLM config, persisting to file.
@@ -542,12 +597,13 @@ def update_config(updates: Dict[str, Any]) -> Tuple[bool, list]:
     if not sanitized:
         return True, []  # Nothing to update
 
-    # Merge with existing file config
+    # R94: Non-destructive merge with existing file config
     file_config = _load_file_config()
     if "llm" not in file_config:
         file_config["llm"] = {}
 
-    file_config["llm"].update(sanitized)
+    for k, v in sanitized.items():
+        file_config["llm"][k] = _merge_config_value(file_config["llm"].get(k), v, key=k)
 
     if _save_file_config(file_config):
         logger.info(f"Updated config: {list(sanitized.keys())}")

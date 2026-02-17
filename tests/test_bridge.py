@@ -198,10 +198,10 @@ class TestBridgeHandlers(unittest.TestCase):
     def test_idempotency_store_initialized(self):
         """Test handlers have idempotency store."""
         from api.bridge import BridgeHandlers
-        from services.cache import TTLCache
+        from services.idempotency_store import IdempotencyStore
 
         handlers = BridgeHandlers()
-        self.assertIsInstance(handlers._idempotency_store, TTLCache)
+        self.assertIsInstance(handlers._idempotency_store, IdempotencyStore)
 
 
 if __name__ == "__main__":

@@ -20,7 +20,6 @@ from services.security_doctor import (
     SecuritySeverity,
 )
 
-
 # ---------------------------------------------------------------------------
 # Required contract keys for schema drift guard
 # ---------------------------------------------------------------------------
@@ -52,14 +51,22 @@ class TestReportEnvelopeContract(unittest.TestCase):
             )
         )
         d = report.to_dict()
-        self.assertTrue(_REQUIRED_REPORT_KEYS.issubset(d.keys()),
-                        f"Missing keys: {_REQUIRED_REPORT_KEYS - d.keys()}")
+        self.assertTrue(
+            _REQUIRED_REPORT_KEYS.issubset(d.keys()),
+            f"Missing keys: {_REQUIRED_REPORT_KEYS - d.keys()}",
+        )
         self.assertEqual(d["schema_version"], "1.0")
 
     def test_legacy_fields_preserved(self):
         report = SecurityReport()
         d = report.to_dict()
-        for key in ("environment", "checks", "summary", "risk_score", "remediation_applied"):
+        for key in (
+            "environment",
+            "checks",
+            "summary",
+            "risk_score",
+            "remediation_applied",
+        ):
             self.assertIn(key, d, f"Legacy field '{key}' missing from report")
 
 
@@ -68,30 +75,73 @@ class TestPostureDeterminism(unittest.TestCase):
 
     def test_all_pass_posture(self):
         report = SecurityReport()
-        report.add(SecurityCheckResult(name="admin_token_set", severity="pass", message="ok", category="endpoint"))
-        report.add(SecurityCheckResult(name="ssrf_posture", severity="pass", message="ok", category="ssrf"))
+        report.add(
+            SecurityCheckResult(
+                name="admin_token_set",
+                severity="pass",
+                message="ok",
+                category="endpoint",
+            )
+        )
+        report.add(
+            SecurityCheckResult(
+                name="ssrf_posture", severity="pass", message="ok", category="ssrf"
+            )
+        )
         d = report.to_dict()
         self.assertEqual(d["posture"], "pass")
 
     def test_warn_only_posture_pass(self):
         """WARN without FAIL should still be posture=pass."""
         report = SecurityReport()
-        report.add(SecurityCheckResult(name="endpoint_exposure", severity="warn", message="no tokens", category="endpoint"))
+        report.add(
+            SecurityCheckResult(
+                name="endpoint_exposure",
+                severity="warn",
+                message="no tokens",
+                category="endpoint",
+            )
+        )
         d = report.to_dict()
         self.assertEqual(d["posture"], "pass")
 
     def test_fail_posture(self):
         report = SecurityReport()
-        report.add(SecurityCheckResult(name="token_reuse", severity="fail", message="tokens identical", category="token"))
+        report.add(
+            SecurityCheckResult(
+                name="token_reuse",
+                severity="fail",
+                message="tokens identical",
+                category="token",
+            )
+        )
         d = report.to_dict()
         self.assertEqual(d["posture"], "fail")
 
     def test_mixed_pass_warn_fail(self):
         """Mixed severities: any fail → posture=fail."""
         report = SecurityReport()
-        report.add(SecurityCheckResult(name="admin_token_set", severity="pass", message="ok", category="endpoint"))
-        report.add(SecurityCheckResult(name="endpoint_exposure", severity="warn", message="no tokens", category="endpoint"))
-        report.add(SecurityCheckResult(name="token_reuse", severity="fail", message="reuse", category="token"))
+        report.add(
+            SecurityCheckResult(
+                name="admin_token_set",
+                severity="pass",
+                message="ok",
+                category="endpoint",
+            )
+        )
+        report.add(
+            SecurityCheckResult(
+                name="endpoint_exposure",
+                severity="warn",
+                message="no tokens",
+                category="endpoint",
+            )
+        )
+        report.add(
+            SecurityCheckResult(
+                name="token_reuse", severity="fail", message="reuse", category="token"
+            )
+        )
         d = report.to_dict()
         self.assertEqual(d["posture"], "fail")
 
@@ -102,13 +152,21 @@ class TestPostureDeterminism(unittest.TestCase):
         unmapped checks), causing a false-pass for unmapped fail checks.
         """
         report = SecurityReport()
-        report.add(SecurityCheckResult(
-            name="unknown_fail", severity="fail",
-            message="This check has no code mapping", category="misc",
-        ))
+        report.add(
+            SecurityCheckResult(
+                name="unknown_fail",
+                severity="fail",
+                message="This check has no code mapping",
+                category="misc",
+            )
+        )
         d = report.to_dict()
-        self.assertEqual(d["violations"], [], "unmapped check should not appear in violations")
-        self.assertEqual(d["posture"], "fail", "posture must be fail even for unmapped fail checks")
+        self.assertEqual(
+            d["violations"], [], "unmapped check should not appear in violations"
+        )
+        self.assertEqual(
+            d["posture"], "fail", "posture must be fail even for unmapped fail checks"
+        )
 
 
 class TestViolationsStableCodes(unittest.TestCase):
@@ -116,8 +174,15 @@ class TestViolationsStableCodes(unittest.TestCase):
 
     def test_known_fail_mapped(self):
         report = SecurityReport()
-        report.add(SecurityCheckResult(name="token_reuse", severity="fail", message="same", category="token",
-                                       remediation="Use distinct tokens."))
+        report.add(
+            SecurityCheckResult(
+                name="token_reuse",
+                severity="fail",
+                message="same",
+                category="token",
+                remediation="Use distinct tokens.",
+            )
+        )
         d = report.to_dict()
         violations = d["violations"]
         self.assertEqual(len(violations), 1)
@@ -129,7 +194,14 @@ class TestViolationsStableCodes(unittest.TestCase):
 
     def test_warn_mapped(self):
         report = SecurityReport()
-        report.add(SecurityCheckResult(name="endpoint_exposure", severity="warn", message="no tokens", category="endpoint"))
+        report.add(
+            SecurityCheckResult(
+                name="endpoint_exposure",
+                severity="warn",
+                message="no tokens",
+                category="endpoint",
+            )
+        )
         d = report.to_dict()
         violations = d["violations"]
         codes = [v["code"] for v in violations]
@@ -138,21 +210,42 @@ class TestViolationsStableCodes(unittest.TestCase):
     def test_pass_not_in_violations(self):
         """PASS checks must not appear in violations."""
         report = SecurityReport()
-        report.add(SecurityCheckResult(name="admin_token_set", severity="pass", message="ok", category="endpoint"))
+        report.add(
+            SecurityCheckResult(
+                name="admin_token_set",
+                severity="pass",
+                message="ok",
+                category="endpoint",
+            )
+        )
         d = report.to_dict()
         self.assertEqual(d["violations"], [])
 
     def test_unmapped_warn_excluded(self):
         """Checks with no code mapping are excluded from violations."""
         report = SecurityReport()
-        report.add(SecurityCheckResult(name="some_unknown_check", severity="warn", message="unknown", category="misc"))
+        report.add(
+            SecurityCheckResult(
+                name="some_unknown_check",
+                severity="warn",
+                message="unknown",
+                category="misc",
+            )
+        )
         d = report.to_dict()
         self.assertEqual(d["violations"], [])
 
     def test_violation_entry_shape(self):
         """Each violation has required keys: code, severity, check, message."""
         report = SecurityReport()
-        report.add(SecurityCheckResult(name="callback_wildcard", severity="fail", message="wildcard", category="ssrf"))
+        report.add(
+            SecurityCheckResult(
+                name="callback_wildcard",
+                severity="fail",
+                message="wildcard",
+                category="ssrf",
+            )
+        )
         d = report.to_dict()
         v = d["violations"][0]
         for key in ("code", "severity", "check", "message"):
@@ -164,31 +257,56 @@ class TestHighRiskMode(unittest.TestCase):
 
     def test_not_high_risk_clean(self):
         report = SecurityReport()
-        report.add(SecurityCheckResult(name="admin_token_set", severity="pass", message="ok", category="endpoint"))
+        report.add(
+            SecurityCheckResult(
+                name="admin_token_set",
+                severity="pass",
+                message="ok",
+                category="endpoint",
+            )
+        )
         d = report.to_dict()
         self.assertFalse(d["high_risk_mode"])
         self.assertEqual(d["high_risk_reasons"], [])
 
     def test_high_risk_s45_exposed(self):
         report = SecurityReport()
-        report.add(SecurityCheckResult(name="s45_exposed_no_auth", severity="fail",
-                                       message="exposed", category="exposure"))
+        report.add(
+            SecurityCheckResult(
+                name="s45_exposed_no_auth",
+                severity="fail",
+                message="exposed",
+                category="exposure",
+            )
+        )
         d = report.to_dict()
         self.assertTrue(d["high_risk_mode"])
         self.assertIn("SEC-S45-001", d["high_risk_reasons"])
 
     def test_high_risk_dangerous_override(self):
         report = SecurityReport()
-        report.add(SecurityCheckResult(name="s45_dangerous_override", severity="warn",
-                                       message="override active", category="exposure"))
+        report.add(
+            SecurityCheckResult(
+                name="s45_dangerous_override",
+                severity="warn",
+                message="override active",
+                category="exposure",
+            )
+        )
         d = report.to_dict()
         self.assertTrue(d["high_risk_mode"])
         self.assertIn("SEC-S45-002", d["high_risk_reasons"])
 
     def test_high_risk_feature_flags(self):
         report = SecurityReport()
-        report.add(SecurityCheckResult(name="high_risk_flags", severity="warn",
-                                       message="1 flag enabled", category="feature_flags"))
+        report.add(
+            SecurityCheckResult(
+                name="high_risk_flags",
+                severity="warn",
+                message="1 flag enabled",
+                category="feature_flags",
+            )
+        )
         d = report.to_dict()
         self.assertTrue(d["high_risk_mode"])
         self.assertIn("SEC-FF-001", d["high_risk_reasons"])
@@ -201,8 +319,11 @@ class TestSchemaDriftGuard(unittest.TestCase):
         report = SecurityReport()
         d = report.to_dict()
         missing = _REQUIRED_REPORT_KEYS - set(d.keys())
-        self.assertEqual(missing, set(),
-                         f"Schema drift: required fields missing from report: {missing}")
+        self.assertEqual(
+            missing,
+            set(),
+            f"Schema drift: required fields missing from report: {missing}",
+        )
 
 
 class TestS45Parity(unittest.TestCase):
@@ -221,11 +342,16 @@ class TestS45Parity(unittest.TestCase):
         mock_config.security_dangerous_bind_override = False
         mock_config_mod.get_config = MagicMock(return_value=mock_config)
 
-        with patch("sys.argv", ["main.py", "--listen"]), \
-             patch.dict("sys.modules", {
-                 "services.access_control": mock_access,
-                 "services.runtime_config": mock_config_mod,
-             }):
+        with (
+            patch("sys.argv", ["main.py", "--listen"]),
+            patch.dict(
+                "sys.modules",
+                {
+                    "services.access_control": mock_access,
+                    "services.runtime_config": mock_config_mod,
+                },
+            ),
+        ):
             check_s45_exposure_posture(report)
 
         names = [c.name for c in report.checks]
@@ -248,11 +374,16 @@ class TestS45Parity(unittest.TestCase):
         mock_config.security_dangerous_bind_override = True
         mock_config_mod.get_config = MagicMock(return_value=mock_config)
 
-        with patch("sys.argv", ["main.py", "--listen"]), \
-             patch.dict("sys.modules", {
-                 "services.access_control": mock_access,
-                 "services.runtime_config": mock_config_mod,
-             }):
+        with (
+            patch("sys.argv", ["main.py", "--listen"]),
+            patch.dict(
+                "sys.modules",
+                {
+                    "services.access_control": mock_access,
+                    "services.runtime_config": mock_config_mod,
+                },
+            ),
+        ):
             check_s45_exposure_posture(report)
 
         names = [c.name for c in report.checks]
@@ -274,11 +405,16 @@ class TestS45Parity(unittest.TestCase):
         mock_profile = MagicMock()
         mock_profile.is_hardened_mode = MagicMock(return_value=True)
 
-        with patch("sys.argv", ["main.py"]), \
-             patch.dict("sys.modules", {
-                 "services.access_control": mock_access,
-                 "services.runtime_profile": mock_profile,
-             }):
+        with (
+            patch("sys.argv", ["main.py"]),
+            patch.dict(
+                "sys.modules",
+                {
+                    "services.access_control": mock_access,
+                    "services.runtime_profile": mock_profile,
+                },
+            ),
+        ):
             check_s45_exposure_posture(report)
 
         names = [c.name for c in report.checks]

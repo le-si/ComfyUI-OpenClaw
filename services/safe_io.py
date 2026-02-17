@@ -1,6 +1,7 @@
 """
 Safe IO module for filesystem and URL operations.
 Implements S4: File/path/URL safety (deny-by-default).
+S51: Outbound endpoint policy v2 (scheme+port constraints).
 
 Any module that touches filesystem or outbound HTTP MUST use this layer.
 """
@@ -12,7 +13,8 @@ import os
 import socket
 import tempfile
 import urllib.request
-from typing import Any, Optional, Set, Tuple
+from dataclasses import dataclass, field
+from typing import Any, FrozenSet, Optional, Set, Tuple
 from urllib.parse import urlparse
 
 logger = logging.getLogger("ComfyUI-OpenClaw.services.safe_io")
@@ -191,6 +193,57 @@ class SSRFError(ValueError):
     pass
 
 
+# ---------------------------------------------------------------------------
+# S51: Outbound Endpoint Policy v2
+# ---------------------------------------------------------------------------
+
+
+@dataclass
+class OutboundPolicy:
+    """
+    S51: Scheme + port enforcement policy for outbound requests.
+
+    Defaults to HTTPS-only on standard ports. Callers can relax
+    by adding "http" to allowed_schemes or custom ports.
+    """
+
+    allowed_schemes: FrozenSet[str] = field(
+        default_factory=lambda: frozenset({"https"})
+    )
+    allowed_ports: FrozenSet[int] = field(default_factory=lambda: frozenset({443, 80}))
+    label: str = "default"  # diagnostic label for deny messages
+
+    def validate(self, scheme: str, port: int) -> Optional[str]:
+        """Return deny reason string if policy violated, else None."""
+        if scheme not in self.allowed_schemes:
+            return (
+                f"S51: Scheme '{scheme}' denied by policy '{self.label}' "
+                f"(allowed: {sorted(self.allowed_schemes)})"
+            )
+        if port not in self.allowed_ports:
+            return (
+                f"S51: Port {port} denied by policy '{self.label}' "
+                f"(allowed: {sorted(self.allowed_ports)})"
+            )
+        return None
+
+
+# Preset policies
+STRICT_OUTBOUND_POLICY = OutboundPolicy(
+    allowed_schemes=frozenset({"https"}),
+    allowed_ports=frozenset({443}),
+    label="strict",
+)
+
+STANDARD_OUTBOUND_POLICY = OutboundPolicy(
+    allowed_schemes=frozenset({"https", "http"}),
+    allowed_ports=frozenset(
+        {80, 443, 8080, 8443, 5000, 11434, 1234}
+    ),  # +Ollama, LM Studio
+    label="standard",
+)
+
+
 # Private/reserved IP ranges to block
 BLOCKED_IP_NETWORKS = [
     ipaddress.ip_network("0.0.0.0/8"),
@@ -245,6 +298,7 @@ def validate_outbound_url(
     *,
     allow_hosts: Optional[Set[str]] = None,
     allow_any_public_host: bool = False,
+    policy: Optional[OutboundPolicy] = None,
 ) -> Tuple[str, str, int, list[str]]:
     """
     Validate a URL and resolve it for safe outbound fetching.
@@ -253,6 +307,7 @@ def validate_outbound_url(
         url: URL to validate.
         allow_hosts: If provided, only these hosts are allowed.
         allow_any_public_host: If True, allow any host that resolves to a public IP.
+        policy: S51 OutboundPolicy for scheme+port enforcement.
 
     Returns:
         Tuple of (scheme, host, port, resolved_ips).
@@ -276,6 +331,12 @@ def validate_outbound_url(
         raise SSRFError("No host in URL")
 
     port = parsed.port or (443 if parsed.scheme == "https" else 80)
+
+    # S51: enforce scheme+port policy if provided
+    if policy is not None:
+        deny_reason = policy.validate(parsed.scheme, port)
+        if deny_reason:
+            raise SSRFError(deny_reason)
 
     # Deny-by-default logic
     if not allow_any_public_host and allow_hosts is None:
@@ -464,6 +525,7 @@ def safe_request_json(
     timeout_sec: int = 10,
     max_response_bytes: int = 1_000_000,
     max_redirects: int = 0,
+    policy: Optional[OutboundPolicy] = None,
 ) -> dict:
     """
     Perform a safe HTTP request with JSON body (e.g., POST callback).
@@ -480,7 +542,7 @@ def safe_request_json(
     while True:
         # Validate URL + Pin IPs
         scheme, host, port, pinned_ips = validate_outbound_url(
-            current_url, allow_hosts=allow_hosts
+            current_url, allow_hosts=allow_hosts, policy=policy
         )
 
         # Build request

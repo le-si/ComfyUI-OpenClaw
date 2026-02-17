@@ -36,6 +36,7 @@ from ..config import ConnectorConfig
 from ..contract import CommandRequest, CommandResponse
 from ..router import CommandRouter
 from ..security_profile import AllowlistPolicy, ReplayGuard
+from ..transport_contract import RelayResponseClassifier
 
 logger = logging.getLogger(__name__)
 
@@ -433,6 +434,7 @@ class WeChatWebhookServer:
         self._user_allowlist = AllowlistPolicy(
             config.wechat_allowed_users, strict=False
         )
+        self._session_invalid = False  # R93: Track session validity
 
     # ------------------------------------------------------------------
     # Lifecycle
@@ -459,6 +461,7 @@ class WeChatWebhookServer:
         )
 
         self.session = aiohttp.ClientSession()
+        self._session_invalid = False  # Reset on start
 
         self.app = web.Application()
         self.app.router.add_get(self.config.wechat_webhook_path, self.handle_verify)
@@ -684,6 +687,10 @@ class WeChatWebhookServer:
         Requires service account with customer service permission.
         Falls back silently if access_token unavailable.
         """
+        if self._session_invalid:
+            logger.warning("R93: Connector session invalid - blocking outbound")
+            return
+
         if not self.session:
             return
 
@@ -706,6 +713,13 @@ class WeChatWebhookServer:
 
         try:
             async with self.session.post(url, json=body) as resp:
+                if RelayResponseClassifier.is_auth_invalid(resp.status):
+                    self._session_invalid = True
+                    logger.error(
+                        f"R93: Auth Invalid (WeChat {resp.status}) - Locking session"
+                    )
+                    return
+
                 data = await resp.json(content_type=None)
                 errcode = data.get("errcode", 0)
                 if errcode != 0:
@@ -729,6 +743,10 @@ class WeChatWebhookServer:
         Text-first: sends caption/notification text. Actual media upload
         requires media API and is not implemented in phase 1.
         """
+        if self._session_invalid:
+            logger.warning("R93: Connector session invalid - blocking outbound image")
+            return
+
         if caption:
             await self.send_message(channel_id, caption)
         else:
@@ -754,6 +772,10 @@ class WeChatWebhookServer:
         if self._cached_token and now < self._token_expires:
             return self._cached_token
 
+        # R93: Block if session invalid
+        if self._session_invalid:
+            return None
+
         app_id = self.config.wechat_app_id
         app_secret = self.config.wechat_app_secret
         if not app_id or not app_secret:
@@ -770,6 +792,13 @@ class WeChatWebhookServer:
             if not self.session:
                 return None
             async with self.session.get(url) as resp:
+                if RelayResponseClassifier.is_auth_invalid(resp.status):
+                    self._session_invalid = True
+                    logger.error(
+                        f"R93: Auth Invalid (WeChat Token {resp.status}) - Locking session"
+                    )
+                    return None
+
                 data = await resp.json(content_type=None)
                 token = data.get("access_token")
                 expires_in = data.get("expires_in", 7200)

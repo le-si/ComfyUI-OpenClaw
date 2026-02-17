@@ -432,9 +432,12 @@ async def llm_models_handler(request: web.Request) -> web.Response:
     # SSRF policy
     try:
         try:
-            from ..services.safe_io import validate_outbound_url
+            from ..services.safe_io import (
+                STANDARD_OUTBOUND_POLICY,
+                validate_outbound_url,
+            )
         except ImportError:
-            from services.safe_io import validate_outbound_url
+            from services.safe_io import STANDARD_OUTBOUND_POLICY, validate_outbound_url
 
         allowed_hosts = _get_llm_allowed_hosts()
         allow_any = _env_flag(
@@ -446,6 +449,7 @@ async def llm_models_handler(request: web.Request) -> web.Response:
             base_url,
             allow_hosts=None if allow_any else allowed_hosts,
             allow_any_public_host=allow_any,
+            policy=STANDARD_OUTBOUND_POLICY,
         )
     except Exception as e:
         return web.json_response(

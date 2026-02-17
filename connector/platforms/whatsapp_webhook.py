@@ -20,6 +20,7 @@ from ..config import ConnectorConfig
 from ..contract import CommandRequest, CommandResponse
 from ..router import CommandRouter
 from ..security_profile import AllowlistPolicy, ReplayGuard, verify_hmac_signature
+from ..transport_contract import RelayResponseClassifier
 
 logger = logging.getLogger(__name__)
 
@@ -62,6 +63,7 @@ class WhatsAppWebhookServer:
         self.runner = None
         self.site = None
         self.session = None
+        self._session_invalid = False  # R93: Track session validity
 
         # S32: shared replay guard (replaces inline F32 nonce cache)
         self._replay_guard = ReplayGuard(
@@ -104,6 +106,7 @@ class WhatsAppWebhookServer:
             f"{self.config.whatsapp_webhook_path}"
         )
         self.session = aiohttp.ClientSession()
+        self._session_invalid = False  # Reset on start
 
         self.app = web.Application()
         self.app.router.add_get(self.config.whatsapp_webhook_path, self.handle_verify)
@@ -295,6 +298,10 @@ class WhatsAppWebhookServer:
 
     async def send_message(self, recipient_id: str, text: str):
         """Send text message via WhatsApp Cloud API."""
+        if self._session_invalid:
+            logger.warning("R93: Connector session invalid - blocking outbound")
+            return
+
         if not self.session:
             return
 
@@ -318,6 +325,13 @@ class WhatsAppWebhookServer:
 
         try:
             async with self.session.post(url, headers=headers, json=body) as resp:
+                if RelayResponseClassifier.is_auth_invalid(resp.status):
+                    self._session_invalid = True
+                    logger.error(
+                        f"R93: Auth Invalid (WhatsApp {resp.status}) - Locking session"
+                    )
+                    return
+
                 if resp.status == 429:
                     logger.warning("WhatsApp API Rate Limit Hit")
                 elif resp.status not in (200, 201):
@@ -341,6 +355,10 @@ class WhatsAppWebhookServer:
         Send image via WhatsApp using public media URL.
         Reuses F33 media store to host the image, then sends a link message.
         """
+        if self._session_invalid:
+            logger.warning("R93: Connector session invalid - blocking outbound image")
+            return
+
         if not self.config.public_base_url:
             logger.warning("WhatsApp send_image: No public_base_url configured.")
             text = (
@@ -372,6 +390,9 @@ class WhatsAppWebhookServer:
         caption: Optional[str] = None,
     ):
         """Send image message via Graph API /messages endpoint."""
+        if self._session_invalid:
+            return
+
         if not self.session:
             return
 
@@ -395,6 +416,13 @@ class WhatsAppWebhookServer:
 
         try:
             async with self.session.post(url, headers=headers, json=body) as resp:
+                if RelayResponseClassifier.is_auth_invalid(resp.status):
+                    self._session_invalid = True
+                    logger.error(
+                        f"R93: Auth Invalid (WhatsApp {resp.status}) - Locking session"
+                    )
+                    return
+
                 if resp.status not in (200, 201):
                     err = await resp.text()
                     logger.error(f"WhatsApp image send failed: {resp.status} {err}")

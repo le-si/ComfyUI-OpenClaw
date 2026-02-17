@@ -23,8 +23,8 @@ try:
     # CRITICAL: handshake verifier must be imported in package mode;
     # missing this causes NameError at runtime on /bridge/handshake.
     from ..services.bridge_handshake import verify_handshake
-    from ..services.cache import TTLCache
     from ..services.execution_budgets import BudgetExceededError
+    from ..services.idempotency_store import IdempotencyStore
     from ..services.rate_limit import check_rate_limit
     from ..services.sidecar.auth import is_bridge_enabled, require_bridge_auth
     from ..services.sidecar.bridge_contract import (
@@ -41,8 +41,8 @@ except ImportError:
     from services.async_utils import run_in_thread
     from services.audit import emit_audit_event
     from services.bridge_handshake import verify_handshake
-    from services.cache import TTLCache
     from services.execution_budgets import BudgetExceededError
+    from services.idempotency_store import IdempotencyStore
     from services.rate_limit import check_rate_limit
     from services.sidecar.auth import is_bridge_enabled, require_bridge_auth
     from services.sidecar.bridge_contract import (
@@ -84,10 +84,9 @@ class BridgeHandlers:
         self.submit_service = submit_service
         self.delivery_router = delivery_router
         # R22: Bounded Idempotency Store
-        # Key: idempotency_key -> Response Dict
-        self._idempotency_store = TTLCache[dict](
-            max_size=1000, ttl_sec=86400
-        )  # 24h retention
+        # S50: Durable Idempotency Backend
+        self._idempotency_store = IdempotencyStore()
+
         # F46: Worker job queue (in-memory stub, production would use persistent store)
         self._worker_job_queue: list = []
         # F46: Worker result store
@@ -303,11 +302,24 @@ class BridgeHandlers:
                 {"error": f"inputs exceeds {MAX_INPUTS_SIZE // 1024}KB"}, status=400
             )
 
-        # Idempotency check
-        cached = self._idempotency_store.get(idempotency_key)
-        if cached:
-            logger.info(f"Duplicate bridge submit suppressed: {idempotency_key}")
-            return web.json_response(cached)
+        # Idempotency check (S50 Durable)
+        store_key = f"bridge:{idempotency_key}"
+        is_dup, existing_pid = self._idempotency_store.check_and_record(
+            store_key, ttl=86400
+        )
+
+        if is_dup:
+            logger.info(f"Duplicate bridge submit suppressed: {store_key}")
+            return web.json_response(
+                {
+                    "ok": True,
+                    "deduped": True,
+                    "prompt_id": existing_pid,
+                    "trace_id": trace_id,
+                    "status": "queued",
+                    "message": "Duplicate request suppressed",
+                }
+            )
 
         # Build request object
         job_request = BridgeJobRequest(
@@ -352,8 +364,9 @@ class BridgeHandlers:
             except Exception:
                 pass
 
-            # Cache response
-            self._idempotency_store.put(idempotency_key, response_data)
+            # Update durable store with prompt_id
+            if prompt_id:
+                self._idempotency_store.update_prompt_id(store_key, prompt_id)
 
             self._audit(
                 request=request,
@@ -648,13 +661,22 @@ class BridgeHandlers:
             )
             return web.json_response({"error": "job_id required"}, status=400)
 
-        # Idempotency check
+        # S50: Durable idempotency check for worker result ingress.
+        # IMPORTANT: use check_and_record (durable path), do not rely on TTLCache-style get/put.
         idempotency_key = request.headers.get("X-Idempotency-Key", "")
         if idempotency_key:
-            cached = self._idempotency_store.get(f"wr:{idempotency_key}")
-            if cached:
+            store_key = f"wr:{idempotency_key}"
+            is_dup, _ = self._idempotency_store.check_and_record(store_key, ttl=86400)
+            if is_dup:
                 logger.info(f"Duplicate worker result suppressed: {idempotency_key}")
-                return web.json_response(cached)
+                return web.json_response(
+                    {
+                        "ok": True,
+                        "job_id": job_id,
+                        "status": "accepted",
+                        "deduped": True,
+                    }
+                )
 
         try:
             data = await request.json()
@@ -680,9 +702,6 @@ class BridgeHandlers:
         }
 
         response_data = {"ok": True, "job_id": job_id, "status": "accepted"}
-
-        if idempotency_key:
-            self._idempotency_store.put(f"wr:{idempotency_key}", response_data)
 
         self._audit(
             request=request,

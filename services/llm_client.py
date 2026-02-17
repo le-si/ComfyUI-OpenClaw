@@ -261,9 +261,12 @@ class LLMClient:
 
         # Custom base_url - validate against SSRF policy (S16/S16.1)
         try:
-            from ..services.safe_io import validate_outbound_url
+            from ..services.safe_io import (
+                STANDARD_OUTBOUND_POLICY,
+                validate_outbound_url,
+            )
         except ImportError:
-            from services.safe_io import validate_outbound_url
+            from services.safe_io import STANDARD_OUTBOUND_POLICY, validate_outbound_url
 
         def _env_flag(primary: str, legacy: str, default: bool = False) -> bool:
             val = os.environ.get(primary)
@@ -295,11 +298,12 @@ class LLMClient:
                 default=False,
             )
 
-            # S16/S16.1: Validate URL (raises on block).
+            # S16/S16.1/S51: Validate URL (raises on block).
             validate_outbound_url(
                 base_url,
                 allow_hosts=allowed_hosts if not allow_any else None,
                 allow_any_public_host=allow_any,
+                policy=STANDARD_OUTBOUND_POLICY,
             )
             return True
         except Exception as e:

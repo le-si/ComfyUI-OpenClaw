@@ -48,10 +48,17 @@ class TestModelListAPI(unittest.IsolatedAsyncioTestCase):
         )
         mock_get_key.return_value = "sk-test"
 
-        def _assert_allowlist(url, *, allow_hosts=None, allow_any_public_host=False):
+        def _assert_allowlist(
+            url,
+            *,
+            allow_hosts=None,
+            allow_any_public_host=False,
+            policy=None,
+        ):
             self.assertFalse(allow_any_public_host)
             self.assertIsNotNone(allow_hosts)
             self.assertIn("generativelanguage.googleapis.com", set(allow_hosts))
+            self.assertIsNotNone(policy)
             return ("https", "generativelanguage.googleapis.com", 443)
 
         mock_validate_url.side_effect = _assert_allowlist

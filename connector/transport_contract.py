@@ -686,6 +686,49 @@ class RetryPolicy:
 
 
 # ---------------------------------------------------------------------------
+# R93 — Relay Response Classifier (session invalidation)
+# ---------------------------------------------------------------------------
+
+
+class RelayStatus(str, enum.Enum):
+    """Classification of relay/outbound HTTP response status."""
+
+    OK = "ok"
+    TRANSIENT = "transient"  # retriable (408, 429, 5xx)
+    AUTH_INVALID = "auth_invalid"  # 401/410 — credential revoked/expired
+    SERVER_ERROR = "server_error"  # non-retriable server error
+
+
+class RelayResponseClassifier:
+    """
+    Classify HTTP response codes for connector relay/send paths.
+
+    auth_invalid (401, 410) signals permanent credential failure.
+    Connector platforms should stop retrying and mark the session
+    as invalid (require re-pair) when auth_invalid is returned.
+    """
+
+    AUTH_INVALID_CODES: frozenset = frozenset({401, 410})
+    TRANSIENT_CODES: frozenset = frozenset({408, 429, 500, 502, 503, 504})
+
+    @classmethod
+    def classify(cls, status_code: int) -> RelayStatus:
+        """Classify an HTTP status code."""
+        if 200 <= status_code < 300:
+            return RelayStatus.OK
+        if status_code in cls.AUTH_INVALID_CODES:
+            return RelayStatus.AUTH_INVALID
+        if status_code in cls.TRANSIENT_CODES:
+            return RelayStatus.TRANSIENT
+        return RelayStatus.SERVER_ERROR
+
+    @classmethod
+    def is_auth_invalid(cls, status_code: int) -> bool:
+        """Return True if status code indicates credential invalidation."""
+        return status_code in cls.AUTH_INVALID_CODES
+
+
+# ---------------------------------------------------------------------------
 # Error Envelope (normalized across all transports)
 # ---------------------------------------------------------------------------
 
