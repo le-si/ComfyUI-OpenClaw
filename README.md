@@ -33,6 +33,9 @@ This project is intentionally **not** a general-purpose assistant platform with 
 - Hardened external tool sandbox posture with fail-closed checks and filesystem path guards
 - Wave A/B/C closeout hardening: runtime/config/session stability contracts, strict outbound and supply-chain controls, and capability-aware operator guidance with bounded Parameter Lab/compare workflows
 
+Deployment profiles and hardening checklists:
+- [Security Deployment Guide](docs/security_deployment_guide.md) (local / LAN / public templates + self-check command)
+
 ## Latest Updates - Click to expand
 
 <details>
@@ -255,6 +258,8 @@ This project is intentionally **not** a general-purpose assistant platform with 
 - [Updating](#updating)
 - [Remote Control (Connector)](#remote-control-connector)
 - [Security](#security)
+  - [Security Deployment Guide](#security-deployment-guide)
+  - [Deployment Self-check Command](#deployment-self-check-command)
 
 ---
 
@@ -769,6 +774,27 @@ OpenClaw includes a standalone **Connector** process that allows you to control 
 ## Security
 
 Read `SECURITY.md` before exposing any endpoint beyond localhost. The project is designed to be secure-by-default (deny-by-default auth, SSRF protections, redaction, bounded outputs), but unsafe deployment can still create risk.
+
+### Security Deployment Guide
+
+- [Security Deployment Guide](docs/security_deployment_guide.md)
+- Includes three copy-paste deployment profiles (`local`, `lan`, `public`) and step-by-step checklists.
+
+### Deployment Self-check Command
+
+Validate current env against deployment profile:
+
+```bash
+python scripts/check_deployment_profile.py --profile local
+python scripts/check_deployment_profile.py --profile lan
+python scripts/check_deployment_profile.py --profile public
+```
+
+Fail on warnings too (recommended for hardened/public pipelines):
+
+```bash
+python scripts/check_deployment_profile.py --profile public --strict-warnings
+```
 
 ---
 

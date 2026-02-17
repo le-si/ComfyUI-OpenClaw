@@ -1,5 +1,11 @@
 # Security Policy
 
+## Quick Links
+
+- Deployment profiles and checklists: [Security Deployment Guide](docs/security_deployment_guide.md)
+- Deployment self-check command:
+  - `python scripts/check_deployment_profile.py --profile local|lan|public`
+
 ## Supported Versions
 
 Only the latest version of ComfyUI-OpenClaw is supported for security updates.
