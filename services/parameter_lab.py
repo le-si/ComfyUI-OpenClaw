@@ -95,9 +95,11 @@ class SweepPlanner:
             dimensions.append(dim)
 
         overrides_list = self._generate_combinations(dimensions)
-        if len(overrides_list) > MAX_SWEEP_COMBINATIONS:
+        # F52: Bounded Invariant Check
+        count = len(overrides_list)
+        if count > MAX_SWEEP_COMBINATIONS:
             raise ValueError(
-                f"Sweep size {len(overrides_list)} exceeds limit {MAX_SWEEP_COMBINATIONS}"
+                f"Sweep size {count} exceeds limit {MAX_SWEEP_COMBINATIONS}"
             )
 
         return SweepPlan(
@@ -105,12 +107,14 @@ class SweepPlanner:
             workflow_json=workflow,
             dimensions=dimensions,
             runs=overrides_list,
+            # F52: Schema V1 Lock
             schema_version="1.0",
             combination_cap=MAX_SWEEP_COMBINATIONS,
             budget_cap=MAX_SWEEP_COMBINATIONS,
             replay_metadata={
                 "replay_input_version": "1.0",
                 "compat_state": "supported",
+                "lock_reason": "f52_closeout",
             },
         )
 
@@ -201,12 +205,14 @@ class ComparePlanner:
             workflow_json=workflow,
             dimensions=[dim],
             runs=runs,
+            # F52: Schema V1 Lock
             schema_version="1.0",
             combination_cap=MAX_COMPARE_ITEMS,
             budget_cap=MAX_COMPARE_ITEMS,  # F50: Budget aligns with compare limit
             replay_metadata={
                 "replay_input_version": "1.0",
                 "compat_state": "supported",
+                "lock_reason": "f50_closeout",
             },
         )
 

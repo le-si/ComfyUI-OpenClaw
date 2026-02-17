@@ -181,6 +181,11 @@ def run_preflight_check(workflow: Dict[str, Any]) -> Dict[str, Any]:
     if not folder_paths:
         report["notes"].append("Model inventory unavailable (backend import failed).")
 
+    # F49: Inject Guidance Banners
+    # We serialize them so they are ready for JSON response
+    banners = generate_preflight_banners(report)
+    report["banners"] = [b.to_dict() for b in banners]
+
     return report
 
 
@@ -210,6 +215,7 @@ def _check_inputs_for_models(
                 # Use simple exact match for now.
 
                 unique_key = f"{target_type}:{value}"
+
                 if unique_key not in missing_counts:
                     missing_counts[unique_key] = {
                         "type": target_type,
@@ -217,3 +223,88 @@ def _check_inputs_for_models(
                         "count": 0,
                     }
                 missing_counts[unique_key]["count"] += 1
+
+
+# F49: Banner Generation Support
+def generate_preflight_banners(report: Dict[str, Any]) -> List["OperatorBanner"]:
+    """
+    Generate actionable guidance banners from a preflight report.
+    Returns list of OperatorBanner objects.
+    """
+    # CRITICAL: keep package-relative import first.
+    # Direct `services.*` imports can fail when loaded as a ComfyUI package module.
+    if __package__ and "." in __package__:
+        from .operator_guidance import BannerSeverity, OperatorAction, OperatorBanner
+    else:  # pragma: no cover (standalone/test import mode)
+        from services.operator_guidance import (  # type: ignore
+            BannerSeverity,
+            OperatorAction,
+            OperatorBanner,
+        )
+
+    banners = []
+
+    if report.get("ok"):
+        return banners
+
+    # 1. Missing Nodes
+    missing_nodes = report.get("missing_nodes", [])
+    # Sort for determinism
+    missing_nodes.sort(key=lambda x: x["class_type"])
+
+    if missing_nodes:
+        node_names = [n["class_type"] for n in missing_nodes]
+        count = len(node_names)
+        preview = ", ".join(node_names[:3])
+        if count > 3:
+            preview += f" and {count - 3} more"
+
+        banners.append(
+            OperatorBanner(
+                id="missing_nodes",
+                severity=BannerSeverity.ERROR,
+                message=f"Workflow requires missing custom nodes: {preview}",
+                source="Preflight",
+                action=OperatorAction(
+                    label="Manager",
+                    type="tab",
+                    payload="manager",  # Future: deep link to manager
+                ).to_dict(),
+            )
+        )
+
+    # 2. Missing Models
+    missing_models = report.get("missing_models", [])
+    # Sort for determinism
+    missing_models.sort(key=lambda x: (x["type"], x["name"]))
+
+    if missing_models:
+        model_names = [f"{m['name']} ({m['type']})" for m in missing_models]
+        count = len(model_names)
+        preview = ", ".join(model_names[:3])
+        if count > 3:
+            preview += f" and {count - 3} more"
+
+        banners.append(
+            OperatorBanner(
+                id="missing_models",
+                severity=BannerSeverity.WARNING,
+                message=f"Workflow refers to missing models: {preview}",
+                source="Preflight",
+                # No specific action for models yet, maybe just docs or upload.
+            )
+        )
+
+    # 3. Notes/Errors
+    notes = report.get("notes", [])
+    for i, note in enumerate(notes):
+        banners.append(
+            OperatorBanner(
+                id=f"preflight_note_{i}",
+                severity=BannerSeverity.WARNING,
+                message=note,
+                source="Preflight",
+            )
+        )
+
+    return banners

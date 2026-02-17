@@ -21,7 +21,39 @@ export class MoltbotUI {
      */
     mount(container) {
         this.container = container;
+        // CRITICAL: Must run before render to prevent first-paint clipping in Splitter sidebar host.
+        this._enforceSidebarMinWidth(container);
         this.boundary.run(container, () => this._render(container));
+    }
+
+    _enforceSidebarMinWidth(container) {
+        // IMPORTANT: Keep this value aligned with CSS .moltbot-sidebar-container/.side-bar-panel min-width.
+        const minWidthPx = 560;
+
+        const applyMinWidth = () => {
+            // CRITICAL: Sidebar width is controlled by ComfyUI SplitterPanel (.side-bar-panel),
+            // not by our inner root container. If we only set inner min-width, content gets clipped.
+            const sidePanel = container.closest(".side-bar-panel");
+            const splitterPanel = sidePanel || container.closest(".p-splitterpanel");
+            if (splitterPanel) {
+                splitterPanel.style.minWidth = `${minWidthPx}px`;
+            }
+
+            const sidebarContent = container.closest(".sidebar-content-container");
+            if (sidebarContent) {
+                sidebarContent.style.minWidth = `${minWidthPx}px`;
+            }
+
+            container.style.minWidth = `${minWidthPx}px`;
+        };
+
+        // Run once now, then again after mount/paint to handle late-attached sidebar wrappers.
+        applyMinWidth();
+        if (typeof requestAnimationFrame === "function") {
+            requestAnimationFrame(applyMinWidth);
+        } else {
+            setTimeout(applyMinWidth, 0);
+        }
     }
 
     /**
@@ -253,19 +285,78 @@ export class MoltbotUI {
 
     handleAction(action) {
         if (!action) return;
-        switch (action.type) {
-            case "url":
-                window.open(action.payload, "_blank");
-                break;
-            case "tab":
-                // CRITICAL: TabManager exposes `activateTab`; `switchTab` is not a valid API.
-                tabManager.activateTab(action.payload);
-                break;
-            case "action":
-                // Execute internal command (todo)
-                console.log("Action triggered:", action.payload);
-                break;
-        }
+
+        const run = () => {
+            switch (action.type) {
+                case "url":
+                    window.open(action.payload, "_blank");
+                    break;
+                case "tab":
+                    tabManager.activateTab(action.payload);
+                    break;
+                case "action":
+                    // F51: Route through MoltbotActions
+                    if (moltbotActions && moltbotActions.dispatch) {
+                        moltbotActions.dispatch(action.payload);
+                    } else {
+                        console.log("Action triggered:", action.payload);
+                    }
+                    break;
+            }
+        };
+
+        // F51: Check if action requires confirmation (heuristic or explicit)
+        // For now, only explicit 'confirm' property in action banner handles this,
+        // OR if the action type itself implies mutation.
+        // But Banner actions are usually just navigation.
+        // Use showConfirm if the banner action metadata says so?
+        // Let's assume standard banner actions are safe unless specified.
+        run();
+    }
+
+    /**
+     * F51: Glassmorphism Confirmation Modal.
+     * @param {Object} options - { title, message, fatal, onConfirm }
+     */
+    showConfirm({ title, message, fatal = false, onConfirm }) {
+        // Create modal overlay
+        const overlay = document.createElement("div");
+        overlay.className = "moltbot-modal-overlay";
+
+        const modal = document.createElement("div");
+        modal.className = `moltbot-modal ${fatal ? "fatal" : ""}`;
+
+        const h3 = document.createElement("h3");
+        h3.textContent = title || "Confirm Action";
+
+        const p = document.createElement("p");
+        p.textContent = message || "Are you sure?";
+
+        const buttons = document.createElement("div");
+        buttons.className = "moltbot-modal-buttons";
+
+        const cancelBtn = document.createElement("button");
+        cancelBtn.className = "moltbot-btn secondary";
+        cancelBtn.textContent = "Cancel";
+        cancelBtn.onclick = () => overlay.remove();
+
+        const confirmBtn = document.createElement("button");
+        confirmBtn.className = `moltbot-btn ${fatal ? "danger" : "primary"}`;
+        confirmBtn.textContent = "Confirm";
+        confirmBtn.onclick = () => {
+            overlay.remove();
+            if (onConfirm) onConfirm();
+        };
+
+        buttons.appendChild(cancelBtn);
+        buttons.appendChild(confirmBtn);
+
+        modal.appendChild(h3);
+        modal.appendChild(p);
+        modal.appendChild(buttons);
+        overlay.appendChild(modal);
+
+        this.container.appendChild(overlay);
     }
 }
 
@@ -411,6 +502,60 @@ class QueueMonitor {
 export class MoltbotActions {
     constructor(ui) {
         this.ui = ui;
+        this.capabilities = null;
+        this._initPromise = this._fetchCapabilities();
+    }
+
+    async _fetchCapabilities() {
+        try {
+            const res = await moltbotApi.getCapabilities();
+            if (res.ok) {
+                this.capabilities = res.data;
+            }
+        } catch (e) {
+            console.warn("MoltbotActions: Failed to fetch capabilities", e);
+        }
+    }
+
+    /**
+     * F51: Universal dispatcher for string-based action IDs.
+     */
+    dispatch(actionId, context = null) {
+        switch (actionId) {
+            case "doctor": this.openDoctor(); break;
+            case "queue": this.openQueue(); break;
+            case "settings": this.openSettings(); break;
+            case "inspect": this.openExplorer(); break;
+            default: console.warn("Unknown action:", actionId);
+        }
+    }
+
+    /**
+     * Check if an action is allowed/mutating.
+     */
+    _checkAction(actionName) {
+        if (!this.capabilities || !this.capabilities.actions) return { enabled: true, mutating: false }; // fallback safe
+        return this.capabilities.actions[actionName] || { enabled: false, mutating: false };
+    }
+
+    async _runGuarded(actionName, fn) {
+        await this._initPromise;
+        const cap = this._checkAction(actionName);
+
+        if (!cap.enabled) {
+            this.ui.showBanner("warning", `Action '${actionName}' is disabled by policy.`);
+            return;
+        }
+
+        if (cap.mutating) {
+            this.ui.showConfirm({
+                title: "Confirm Action",
+                message: `This action (${actionName}) will modify system state. Proceed?`,
+                onConfirm: fn
+            });
+        } else {
+            fn();
+        }
     }
 
     /**
@@ -440,6 +585,12 @@ export class MoltbotActions {
      * Opens Doctor view (in Explorer or Settings).
      */
     async openDoctor() {
+        this._runGuarded("doctor", async () => {
+            await this._openDoctorImpl();
+        });
+    }
+
+    async _openDoctorImpl() {
         tabManager.activateTab("settings");
         try {
             const res = await moltbotApi.fetch(moltbotApi._path("/security/doctor"));

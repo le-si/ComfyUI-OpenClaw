@@ -53,4 +53,15 @@ def get_capabilities() -> dict:
             "job_events": True,
             "operator_doctor": True,
         },
+        # F51: Action Capability Matrix
+        "actions": {
+            "doctor": {"enabled": True, "mutating": False},  # Read-only checks
+            "doctor_fix": {"enabled": True, "mutating": True},  # Remediation
+            "inspect": {"enabled": True, "mutating": False},
+            "queue": {"enabled": True, "mutating": False},
+            "settings": {"enabled": True, "mutating": False},
+            # Future hooks
+            "install_node": {"enabled": False, "mutating": True},
+            "update_pack": {"enabled": False, "mutating": True},
+        },
     }

@@ -31,8 +31,33 @@ This project is intentionally **not** a general-purpose assistant platform with 
 - Endpoint inventory metadata and route drift tests to catch unclassified API exposure regressions
 - Tamper-evident, append-only audit trails for sensitive write/admin paths
 - Hardened external tool sandbox posture with fail-closed checks and filesystem path guards
+- Wave A/B/C closeout hardening: runtime/config/session stability contracts, strict outbound and supply-chain controls, and capability-aware operator guidance with bounded Parameter Lab/compare workflows
 
 ## Latest Updates - Click to expand
+
+<details>
+
+<summary><strong>Wave A/B/C closeout: stability baseline, high-risk security gates, and operator UX completion</strong></summary>
+
+- Completed baseline runtime/config/connector stability improvements:
+  - runtime provenance and manager-aware environment freshness checks
+  - safer config merge behavior for object arrays
+  - connector session invalidation resilience for 401/410 revoke paths
+  - durable replay/idempotency storage for webhook/bridge flows
+  - stricter outbound egress policy controls for callback and LLM targets
+- Completed high-risk security and supply-chain hardening:
+  - stronger external tool path resolution and allowlist enforcement
+  - bridge/device binding hardening with mTLS validation controls
+  - pack archive canonicalization and full manifest coverage enforcement
+  - global DoS governance (quota/priority/storage controls)
+  - signed release provenance pipeline and SBOM-integrity validation
+- Completed Wave C operator UX and functionality closeout:
+  - deterministic operator guidance banners and deep-link recovery behavior
+  - capability-aware in-canvas quick actions with guarded mutation flow
+  - Parameter Lab schema lock and bounded sweep/compare orchestration
+  - compare winner-selection safety contract and expanded Wave C regression coverage
+
+</details>
 
 <details>
 

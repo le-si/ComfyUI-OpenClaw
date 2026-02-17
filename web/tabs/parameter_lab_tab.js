@@ -30,39 +30,89 @@ export const ParameterLabTab = {
         const header = document.createElement("div");
         header.className = "moltbot-lab-header";
         header.innerHTML = `
-            <h3>Parameter Lab</h3>
+            <div class="moltbot-lab-title-wrap">
+                <h3>Parameter Lab</h3>
+                <p>Build bounded sweeps and compare model variants directly from canvas.</p>
+            </div>
             <div class="moltbot-lab-actions">
-                <button id="lab-history" class="moltbot-btn has-icon" title="View History">
-                    \uD83D\uDCDC History
+                <button id="lab-history" class="moltbot-btn has-icon moltbot-lab-action-btn" title="View History">
+                    <span class="moltbot-lab-action-icon">\uD83D\uDCDC</span>
+                    <span class="moltbot-lab-action-label">History</span>
                 </button>
                 <div class="moltbot-separator"></div>
-                <button id="lab-compare-models" class="moltbot-btn has-icon" title="Wizard: Compare Models">
-                    \u2696\uFE0F Compare Models
+                <button id="lab-compare-models" class="moltbot-btn has-icon moltbot-lab-action-btn" title="Wizard: Compare Models">
+                    <span class="moltbot-lab-action-icon">\u2696\uFE0F</span>
+                    <span class="moltbot-lab-action-label">Compare Models</span>
                 </button>
                 <div class="moltbot-separator"></div>
-                <button id="lab-add-dim" class="moltbot-btn secondary">+ Dimension</button>
-                <button id="lab-generate" class="moltbot-btn primary">Generate Plan</button>
+                <button id="lab-add-dim" class="moltbot-btn moltbot-lab-action-btn">
+                    <span class="moltbot-lab-action-icon">&#x2795;</span>
+                    <span class="moltbot-lab-action-label">+ Dimension</span>
+                </button>
+                <button id="lab-generate" class="moltbot-btn moltbot-lab-action-btn">
+                    <span class="moltbot-lab-action-icon">&#x1F9ED;</span>
+                    <span class="moltbot-lab-action-label">Generate Plan</span>
+                </button>
             </div>
         `;
         container.appendChild(header);
+        this.container = container;
+
+        const main = document.createElement("div");
+        main.className = "moltbot-lab-main";
+        container.appendChild(main);
 
         // 2. Configuration Area (Dimensions)
+        const configCard = document.createElement("section");
+        configCard.className = "moltbot-lab-card";
+        configCard.innerHTML = `
+            <div class="moltbot-lab-card-head">
+                <h4>Dimensions</h4>
+                <span class="moltbot-lab-meta" id="lab-dimension-count">0 configured</span>
+            </div>
+        `;
         const configArea = document.createElement("div");
         configArea.className = "moltbot-lab-config";
+        configCard.appendChild(configArea);
+        main.appendChild(configCard);
         this.configContainer = configArea;
-        container.appendChild(configArea);
+        this.dimensionCountEl = configCard.querySelector("#lab-dimension-count");
 
         // 3. Plan / Results Area
+        const resultsCard = document.createElement("section");
+        resultsCard.className = "moltbot-lab-card";
+        resultsCard.innerHTML = `
+            <div class="moltbot-lab-card-head">
+                <h4>Plan & Results</h4>
+                <span class="moltbot-lab-meta">Live status</span>
+            </div>
+        `;
         const resultsArea = document.createElement("div");
         resultsArea.className = "moltbot-lab-results";
+        resultsCard.appendChild(resultsArea);
+        main.appendChild(resultsCard);
         this.resultsContainer = resultsArea;
-        container.appendChild(resultsArea);
 
         // Bind Events
-        container.querySelector("#lab-add-dim").onclick = () => this.addDimensionUI();
-        container.querySelector("#lab-generate").onclick = () => this.generatePlan();
-        container.querySelector("#lab-compare-models").onclick = () => this.showCompareWizard();
-        container.querySelector("#lab-history").onclick = () => this.showHistory();
+        container.querySelector("#lab-add-dim").onclick = () => {
+            this.setActiveToolbarButton("lab-add-dim");
+            this.addDimensionUI();
+        };
+        container.querySelector("#lab-generate").onclick = () => {
+            this.setActiveToolbarButton("lab-generate");
+            this.generatePlan();
+        };
+        container.querySelector("#lab-compare-models").onclick = () => {
+            this.setActiveToolbarButton("lab-compare-models");
+            this.showCompareWizard();
+        };
+        container.querySelector("#lab-history").onclick = () => {
+            this.setActiveToolbarButton("lab-history");
+            this.showHistory();
+        };
+
+        // Start without forced selection state.
+        this.setActiveToolbarButton(null);
 
         // Initial Render
         this.renderDimensions();
@@ -91,6 +141,13 @@ export const ParameterLabTab = {
         } catch (e) {
             this.resultsContainer.innerHTML = "<div class='moltbot-error'>Error: " + e.message + "</div>";
         }
+    },
+
+    setActiveToolbarButton(buttonId) {
+        if (!this.container) return;
+        this.container.querySelectorAll(".moltbot-lab-action-btn").forEach((btn) => {
+            btn.classList.toggle("active", buttonId ? btn.id === buttonId : false);
+        });
     },
 
     renderHistoryList(experiments) {
@@ -155,6 +212,9 @@ export const ParameterLabTab = {
 
     renderDimensions() {
         this.configContainer.innerHTML = "";
+        if (this.dimensionCountEl) {
+            this.dimensionCountEl.textContent = `${this.dimensions.length} configured`;
+        }
         if (this.dimensions.length === 0) {
             this.configContainer.innerHTML = "<div class='moltbot-hint'>No dimensions configured. Add one to start, or use 'Compare Models'.</div>";
             return;
@@ -176,7 +236,7 @@ export const ParameterLabTab = {
                     <label>Values (comma sep)</label>
                     <input type="text" class="dim-values" value="${dim.values_str}" placeholder="1.0, 1.5, 2.0">
                 </div>
-                <button class="moltbot-btn-icon remove-dim" title="Remove">×</button>
+                <button class="moltbot-btn-icon remove-dim" title="Remove Dimension" aria-label="Remove Dimension">x</button>
             `;
 
             // Bind inputs

@@ -33,11 +33,17 @@
     display: flex;
     flex-direction: column;
     height: 100%;
+    min-width: 560px; /* Keep sidebar readable: header tabs + Parameter Lab controls */
     min-height: 0; /* allow children to shrink for overflow handling */
     background: var(--moltbot-color-bg);
     color: var(--moltbot-color-fg);
     font-family: Arial, sans-serif;
     font-size: var(--moltbot-font-md);
+}
+
+/* CRITICAL: Keep this rule + !important; SplitterPanel inline sizing can override inner container min-width. */
+.side-bar-panel:has(.moltbot-sidebar-container) {
+    min-width: 560px !important;
 }
 
 .moltbot-header {
@@ -439,6 +445,100 @@
     color: #dfffe0;
 }
 
+/* Compatibility aliases used by existing tabs */
+.moltbot-btn.primary {
+    background: rgba(42, 170, 42, 0.2);
+    border-color: rgba(42, 170, 42, 0.6);
+    color: #dfffe0;
+}
+.moltbot-btn.primary:hover:not(:disabled) {
+    background: rgba(42, 170, 42, 0.3);
+}
+.moltbot-btn.secondary {
+    background: rgba(255, 255, 255, 0.04);
+    border-color: var(--moltbot-color-border);
+    color: var(--moltbot-color-fg);
+}
+
+.moltbot-btn.has-icon {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.moltbot-btn-icon {
+    width: 26px;
+    height: 26px;
+    border: 1px solid var(--moltbot-color-border);
+    background: rgba(255, 255, 255, 0.04);
+    color: var(--moltbot-color-fg);
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: var(--moltbot-font-sm);
+    line-height: 1;
+}
+.moltbot-btn-icon:hover {
+    background: rgba(255, 255, 255, 0.1);
+}
+
+.moltbot-separator {
+    width: 1px;
+    height: 24px;
+    background: var(--moltbot-color-border);
+    opacity: 0.7;
+}
+
+.moltbot-form-group {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.moltbot-form-group > label {
+    font-size: var(--moltbot-font-sm);
+    color: var(--moltbot-color-fg-muted);
+}
+
+.moltbot-form-group > input,
+.moltbot-form-group > select,
+.moltbot-form-group > textarea {
+    background: var(--moltbot-color-bg-light);
+    border: 1px solid var(--moltbot-color-border);
+    color: var(--moltbot-color-fg);
+    padding: 6px 8px;
+    border-radius: 4px;
+    font-size: var(--moltbot-font-md);
+}
+.moltbot-form-group > input:focus,
+.moltbot-form-group > select:focus,
+.moltbot-form-group > textarea:focus {
+    outline: none;
+    border-color: rgba(42, 170, 42, 0.7);
+}
+
+.moltbot-hint,
+.moltbot-loading,
+.moltbot-error {
+    padding: 10px 12px;
+    border-radius: 6px;
+    font-size: var(--moltbot-font-sm);
+    border: 1px solid var(--moltbot-color-border);
+    background: rgba(255, 255, 255, 0.03);
+    color: var(--moltbot-color-fg-muted);
+}
+
+.moltbot-loading {
+    color: #d2e4ff;
+    border-color: rgba(90, 150, 255, 0.45);
+    background: rgba(90, 150, 255, 0.12);
+}
+
+.moltbot-error {
+    color: #ffb4b4;
+    border-color: rgba(200, 60, 60, 0.6);
+    background: rgba(200, 60, 60, 0.18);
+}
+
 /* Status Indicators */
 .moltbot-badge {
     padding: 2px 6px;
@@ -548,4 +648,277 @@
     justify-content: flex-end;
     gap: var(--moltbot-space-md);
     background: rgba(0,0,0,0.1);
+}
+
+/* Parameter Lab */
+.moltbot-lab-container {
+    display: flex;
+    flex-direction: column;
+    gap: var(--moltbot-space-md);
+    height: 100%;
+    min-height: 0;
+    padding: var(--moltbot-space-md);
+    box-sizing: border-box;
+    overflow: hidden;
+}
+
+.moltbot-lab-header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: var(--moltbot-space-md);
+    border: 1px solid var(--moltbot-color-border);
+    background: rgba(255, 255, 255, 0.03);
+    border-radius: 8px;
+    padding: var(--moltbot-space-md);
+}
+
+.moltbot-lab-title-wrap {
+    flex: 1 1 100%;
+    min-width: 0;
+}
+
+.moltbot-lab-title-wrap > h3 {
+    margin: 0;
+    font-size: 20px;
+    line-height: 1.1;
+    word-break: normal;
+    overflow-wrap: normal;
+}
+
+.moltbot-lab-title-wrap > p {
+    margin: 4px 0 0;
+    color: var(--moltbot-color-fg-muted);
+    font-size: var(--moltbot-font-sm);
+    line-height: 1.35;
+    max-width: 60ch;
+    word-break: normal;
+    overflow-wrap: normal;
+}
+
+.moltbot-lab-actions {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: var(--moltbot-space-sm);
+    width: 100%;
+    margin: 0 auto;
+    align-items: stretch;
+}
+
+.moltbot-lab-action-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    min-width: 0;
+    width: 100%;
+    text-align: center;
+    overflow: hidden;
+}
+
+.moltbot-lab-actions .moltbot-btn.has-icon.moltbot-lab-action-btn {
+    justify-content: center;
+}
+
+.moltbot-lab-action-icon {
+    flex: 0 0 auto;
+    line-height: 1;
+}
+
+.moltbot-lab-action-label {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.moltbot-lab-action-btn.active {
+    border-color: rgba(42, 170, 42, 0.65);
+    background: rgba(42, 170, 42, 0.2);
+    color: #dfffe0;
+}
+
+.moltbot-lab-action-btn:focus {
+    outline: none;
+}
+
+.moltbot-lab-action-btn:focus-visible {
+    border-color: rgba(42, 170, 42, 0.75);
+    box-shadow: 0 0 0 1px rgba(42, 170, 42, 0.35) inset;
+}
+
+.moltbot-lab-actions .moltbot-separator {
+    display: none;
+}
+
+.moltbot-lab-main {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: var(--moltbot-space-md);
+    min-height: 0;
+    overflow-y: auto;
+    padding-right: 2px;
+}
+
+.moltbot-lab-card {
+    border: 1px solid var(--moltbot-color-border);
+    background: rgba(0, 0, 0, 0.16);
+    border-radius: 8px;
+    padding: var(--moltbot-space-md);
+    display: flex;
+    flex-direction: column;
+    gap: var(--moltbot-space-md);
+}
+
+.moltbot-lab-card-head {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: var(--moltbot-space-md);
+    border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+    padding-bottom: var(--moltbot-space-sm);
+}
+
+.moltbot-lab-card-head > h4 {
+    margin: 0;
+    font-size: 15px;
+}
+
+.moltbot-lab-meta {
+    color: var(--moltbot-color-fg-muted);
+    font-size: var(--moltbot-font-sm);
+}
+
+.moltbot-lab-config,
+.moltbot-lab-results {
+    display: flex;
+    flex-direction: column;
+    gap: var(--moltbot-space-sm);
+}
+
+.moltbot-lab-dim-row {
+    display: grid;
+    grid-template-columns: 84px 110px 1fr 32px;
+    gap: var(--moltbot-space-sm);
+    align-items: end;
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    background: rgba(255, 255, 255, 0.02);
+    border-radius: 6px;
+    padding: var(--moltbot-space-sm);
+}
+
+.moltbot-lab-dim-row .moltbot-form-group.wide {
+    min-width: 0;
+}
+
+.moltbot-lab-plan-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--moltbot-space-sm);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 6px;
+    background: rgba(255, 255, 255, 0.02);
+    padding: var(--moltbot-space-sm);
+}
+
+.moltbot-lab-plan-header > h4 {
+    margin: 0;
+    font-size: var(--moltbot-font-md);
+}
+
+.moltbot-lab-run-list {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.moltbot-lab-run-item {
+    display: grid;
+    grid-template-columns: 72px 1fr auto 32px;
+    align-items: center;
+    gap: var(--moltbot-space-sm);
+    padding: 8px;
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 6px;
+    background: rgba(255, 255, 255, 0.02);
+}
+
+.run-idx {
+    font-family: var(--moltbot-font-mono);
+    color: var(--moltbot-color-fg-muted);
+    font-size: var(--moltbot-font-sm);
+}
+
+.run-params {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-family: var(--moltbot-font-mono);
+    font-size: var(--moltbot-font-sm);
+}
+
+.run-status {
+    font-size: var(--moltbot-font-sm);
+    border-radius: 999px;
+    padding: 2px 8px;
+    border: 1px solid rgba(255, 255, 255, 0.15);
+    color: var(--moltbot-color-fg-muted);
+    background: rgba(255, 255, 255, 0.05);
+    white-space: nowrap;
+}
+
+.run-status.pending,
+.run-status.queued {
+    color: #ffe38f;
+    border-color: rgba(230, 180, 50, 0.55);
+    background: rgba(230, 180, 50, 0.14);
+}
+
+.run-status.running {
+    color: #a8d1ff;
+    border-color: rgba(90, 150, 255, 0.55);
+    background: rgba(90, 150, 255, 0.16);
+}
+
+.run-status.success,
+.run-status.completed {
+    color: #bfffc0;
+    border-color: rgba(42, 170, 42, 0.55);
+    background: rgba(42, 170, 42, 0.16);
+}
+
+.run-status.error,
+.run-status.failed {
+    color: #ffb4b4;
+    border-color: rgba(200, 60, 60, 0.6);
+    background: rgba(200, 60, 60, 0.16);
+}
+
+@media (max-width: 820px) {
+    .moltbot-lab-header {
+        flex-direction: column;
+        align-items: stretch;
+    }
+
+    .moltbot-lab-actions {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .moltbot-lab-dim-row {
+        grid-template-columns: 1fr;
+    }
+
+    .moltbot-lab-run-item {
+        grid-template-columns: 1fr;
+        align-items: start;
+    }
+}
+
+@media (max-width: 720px) {
+    .moltbot-lab-actions {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
 }
