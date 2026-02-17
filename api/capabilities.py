@@ -5,12 +5,26 @@ GET /openclaw/capabilities (legacy: /moltbot/capabilities)
 
 from aiohttp import web
 
-try:
+# Import discipline
+if __package__ and "." in __package__:
     from ..services.capabilities import get_capabilities
-except ImportError:
+else:
     from services.capabilities import get_capabilities
 
 
+try:
+    from ..services.endpoint_manifest import AuthTier, RiskTier, endpoint_metadata
+except ImportError:
+    from services.endpoint_manifest import AuthTier, RiskTier, endpoint_metadata
+
+
+@endpoint_metadata(
+    auth=AuthTier.PUBLIC,
+    risk=RiskTier.LOW,
+    summary="Get capabilities",
+    description="Returns API version and feature flags.",
+    audit="capabilities.list",
+)
 async def capabilities_handler(request: web.Request) -> web.Response:
     """
     GET /openclaw/capabilities (legacy: /moltbot/capabilities)

@@ -47,6 +47,12 @@ else:  # pragma: no cover (test-only import mode)
     from services.runtime_config import is_loopback_client
     from services.secret_store import get_secret_store  # type: ignore
 
+# R98: Endpoint Metadata
+if __package__ and "." in __package__:
+    from ..services.endpoint_manifest import AuthTier, RiskTier, endpoint_metadata
+else:
+    from services.endpoint_manifest import AuthTier, RiskTier, endpoint_metadata
+
 logger = logging.getLogger("ComfyUI-OpenClaw.api.secrets")
 
 _TRUTHY = ("1", "true", "yes", "on")
@@ -93,6 +99,13 @@ def _rate_limit_admin(request: web.Request) -> Optional[web.Response]:
     )
 
 
+@endpoint_metadata(
+    auth=AuthTier.ADMIN,
+    risk=RiskTier.LOW,
+    summary="Get secret status",
+    description="Returns secret configuration status (NO ACTUAL VALUES).",
+    audit="secrets.status",
+)
 async def secrets_status_handler(request: web.Request) -> web.Response:
     """
     GET /openclaw/secrets/status
@@ -128,6 +141,13 @@ async def secrets_status_handler(request: web.Request) -> web.Response:
     )
 
 
+@endpoint_metadata(
+    auth=AuthTier.ADMIN,
+    risk=RiskTier.HIGH,
+    summary="Write secret",
+    description="Save API key to server store.",
+    audit="secrets.write",
+)
 async def secrets_put_handler(request: web.Request) -> web.Response:
     """
     PUT /openclaw/secrets
@@ -233,6 +253,13 @@ async def secrets_put_handler(request: web.Request) -> web.Response:
         )
 
 
+@endpoint_metadata(
+    auth=AuthTier.ADMIN,
+    risk=RiskTier.HIGH,
+    summary="Delete secret",
+    description="Clear provider secret.",
+    audit="secrets.delete",
+)
 async def secrets_delete_handler(request: web.Request) -> web.Response:
     """
     DELETE /openclaw/secrets/{provider}

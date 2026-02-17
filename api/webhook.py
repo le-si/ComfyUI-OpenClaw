@@ -35,13 +35,22 @@ except ImportError:
 
 try:
     from ..services.diagnostics_flags import diagnostics
+    from ..services.endpoint_manifest import AuthTier, RiskTier, endpoint_metadata
 except ImportError:
     from services.diagnostics_flags import diagnostics
+    from services.endpoint_manifest import AuthTier, RiskTier, endpoint_metadata
 
 # R46: Scoped logger for safe-by-default redaction
 logger = diagnostics.get_logger("ComfyUI-OpenClaw.api.webhook", "webhook")
 
 
+@endpoint_metadata(
+    auth=AuthTier.WEBHOOK,
+    risk=RiskTier.HIGH,
+    summary="Webhook submit",
+    description="Authenticated endpoint for external job requests (legacy pipeline).",
+    audit="webhook.submit.legacy",
+)
 async def webhook_handler(request: web.Request) -> web.Response:
     """
     POST /moltbot/webhook

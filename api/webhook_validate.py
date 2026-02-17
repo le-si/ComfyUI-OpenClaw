@@ -60,6 +60,12 @@ else:  # pragma: no cover (test-only import mode)
         resolve_profile,
     )
 
+# R98: Endpoint Metadata
+if __package__ and "." in __package__:
+    from ..services.endpoint_manifest import AuthTier, RiskTier, endpoint_metadata
+else:
+    from services.endpoint_manifest import AuthTier, RiskTier, endpoint_metadata
+
 logger = logging.getLogger("ComfyUI-OpenClaw.api.webhook_validate")
 
 PLACEHOLDER_PATTERN = re.compile(r"\{\{[^{}]+\}\}")
@@ -72,6 +78,13 @@ def _safe_error_response(status: int, error: str, detail: str = "") -> web.Respo
     return web.json_response(body, status=status)
 
 
+@endpoint_metadata(
+    auth=AuthTier.WEBHOOK,
+    risk=RiskTier.LOW,
+    summary="Webhook validate",
+    description="Dry-run validation for webhook requests.",
+    audit="webhook.validate",
+)
 async def webhook_validate_handler(request: web.Request) -> web.Response:
     """
     POST /openclaw/webhook/validate (legacy: /moltbot/webhook/validate)

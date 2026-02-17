@@ -15,9 +15,22 @@ except ImportError:
     from services.access_control import require_admin_token
     from services.tool_runner import get_tool_runner, is_tools_enabled
 
+# R98: Endpoint Metadata
+if __package__ and "." in __package__:
+    from ..services.endpoint_manifest import AuthTier, RiskTier, endpoint_metadata
+else:
+    from services.endpoint_manifest import AuthTier, RiskTier, endpoint_metadata
+
 logger = logging.getLogger("ComfyUI-OpenClaw.api.tools")
 
 
+@endpoint_metadata(
+    auth=AuthTier.ADMIN,
+    risk=RiskTier.MEDIUM,
+    summary="List tools",
+    description="List allowed external tools.",
+    audit="tools.list",
+)
 async def tools_list_handler(request: web.Request) -> web.Response:
     """
     GET /openclaw/tools
@@ -41,6 +54,13 @@ async def tools_list_handler(request: web.Request) -> web.Response:
     return web.json_response({"ok": True, "tools": tools})
 
 
+@endpoint_metadata(
+    auth=AuthTier.ADMIN,
+    risk=RiskTier.HIGH,
+    summary="Run tool",
+    description="Execute an external tool.",
+    audit="tools.run",
+)
 async def tools_run_handler(request: web.Request) -> web.Response:
     """
     POST /openclaw/tools/{name}/run

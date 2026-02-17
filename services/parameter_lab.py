@@ -26,6 +26,12 @@ else:  # pragma: no cover (test-only import mode)
     from services.access_control import require_admin_token  # type: ignore
     from services.rate_limit import check_rate_limit  # type: ignore
 
+# R98: Endpoint Metadata
+if __package__ and "." in __package__:
+    from ..services.endpoint_manifest import AuthTier, RiskTier, endpoint_metadata
+else:
+    from services.endpoint_manifest import AuthTier, RiskTier, endpoint_metadata
+
 logger = logging.getLogger("ComfyUI-OpenClaw.services.parameter_lab")
 
 # Configuration
@@ -364,6 +370,13 @@ def _require_admin(request: web.Request) -> Optional[web.Response]:
     return None
 
 
+@endpoint_metadata(
+    auth=AuthTier.ADMIN,
+    risk=RiskTier.MEDIUM,
+    summary="Create comparison",
+    description="Create a bounded multi-model comparison plan.",
+    audit="lab.compare.create",
+)
 async def create_compare_handler(request: web.Request) -> web.Response:
     if web is None:
         raise RuntimeError("aiohttp not available")
@@ -408,6 +421,13 @@ async def create_compare_handler(request: web.Request) -> web.Response:
         return web.json_response({"ok": False, "error": "internal_error"}, status=500)
 
 
+@endpoint_metadata(
+    auth=AuthTier.ADMIN,
+    risk=RiskTier.MEDIUM,
+    summary="Create sweep",
+    description="Create a bounded parameter sweep plan.",
+    audit="lab.sweep.create",
+)
 async def create_sweep_handler(request: web.Request) -> web.Response:
     if web is None:
         raise RuntimeError("aiohttp not available")
@@ -438,6 +458,13 @@ async def create_sweep_handler(request: web.Request) -> web.Response:
         return web.json_response({"ok": False, "error": "internal_error"}, status=500)
 
 
+@endpoint_metadata(
+    auth=AuthTier.ADMIN,
+    risk=RiskTier.LOW,
+    summary="List experiments",
+    description="List persistent experiments.",
+    audit="lab.list",
+)
 async def list_experiments_handler(request: web.Request) -> web.Response:
     if web is None:
         raise RuntimeError("aiohttp not available")
@@ -450,6 +477,13 @@ async def list_experiments_handler(request: web.Request) -> web.Response:
     return web.json_response({"ok": True, "experiments": experiments})
 
 
+@endpoint_metadata(
+    auth=AuthTier.ADMIN,
+    risk=RiskTier.LOW,
+    summary="Get experiment",
+    description="Retrieve experiment details.",
+    audit="lab.get",
+)
 async def get_experiment_handler(request: web.Request) -> web.Response:
     if web is None:
         raise RuntimeError("aiohttp not available")
@@ -468,6 +502,13 @@ async def get_experiment_handler(request: web.Request) -> web.Response:
     return web.json_response({"ok": True, "experiment": plan})
 
 
+@endpoint_metadata(
+    auth=AuthTier.ADMIN,
+    risk=RiskTier.MEDIUM,
+    summary="Update experiment",
+    description="Update experiment state (e.g. run results).",
+    audit="lab.update",
+)
 async def update_experiment_handler(request: web.Request) -> web.Response:
     if web is None:
         raise RuntimeError("aiohttp not available")
@@ -497,6 +538,13 @@ async def update_experiment_handler(request: web.Request) -> web.Response:
     return web.json_response({"ok": False, "error": "update_failed"}, status=500)
 
 
+@endpoint_metadata(
+    auth=AuthTier.ADMIN,
+    risk=RiskTier.MEDIUM,
+    summary="Select winner",
+    description="Select experiment winner and return params.",
+    audit="lab.winner",
+)
 async def select_apply_winner_handler(request: web.Request) -> web.Response:
     """
     F50: Winner-Handoff Safety Gate.

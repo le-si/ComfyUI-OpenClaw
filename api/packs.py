@@ -46,6 +46,12 @@ else:
     from services.packs.pack_archive import PackArchive, PackError
     from services.packs.pack_registry import PackRegistry
 
+# R98: Endpoint Metadata
+if __package__ and "." in __package__:
+    from ..services.endpoint_manifest import AuthTier, RiskTier, endpoint_metadata
+else:
+    from services.endpoint_manifest import AuthTier, RiskTier, endpoint_metadata
+
 # Strict pattern for pack name/version URL route parameters.
 _SAFE_SEGMENT_RE = re.compile(r"^[a-zA-Z0-9._-]+$")
 
@@ -81,6 +87,13 @@ class PacksHandlers:
     def __init__(self, state_dir: str):
         self.registry = PackRegistry(state_dir)
 
+    @endpoint_metadata(
+        auth=AuthTier.ADMIN,
+        risk=RiskTier.LOW,
+        summary="List packs",
+        description="List installed packs.",
+        audit="packs.list",
+    )
     async def list_packs_handler(self, request: web.Request) -> web.Response:
         """GET /packs - List installed packs."""
         if getattr(web, "_IS_MOCKWEB", False) is True:
@@ -106,6 +119,13 @@ class PacksHandlers:
         except Exception as e:
             return web.json_response({"ok": False, "error": str(e)}, status=500)
 
+    @endpoint_metadata(
+        auth=AuthTier.ADMIN,
+        risk=RiskTier.HIGH,
+        summary="Import pack",
+        description="Install pack from zip upload.",
+        audit="packs.import",
+    )
     async def import_pack_handler(self, request: web.Request) -> web.Response:
         """POST /packs/import - Install pack from zip upload."""
         if getattr(web, "_IS_MOCKWEB", False) is True:
@@ -150,6 +170,13 @@ class PacksHandlers:
             if os.path.exists(temp_path):
                 os.remove(temp_path)
 
+    @endpoint_metadata(
+        auth=AuthTier.ADMIN,
+        risk=RiskTier.HIGH,
+        summary="Delete pack",
+        description="Uninstall pack.",
+        audit="packs.delete",
+    )
     async def delete_pack_handler(self, request: web.Request) -> web.Response:
         """DELETE /packs/{name}/{version} - Uninstall pack."""
         if getattr(web, "_IS_MOCKWEB", False) is True:
@@ -182,6 +209,13 @@ class PacksHandlers:
         except Exception as e:
             return web.json_response({"ok": False, "error": str(e)}, status=500)
 
+    @endpoint_metadata(
+        auth=AuthTier.ADMIN,
+        risk=RiskTier.MEDIUM,
+        summary="Export pack",
+        description="Download pack zip.",
+        audit="packs.export",
+    )
     async def export_pack_handler(self, request: web.Request) -> web.Response:
         """GET /packs/export/{name}/{version} - Download pack zip."""
         if getattr(web, "_IS_MOCKWEB", False) is True:

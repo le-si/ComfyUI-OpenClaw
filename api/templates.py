@@ -26,6 +26,12 @@ else:  # pragma: no cover (test-only import mode)
     from services.rate_limit import check_rate_limit  # type: ignore
     from services.templates import get_template_service  # type: ignore
 
+# R98: Endpoint Metadata
+if __package__ and "." in __package__:
+    from ..services.endpoint_manifest import AuthTier, RiskTier, endpoint_metadata
+else:
+    from services.endpoint_manifest import AuthTier, RiskTier, endpoint_metadata
+
 logger = logging.getLogger("ComfyUI-OpenClaw.api.templates")
 
 
@@ -52,6 +58,13 @@ def _ensure_templates_api_deps_ready() -> tuple[bool, str | None]:
     return True, None
 
 
+@endpoint_metadata(
+    auth=AuthTier.OBSERVABILITY,  # Actually guarded by require_observability_access (token/loopback)
+    risk=RiskTier.LOW,
+    summary="List templates",
+    description="Returns templates visible to the backend.",
+    audit="templates.list",
+)
 async def templates_list_handler(request: web.Request) -> web.Response:
     """
     GET /openclaw/templates (legacy: /moltbot/templates)

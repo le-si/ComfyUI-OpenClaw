@@ -48,9 +48,22 @@ else:  # pragma: no cover (test-only)
     from services.rate_limit import check_rate_limit  # type: ignore
     from services.security_doctor import run_security_doctor  # type: ignore
 
+# R98: Endpoint Metadata
+if __package__ and "." in __package__:
+    from ..services.endpoint_manifest import AuthTier, RiskTier, endpoint_metadata
+else:
+    from services.endpoint_manifest import AuthTier, RiskTier, endpoint_metadata
+
 logger = logging.getLogger("ComfyUI-OpenClaw.api.security_doctor")
 
 
+@endpoint_metadata(
+    auth=AuthTier.ADMIN,
+    risk=RiskTier.HIGH,  # Can perform remediation actions
+    summary="Security Doctor",
+    description="Run security posture diagnostics and remediation.",
+    audit="security.doctor",
+)
 async def security_doctor_handler(request: web.Request) -> web.Response:
     """
     GET /openclaw/security/doctor

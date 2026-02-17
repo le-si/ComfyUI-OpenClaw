@@ -12,6 +12,12 @@ import os
 import sys
 import time
 
+# R98: Endpoint Metadata
+if __package__ and "." in __package__:
+    from ..services.endpoint_manifest import AuthTier, RiskTier, endpoint_metadata
+else:
+    from services.endpoint_manifest import AuthTier, RiskTier, endpoint_metadata
+
 try:
     from aiohttp import web  # type: ignore
 except ModuleNotFoundError:  # pragma: no cover (optional for unit tests)
@@ -174,6 +180,13 @@ def _ensure_observability_deps_ready() -> tuple[bool, str | None]:
     return True, None
 
 
+@endpoint_metadata(
+    auth=AuthTier.PUBLIC,
+    risk=RiskTier.LOW,
+    summary="Health check",
+    description="Returns pack status, uptime, dependencies, and stats.",
+    audit="health.check",
+)
 async def health_handler(request: web.Request) -> web.Response:
     """
     GET /openclaw/health (legacy: /moltbot/health)
@@ -287,6 +300,13 @@ async def health_handler(request: web.Request) -> web.Response:
     )
 
 
+@endpoint_metadata(
+    auth=AuthTier.ADMIN,
+    risk=RiskTier.MEDIUM,
+    summary="Tail logs",
+    description="Returns the last N lines of the log file.",
+    audit="logs.tail",
+)
 async def logs_tail_handler(request: web.Request) -> web.Response:
     """GET /moltbot/logs/tail - Returns the last N lines of the log file."""
     if web is None:
@@ -373,6 +393,13 @@ async def logs_tail_handler(request: web.Request) -> web.Response:
         return web.json_response({"ok": False, "error": str(e)}, status=500)
 
 
+@endpoint_metadata(
+    auth=AuthTier.ADMIN,
+    risk=RiskTier.LOW,
+    summary="List jobs",
+    description="Stub endpoint for job listing.",
+    audit="jobs.list",
+)
 async def jobs_handler(request: web.Request) -> web.Response:
     """
     GET /moltbot/jobs
@@ -390,6 +417,13 @@ async def jobs_handler(request: web.Request) -> web.Response:
     )
 
 
+@endpoint_metadata(
+    auth=AuthTier.ADMIN,
+    risk=RiskTier.MEDIUM,
+    summary="Get trace",
+    description="Returns redacted timeline for a prompt.",
+    audit="trace.get",
+)
 async def trace_handler(request: web.Request) -> web.Response:
     """GET /moltbot/trace/{prompt_id} - Returns trace_id and redacted timeline."""
     if web is None:
@@ -610,9 +644,15 @@ def register_routes(server) -> None:
 
     # F10 Bridge Routes (Sidecar)
     # R84 Boot Boundary: BRIDGE
+    # F10 Bridge Routes (Sidecar)
+    # R84 Boot Boundary: BRIDGE
     try:
-        from ..api.bridge import register_bridge_routes
-        from ..services.modules import ModuleCapability, is_module_enabled
+        try:
+            from ..api.bridge import register_bridge_routes
+            from ..services.modules import ModuleCapability, is_module_enabled
+        except (ImportError, ValueError):
+            from api.bridge import register_bridge_routes
+            from services.modules import ModuleCapability, is_module_enabled
 
         if hasattr(server, "app") and is_module_enabled(ModuleCapability.BRIDGE):
             register_bridge_routes(server.app)
@@ -625,8 +665,12 @@ def register_routes(server) -> None:
     # S8/S23/F11 Asset Packs
     # R84 Boot Boundary: REGISTRY_SYNC (Packs management)
     try:
-        from ..api.packs import PacksHandlers
-        from ..services.modules import ModuleCapability, is_module_enabled
+        try:
+            from ..api.packs import PacksHandlers
+            from ..services.modules import ModuleCapability, is_module_enabled
+        except (ImportError, ValueError):
+            from api.packs import PacksHandlers
+            from services.modules import ModuleCapability, is_module_enabled
 
         # Packs are currently treated as part of CORE or REGISTRY_SYNC depending on strictness.
         # For now, we bind them to REGISTRY_SYNC if we want to segment them,
@@ -638,7 +682,7 @@ def register_routes(server) -> None:
 
         try:
             from ..config import DATA_DIR
-        except ImportError:
+        except (ImportError, ValueError):
             from config import DATA_DIR
 
         packs = PacksHandlers(DATA_DIR)

@@ -52,6 +52,12 @@ except ImportError:
     from services.trace import get_effective_trace_id
     from services.trace_store import trace_store
 
+# R98: Endpoint Metadata
+if __package__ and "." in __package__:
+    from ..services.endpoint_manifest import AuthTier, RiskTier, endpoint_metadata
+else:
+    from services.endpoint_manifest import AuthTier, RiskTier, endpoint_metadata
+
 logger = logging.getLogger("ComfyUI-OpenClaw.api.bridge")
 
 # Payload limits
@@ -86,6 +92,12 @@ class BridgeHandlers:
         # F46: Worker heartbeats
         self._worker_heartbeats: dict = {}
 
+    @endpoint_metadata(
+        auth=AuthTier.PUBLIC,  # Guarded by is_bridge_enabled internally, effectively public if enabled
+        risk=RiskTier.LOW,
+        summary="Bridge health",
+        description="Returns bridge health status.",
+    )
     async def health_handler(self, request: web.Request) -> web.Response:
         """
         GET /bridge/health
@@ -119,6 +131,12 @@ class BridgeHandlers:
             }
         )
 
+    @endpoint_metadata(
+        auth=AuthTier.PUBLIC,
+        risk=RiskTier.LOW,
+        summary="Bridge handshake",
+        description="Negotiate protocol version.",
+    )
     async def handshake_handler(self, request: web.Request) -> web.Response:
         """
         POST /bridge/handshake
@@ -143,6 +161,13 @@ class BridgeHandlers:
             status=status_code,
         )
 
+    @endpoint_metadata(
+        auth=AuthTier.BRIDGE,
+        risk=RiskTier.HIGH,
+        summary="Bridge submit",
+        description="Submit a job via sidecar bridge.",
+        audit="bridge.submit",
+    )
     async def submit_handler(self, request: web.Request) -> web.Response:
         """
         POST /bridge/submit
@@ -252,6 +277,13 @@ class BridgeHandlers:
             logger.exception("Bridge submit failed")
             return web.json_response({"error": "Internal server error"}, status=500)
 
+    @endpoint_metadata(
+        auth=AuthTier.BRIDGE,
+        risk=RiskTier.HIGH,
+        summary="Bridge deliver",
+        description="Request outbound delivery via sidecar.",
+        audit="bridge.deliver",
+    )
     async def deliver_handler(self, request: web.Request) -> web.Response:
         """
         POST /bridge/deliver
@@ -330,6 +362,12 @@ class BridgeHandlers:
     # F46 — Worker-facing endpoints
     # ------------------------------------------------------------------
 
+    @endpoint_metadata(
+        auth=AuthTier.BRIDGE,
+        risk=RiskTier.LOW,
+        summary="Worker poll",
+        description="Worker polls for pending jobs.",
+    )
     async def worker_poll_handler(self, request: web.Request) -> web.Response:
         """
         GET /bridge/worker/poll
@@ -360,6 +398,13 @@ class BridgeHandlers:
 
         return web.json_response({"jobs": jobs})
 
+    @endpoint_metadata(
+        auth=AuthTier.BRIDGE,
+        risk=RiskTier.MEDIUM,
+        summary="Worker result",
+        description="Worker submits completed job result.",
+        audit="bridge.worker.result",
+    )
     async def worker_result_handler(self, request: web.Request) -> web.Response:
         """
         POST /bridge/worker/result/{job_id}
@@ -404,6 +449,12 @@ class BridgeHandlers:
         logger.info(f"F46: Worker result accepted for job={job_id} from={device_id}")
         return web.json_response(response_data, status=201)
 
+    @endpoint_metadata(
+        auth=AuthTier.BRIDGE,
+        risk=RiskTier.LOW,
+        summary="Worker heartbeat",
+        description="Worker reports its status.",
+    )
     async def worker_heartbeat_handler(self, request: web.Request) -> web.Response:
         """
         POST /bridge/worker/heartbeat

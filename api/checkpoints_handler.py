@@ -39,6 +39,13 @@ else:  # pragma: no cover (test-only import mode)
     from services.request_ip import get_client_ip  # type: ignore
 
 
+# R98: Endpoint Metadata
+if __package__ and "." in __package__:
+    from ..services.endpoint_manifest import AuthTier, RiskTier, endpoint_metadata
+else:
+    from services.endpoint_manifest import AuthTier, RiskTier, endpoint_metadata
+
+
 logger = logging.getLogger("ComfyUI-OpenClaw.api.checkpoints")
 
 
@@ -74,6 +81,13 @@ def _deny_remote_admin_if_needed(request: web.Request) -> web.Response | None:
     )
 
 
+@endpoint_metadata(
+    auth=AuthTier.ADMIN,
+    risk=RiskTier.LOW,
+    summary="List checkpoints",
+    description="List available workflow checkpoints.",
+    audit="checkpoints.list",
+)
 async def list_checkpoints_handler(request: web.Request) -> web.Response:
     """GET /openclaw/checkpoints"""
     if web is None:
@@ -97,6 +111,13 @@ async def list_checkpoints_handler(request: web.Request) -> web.Response:
         return _json_resp({"ok": False, "error": str(e)}, 500)
 
 
+@endpoint_metadata(
+    auth=AuthTier.ADMIN,
+    risk=RiskTier.MEDIUM,
+    summary="Create checkpoint",
+    description="Create a new workflow checkpoint.",
+    audit="checkpoints.create",
+)
 async def create_checkpoint_handler(request: web.Request) -> web.Response:
     """POST /openclaw/checkpoints"""
     if web is None:
@@ -142,6 +163,13 @@ async def create_checkpoint_handler(request: web.Request) -> web.Response:
         return _json_resp({"ok": False, "error": str(e)}, 500)
 
 
+@endpoint_metadata(
+    auth=AuthTier.ADMIN,
+    risk=RiskTier.LOW,
+    summary="Get checkpoint",
+    description="Retrieve specific checkpoint details.",
+    audit="checkpoints.get",
+)
 async def get_checkpoint_handler(request: web.Request) -> web.Response:
     """GET /openclaw/checkpoints/{id}"""
     if web is None:
@@ -168,6 +196,13 @@ async def get_checkpoint_handler(request: web.Request) -> web.Response:
         return _json_resp({"ok": False, "error": str(e)}, 500)
 
 
+@endpoint_metadata(
+    auth=AuthTier.ADMIN,
+    risk=RiskTier.MEDIUM,
+    summary="Delete checkpoint",
+    description="Delete a workflow checkpoint.",
+    audit="checkpoints.delete",
+)
 async def delete_checkpoint_handler(request: web.Request) -> web.Response:
     """DELETE /openclaw/checkpoints/{id}"""
     if web is None:

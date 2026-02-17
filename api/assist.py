@@ -16,6 +16,12 @@ except ImportError:
     from services.rate_limit import check_rate_limit
     from services.refiner import RefinerService
 
+# R98: Endpoint Metadata
+if __package__ and "." in __package__:
+    from ..services.endpoint_manifest import AuthTier, RiskTier, endpoint_metadata
+else:
+    from services.endpoint_manifest import AuthTier, RiskTier, endpoint_metadata
+
 logger = logging.getLogger("ComfyUI-OpenClaw.api.assist")
 
 # Payload size limits (character count for strings, base64 length for images)
@@ -29,6 +35,13 @@ class AssistHandlers:
         self.planner = PlannerService()
         self.refiner = RefinerService()
 
+    @endpoint_metadata(
+        auth=AuthTier.ADMIN,
+        risk=RiskTier.MEDIUM,
+        summary="Run planner",
+        description="Generate prompts from requirements via LLM.",
+        audit="assist.planner",
+    )
     async def planner_handler(self, request):
         """
         POST /openclaw/assist/planner (legacy: /moltbot/assist/planner)
@@ -78,6 +91,13 @@ class AssistHandlers:
             logger.exception("Planner API failed")
             return web.json_response({"error": "Internal server error"}, status=500)
 
+    @endpoint_metadata(
+        auth=AuthTier.ADMIN,
+        risk=RiskTier.MEDIUM,
+        summary="Run refiner",
+        description="Refine prompt/parameters based on feedback.",
+        audit="assist.refiner",
+    )
     async def refiner_handler(self, request):
         """
         POST /openclaw/assist/refiner (legacy: /moltbot/assist/refiner)

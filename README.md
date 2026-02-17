@@ -28,8 +28,19 @@ This project is intentionally **not** a general-purpose assistant platform with 
 - Secrets are never stored in browser storage (optional server-side key store is local-only convenience)
 - Profile-driven startup hardening with fail-closed enforcement in hardened mode
 - Startup module capability gates (disabled modules do not register routes/workers)
+- Endpoint inventory metadata and route drift tests to catch unclassified API exposure regressions
 
 ## Latest Updates - Click to expand
+
+<details>
+<summary><strong>Endpoint inventory hardening and route drift detection coverage</strong></summary>
+
+- Added explicit endpoint security metadata across API handlers so auth/risk posture is machine-readable and auditable.
+- Added route inventory manifest generation to inspect registered API surfaces consistently.
+- Added drift regression tests that fail when any registered endpoint is missing security metadata.
+- Extended drift coverage to include optional bridge and packs routes to prevent false-green route scans.
+
+</details>
 
 <details>
 <summary><strong>Operator UX improvements: context toolbox, parameter lab history/replay, and compare workflow baseline</strong></summary>

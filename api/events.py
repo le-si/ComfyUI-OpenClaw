@@ -40,6 +40,20 @@ SSE_KEEPALIVE_SEC = 15
 SSE_MAX_DURATION_SEC = 300  # 5 minutes
 
 
+# R98: Endpoint Metadata
+if __package__ and "." in __package__:
+    from ..services.endpoint_manifest import AuthTier, RiskTier, endpoint_metadata
+else:
+    from services.endpoint_manifest import AuthTier, RiskTier, endpoint_metadata
+
+
+@endpoint_metadata(
+    auth=AuthTier.OBSERVABILITY,
+    risk=RiskTier.LOW,
+    summary="Stream job events",
+    description="SSE endpoint for job lifecycle events.",
+    audit="events.stream",
+)
 async def events_stream_handler(request: web.Request) -> web.StreamResponse:
     """
     GET /openclaw/events/stream
@@ -132,6 +146,13 @@ async def events_stream_handler(request: web.Request) -> web.StreamResponse:
     return response
 
 
+@endpoint_metadata(
+    auth=AuthTier.OBSERVABILITY,
+    risk=RiskTier.LOW,
+    summary="Poll job events",
+    description="JSON polling fallback for job events.",
+    audit="events.poll",
+)
 async def events_poll_handler(request: web.Request) -> web.Response:
     """
     GET /openclaw/events

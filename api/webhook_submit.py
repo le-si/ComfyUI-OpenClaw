@@ -47,6 +47,12 @@ else:  # pragma: no cover (test-only import mode)
         resolve_profile,
     )
 
+# R98: Endpoint Metadata
+if __package__ and "." in __package__:
+    from ..services.endpoint_manifest import AuthTier, RiskTier, endpoint_metadata
+else:
+    from services.endpoint_manifest import AuthTier, RiskTier, endpoint_metadata
+
 logger = logging.getLogger("ComfyUI-OpenClaw.api.webhook_submit")
 
 
@@ -57,6 +63,13 @@ def safe_error_response(status: int, error: str, detail: str = "") -> web.Respon
     return web.json_response(body, status=status)
 
 
+@endpoint_metadata(
+    auth=AuthTier.WEBHOOK,
+    risk=RiskTier.HIGH,
+    summary="Webhook submit",
+    description="Authenticated endpoint for external job requests (modern pipeline).",
+    audit="webhook.submit",
+)
 async def webhook_submit_handler(request: web.Request) -> web.Response:
     """
     POST /moltbot/webhook/submit

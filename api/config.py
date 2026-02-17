@@ -144,6 +144,14 @@ def _cache_get(key: tuple):
     return entry
 
 
+# S14/R98: Import Endpoint Metadata
+try:
+    from ..services.endpoint_manifest import AuthTier, RiskTier, endpoint_metadata
+except ImportError:
+    # Test fallback
+    from services.endpoint_manifest import AuthTier, RiskTier, endpoint_metadata
+
+
 # Provider catalog for UI dropdown (R16 dynamic)
 PROVIDER_CATALOG = []
 
@@ -179,6 +187,13 @@ except ImportError:
     ]
 
 
+@endpoint_metadata(
+    auth=AuthTier.OBSERVABILITY,
+    risk=RiskTier.LOW,
+    summary="Get configuration",
+    description="Returns effective config, sources, and provider catalog.",
+    audit="config.read",
+)
 async def config_get_handler(request: web.Request) -> web.Response:
     """
     GET /moltbot/config
@@ -287,6 +302,13 @@ def _extract_models_from_payload(payload: dict) -> list:
     return []
 
 
+@endpoint_metadata(
+    auth=AuthTier.ADMIN,
+    risk=RiskTier.LOW,  # Read-only external fetch, but admin-gated
+    summary="List remote models",
+    description="Fetch a remote model list (best-effort) for OpenAI-compatible providers.",
+    audit="llm.list_models",
+)
 async def llm_models_handler(request: web.Request) -> web.Response:
     """
     GET /openclaw/llm/models (legacy: /moltbot/llm/models)
@@ -484,6 +506,13 @@ async def llm_models_handler(request: web.Request) -> web.Response:
         return web.json_response({"ok": False, "error": str(e)}, status=500)
 
 
+@endpoint_metadata(
+    auth=AuthTier.ADMIN,
+    risk=RiskTier.HIGH,
+    summary="Update configuration",
+    description="Updates non-secret LLM config.",
+    audit="config.update",
+)
 async def config_put_handler(request: web.Request) -> web.Response:
     """
     PUT /moltbot/config
@@ -587,6 +616,13 @@ async def config_put_handler(request: web.Request) -> web.Response:
     )
 
 
+@endpoint_metadata(
+    auth=AuthTier.ADMIN,
+    risk=RiskTier.MEDIUM,
+    summary="Test LLM connection",
+    description="Tests LLM connection using provided or stored credentials.",
+    audit="llm.test_connection",
+)
 async def llm_test_handler(request: web.Request) -> web.Response:
     """
     POST /moltbot/llm/test
@@ -738,6 +774,13 @@ async def llm_test_handler(request: web.Request) -> web.Response:
         )
 
 
+@endpoint_metadata(
+    auth=AuthTier.ADMIN,
+    risk=RiskTier.MEDIUM,  # Consumed by connector, costs money/tokens
+    summary="Chat completion",
+    description="Run a simple chat completion using server-side LLM config.",
+    audit="llm.chat_completion",
+)
 async def llm_chat_handler(request: web.Request) -> web.Response:
     """
     POST /openclaw/llm/chat (legacy: /moltbot/llm/chat)
