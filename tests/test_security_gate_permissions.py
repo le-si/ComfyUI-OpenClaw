@@ -30,11 +30,12 @@ class TestSecurityGatePermissions(unittest.TestCase):
         mock_eval_perms.return_value = (False, [fail_res])
 
         # Execute
-        passed, reasons = SecurityGate.verify_mandatory_controls()
+        passed, warnings, fatal_errors = SecurityGate.verify_mandatory_controls()
 
         # Assert
         self.assertFalse(passed)
-        self.assertTrue(any("Test Perm Fail" in r for r in reasons))
+        # Permission failures are added as warnings first, then moved to fatal in Hardened
+        self.assertTrue(any("Test Perm Fail" in r for r in fatal_errors))
 
     @patch("services.security_gate.is_hardened_mode")
     @patch("services.permission_posture.evaluate_startup_permissions")

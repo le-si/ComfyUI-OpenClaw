@@ -147,3 +147,19 @@ def is_auth_configured() -> bool:
         or ""
     )
     return bool(val.strip())
+
+
+def is_any_token_configured() -> bool:
+    """
+    Check if ANY authentication token is configured (Admin OR Observability).
+    Used for S45 Startup Gate to assess if the instance has minimal protection.
+    """
+    if is_auth_configured():
+        return True
+
+    obs_val = (
+        os.environ.get("OPENCLAW_OBSERVABILITY_TOKEN")
+        or os.environ.get("MOLTBOT_OBSERVABILITY_TOKEN")
+        or ""
+    )
+    return bool(obs_val.strip())

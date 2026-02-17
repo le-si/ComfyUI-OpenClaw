@@ -618,6 +618,11 @@ class RuntimeConfig:
             "OPENCLAW_ALLOW_INSECURE_BASE_URL", "MOLTBOT_ALLOW_INSECURE_BASE_URL", False
         )
         self.webhook_auth_mode = os.environ.get("OPENCLAW_WEBHOOK_AUTH_MODE", "")
+        self.security_dangerous_bind_override = _env_flag(
+            "OPENCLAW_SECURITY_DANGEROUS_BIND_OVERRIDE",
+            "MOLTBOT_SECURITY_DANGEROUS_BIND_OVERRIDE",
+            False,
+        )
         self.admin_token_configured = bool(get_admin_token())
 
 
