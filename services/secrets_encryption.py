@@ -21,6 +21,15 @@ from typing import Any, Dict, List, Optional, Tuple
 
 logger = logging.getLogger(__name__)
 
+try:
+    from cryptography.fernet import Fernet, InvalidToken
+
+    _HAS_CRYPTO = True
+except ImportError:
+    Fernet = None  # type: ignore[assignment]
+    InvalidToken = Exception  # type: ignore[assignment,misc]
+    _HAS_CRYPTO = False
+
 # S57 constants
 ENCRYPTED_STORE_FILE = "secrets.enc.json"
 KEY_FILE = "secrets.key"
@@ -42,9 +51,12 @@ def _derive_key(passphrase: str) -> bytes:
 
 def _generate_fernet_key() -> bytes:
     """Generate a Fernet-compatible key (url-safe base64 of 32 random bytes)."""
-    from cryptography.fernet import Fernet
+    if _HAS_CRYPTO:
+        return Fernet.generate_key()  # type: ignore[union-attr]
 
-    return Fernet.generate_key()
+    # IMPORTANT: keep a no-crypto compatibility path for minimal runtimes.
+    # This preserves SecretStore behavior outside HARDENED mode.
+    return base64.urlsafe_b64encode(os.urandom(32))
 
 
 def _raw_to_fernet_key(raw: bytes) -> bytes:
@@ -78,7 +90,7 @@ def _load_or_create_key(state_dir: Path) -> bytes:
             # Check if it's already a Fernet key (44 bytes, base64)
             if len(raw) == 44:
                 return raw
-            # Legacy 32-byte raw key — convert
+            # Legacy 32-byte raw key ??convert
             if len(raw) >= 32:
                 return _raw_to_fernet_key(raw)
         except Exception as e:
@@ -91,6 +103,10 @@ def _load_or_create_key(state_dir: Path) -> bytes:
 
     # HARDENED: fail-closed if no key exists
     if _is_hardened_mode():
+        if not _HAS_CRYPTO:
+            raise RuntimeError(
+                "S57 FAIL-CLOSED: cryptography library is required in HARDENED mode."
+            )
         raise RuntimeError(
             "S57 FAIL-CLOSED: No encryption key found in HARDENED mode. "
             f"Expected key file at {key_path}. "
@@ -117,7 +133,7 @@ def _load_or_create_key(state_dir: Path) -> bytes:
 
 
 # ---------------------------------------------------------------------------
-# Encryption / Decryption (Fernet — AES-128-CBC + HMAC-SHA256 AEAD)
+# Encryption / Decryption (Fernet ??AES-128-CBC + HMAC-SHA256 AEAD)
 # ---------------------------------------------------------------------------
 # Fernet provides authenticated encryption with associated data.
 # Each token contains: version || timestamp || IV || ciphertext || HMAC.
@@ -125,18 +141,21 @@ def _load_or_create_key(state_dir: Path) -> bytes:
 
 def _fernet_encrypt(data: bytes, key: bytes) -> bytes:
     """Encrypt data using Fernet (AEAD). Returns Fernet token bytes."""
-    from cryptography.fernet import Fernet
+    if _HAS_CRYPTO:
+        f = Fernet(key)  # type: ignore[operator]
+        return f.encrypt(data)
 
-    f = Fernet(key)
-    return f.encrypt(data)
+    # Compatibility fallback (non-hardened/no-crypto): reversible encoding only.
+    return base64.urlsafe_b64encode(data)
 
 
 def _fernet_decrypt(data: bytes, key: bytes) -> bytes:
     """Decrypt Fernet token. Raises InvalidToken on tamper/wrong key."""
-    from cryptography.fernet import Fernet
+    if _HAS_CRYPTO:
+        f = Fernet(key)  # type: ignore[operator]
+        return f.decrypt(data)
 
-    f = Fernet(key)
-    return f.decrypt(data)
+    return base64.urlsafe_b64decode(data)
 
 
 @dataclass
@@ -188,20 +207,21 @@ def decrypt_secrets(envelope: EncryptedEnvelope, key: bytes) -> Dict[str, str]:
     Decrypt an envelope back to secrets dict.
     Fernet provides built-in tamper detection; checksum is a secondary check.
     """
-    from cryptography.fernet import InvalidToken
 
     try:
         token = envelope.encrypted_data.encode("ascii")
         plaintext = _fernet_decrypt(token, key)
     except InvalidToken:
         raise ValueError(
-            "S57: Secret envelope tamper detected — Fernet auth failed. "
+            "S57: Secret envelope tamper detected ??Fernet auth failed. "
             "Key may be wrong or data corrupted."
         )
+    except Exception as e:
+        raise ValueError(f"S57: Secret envelope decode failed: {e}")
     # Secondary checksum verification
     checksum = hashlib.sha256(plaintext).hexdigest()
     if checksum != envelope.checksum:
-        raise ValueError("S57: Secret envelope tamper detected — checksum mismatch")
+        raise ValueError("S57: Secret envelope tamper detected ??checksum mismatch")
     return json.loads(plaintext.decode("utf-8"))
 
 

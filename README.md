@@ -33,7 +33,7 @@ This project is intentionally **not** a general-purpose assistant platform with 
 - Wave E closeout hardening: deployment profile gates and critical flow parity are now enforced together with signed policy posture control, bounded anomaly telemetry, adversarial fuzz validation, and mutation-baseline regression sensitivity checks
 - Wave A/B/C closeout hardening: runtime/config/session stability contracts, strict outbound and supply-chain controls, and capability-aware operator guidance with bounded Parameter Lab/compare workflows
 - Secrets are never stored in browser storage (optional server-side key store is local-only convenience)
-- Cryptography dependency is optional and only required when encrypted webhook mode is enabled
+- Cryptography dependency is required for secrets-at-rest encryption paths; WeChat AES ingress remains optional via `pycryptodomex`
 
 Deployment profiles and hardening checklists:
 - [Security Deployment Guide](docs/security_deployment_guide.md) (local / LAN / public templates + self-check command)

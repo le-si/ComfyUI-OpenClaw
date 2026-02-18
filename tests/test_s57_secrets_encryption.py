@@ -14,13 +14,18 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from cryptography.fernet import Fernet
+try:
+    from cryptography.fernet import Fernet
+except ImportError:
+    Fernet = None  # type: ignore[assignment]
 
 
 class TestS57SecretsEncryption(unittest.TestCase):
     """S57: Secrets at-rest encryption and split-mode policy tests."""
 
     def _import_module(self):
+        if Fernet is None:
+            self.skipTest("cryptography not installed")
         try:
             from services.secrets_encryption import (
                 ENVELOPE_VERSION,

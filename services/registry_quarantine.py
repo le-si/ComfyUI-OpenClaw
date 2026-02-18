@@ -32,6 +32,10 @@ try:
 
     _HAS_CRYPTO = True
 except ImportError:
+    # IMPORTANT: keep these names defined for tests that patch module symbols
+    # in no-crypto environments (e.g. CI minimal images).
+    serialization = None  # type: ignore[assignment]
+    Ed25519PublicKey = object  # type: ignore[assignment,misc]
     _HAS_CRYPTO = False
 
 try:
@@ -260,11 +264,11 @@ class TrustRootStore:
         Returns:
             (is_valid, message)
         """
-        if not _HAS_CRYPTO:
-            return False, "S61: cryptography library not available (fail-closed)"
-
         if not signature_b64:
             return False, "S61: Missing signature"
+
+        if not _HAS_CRYPTO:
+            return False, "S61: cryptography library not available (fail-closed)"
 
         try:
             sig_bytes = base64.b64decode(signature_b64)  # type: ignore[name-defined]

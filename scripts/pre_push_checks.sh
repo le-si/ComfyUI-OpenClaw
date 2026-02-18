@@ -179,6 +179,10 @@ if ! "$VENV_PY" -c "import aiohttp" >/dev/null 2>&1; then
   echo "[pre-push] INFO: installing aiohttp into project venv ($VENV_DIR) ..." >&2
   pip_install_or_fail "required by unit tests/import paths" aiohttp
 fi
+if ! "$VENV_PY" -c "import cryptography" >/dev/null 2>&1; then
+  echo "[pre-push] INFO: installing cryptography into project venv ($VENV_DIR) ..." >&2
+  pip_install_or_fail "required for S57 secrets-at-rest encryption paths/tests" cryptography
+fi
 
 require_cmd npm
 
