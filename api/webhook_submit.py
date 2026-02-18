@@ -28,7 +28,11 @@ if __package__ and "." in __package__:
     from ..services.trace import get_effective_trace_id
     from ..services.trace_store import trace_store
     from ..services.webhook_auth import require_auth
-    from ..services.webhook_mapping import apply_mapping, resolve_profile  # F40
+    from ..services.webhook_mapping import (  # F40/S59
+        apply_mapping,
+        resolve_profile,
+        validate_canonical_schema,
+    )
 else:  # pragma: no cover (test-only import mode)
     from models.schemas import MAX_BODY_SIZE, WebhookJobRequest
     from services.callback_delivery import start_callback_watch  # type: ignore
@@ -45,6 +49,7 @@ else:  # pragma: no cover (test-only import mode)
     from services.webhook_mapping import (  # F40  # type: ignore
         apply_mapping,
         resolve_profile,
+        validate_canonical_schema,
     )
 
 # R98: Endpoint Metadata
@@ -180,6 +185,16 @@ async def webhook_submit_handler(request: web.Request) -> web.Response:
                 return safe_error_response(400, "mapping_error", str(e))
 
         # Validate against schema
+        # S59: enforce canonical post-map schema gate before typed parsing.
+        canonical_ok, canonical_errors = validate_canonical_schema(data)
+        if not canonical_ok:
+            metrics.inc("webhook_denied")
+            return safe_error_response(
+                400,
+                "validation_error",
+                "; ".join(canonical_errors),
+            )
+
         try:
             job_request = WebhookJobRequest.from_dict(data)
             normalized = job_request.to_normalized()

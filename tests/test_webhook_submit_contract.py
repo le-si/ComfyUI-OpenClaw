@@ -124,6 +124,34 @@ class TestWebhookSubmitContract(AioHTTPTestCase):
         self.assertTrue(body["deduped"])
         self.assertEqual(body["prompt_id"], "pid_old")
 
+    @patch("api.webhook_submit.get_template_service")
+    @patch("api.webhook_submit.IdempotencyStore")
+    @patch("api.webhook_submit.validate_canonical_schema")
+    @patch("api.webhook_submit.require_auth")
+    async def test_post_map_canonical_schema_gate_blocks_enqueue(
+        self, mock_auth, mock_validate_schema, mock_store_cls, mock_get_template
+    ):
+        """S59: canonical schema gate rejects before template render/submit."""
+        mock_auth.return_value = (True, None)
+        mock_validate_schema.return_value = (False, ["template_id missing"])
+
+        payload = {"version": 1, "inputs": {"seed": 123}}
+        resp = await self.client.request(
+            "POST",
+            "/moltbot/webhook/submit",
+            headers={
+                "Content-Type": "application/json",
+                "Authorization": "Bearer test_submit_token",
+            },
+            data=json.dumps(payload),
+        )
+
+        self.assertEqual(resp.status, 400)
+        body = await resp.json()
+        self.assertEqual(body["error"], "validation_error")
+        mock_get_template.assert_not_called()
+        mock_store_cls.assert_not_called()
+
 
 if __name__ == "__main__":
     unittest.main()

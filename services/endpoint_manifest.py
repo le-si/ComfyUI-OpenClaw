@@ -13,7 +13,7 @@ every exposed endpoint has an explicit security classification.
 import enum
 import inspect
 from dataclasses import dataclass, field
-from typing import Any, Callable, Dict, List, Optional, Set
+from typing import Any, Callable, Dict, List, Optional, Set, Tuple
 
 try:
     from aiohttp import web
@@ -45,6 +45,15 @@ class RiskTier(enum.Enum):
     NONE = "none"  # Public static assets, Health checks
 
 
+# S60: Route plane segmentation
+class RoutePlane(enum.Enum):
+    """Network plane classification for route exposure control."""
+
+    USER = "user"  # Public user-facing routes
+    ADMIN = "admin"  # Admin-only management routes
+    INTERNAL = "internal"  # Internal-only (loopback, service mesh)
+
+
 @dataclass
 class EndpointMetadata:
     """Explicit security contract for a route handler."""
@@ -55,6 +64,8 @@ class EndpointMetadata:
     description: str = ""
     required_scopes: List[str] = field(default_factory=list)  # For S46
     audit_action: Optional[str] = None  # For R99
+    # S60: Route plane classification
+    route_plane: RoutePlane = RoutePlane.USER
 
 
 # Registry to store metadata by handler function
@@ -68,6 +79,7 @@ def endpoint_metadata(
     description: str = "",
     scopes: Optional[List[str]] = None,
     audit: Optional[str] = None,
+    plane: RoutePlane = RoutePlane.USER,
 ):
     """
     Decorator to attach security metadata to a handler function.
@@ -90,6 +102,7 @@ def endpoint_metadata(
             description=description,
             required_scopes=scopes or [],
             audit_action=audit,
+            route_plane=plane,
         )
         _HANDLER_REGISTRY[handler] = meta
         # Attach to function for runtime introspection if needed
@@ -146,8 +159,67 @@ def generate_manifest(app) -> List[Dict[str, Any]]:
                 "risk": meta.risk_tier.value,
                 "summary": meta.summary,
                 "audit": meta.audit_action,
+                "plane": meta.route_plane.value,
             }
 
         manifest.append(entry)
 
     return manifest
+
+
+# ---------------------------------------------------------------------------
+# S60: MAE posture validation
+# ---------------------------------------------------------------------------
+
+import logging as _logging
+
+_mae_logger = _logging.getLogger("ComfyUI-OpenClaw.services.endpoint_manifest")
+
+
+def validate_mae_posture(
+    manifest: List[Dict[str, Any]],
+    profile: str = "local",
+) -> Tuple[bool, List[str]]:
+    """
+    S60: Validate that the endpoint manifest respects route-plane segmentation
+    for the given deployment profile.
+
+    In 'public' or 'hardened' profiles:
+    - No ADMIN or INTERNAL plane routes should be exposed on the user plane
+    - All classified routes must have a route_plane assigned
+
+    Returns:
+        (is_valid, violations)
+    """
+    violations: List[str] = []
+
+    if profile not in ("public", "hardened"):
+        # Local profile: no enforcement
+        return True, []
+
+    for entry in manifest:
+        meta = entry.get("metadata")
+        if not meta:
+            # Unclassified route in public profile is a violation
+            if entry.get("method") != "*":  # Skip catch-all routes
+                violations.append(
+                    f"Unclassified route in {profile} profile: "
+                    f"{entry.get('method')} {entry.get('path')}"
+                )
+            continue
+
+        plane = meta.get("plane", "user")
+        auth = meta.get("auth", "public")
+
+        # ADMIN and INTERNAL plane routes must not be exposed without admin auth
+        if plane in ("admin", "internal") and auth == "public":
+            violations.append(
+                f"S60: {plane}-plane route exposed with public auth: "
+                f"{entry.get('method')} {entry.get('path')}"
+            )
+
+    if violations:
+        for v in violations:
+            _mae_logger.warning(v)
+
+    return len(violations) == 0, violations

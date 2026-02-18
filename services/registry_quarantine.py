@@ -22,7 +22,18 @@ import os
 import time
 from dataclasses import asdict, dataclass, field
 from enum import Enum
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
+
+# S61: Ed25519 signature verification
+try:
+    import base64
+
+    from cryptography.hazmat.primitives import serialization
+    from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
+
+    _HAS_CRYPTO = True
+except ImportError:
+    _HAS_CRYPTO = False
 
 try:
     from .rate_limit import TokenBucket
@@ -125,6 +136,177 @@ class RegistryQuarantineError(Exception):
     pass
 
 
+# ---------------------------------------------------------------------------
+# S61: Trust root governance
+# ---------------------------------------------------------------------------
+
+
+@dataclass
+class TrustRoot:
+    """A trusted signing key for registry signature verification."""
+
+    key_id: str  # Unique identifier
+    public_key_pem: str  # PEM-encoded Ed25519 public key
+    fingerprint: str = ""  # SHA-256 fingerprint of the public key
+    valid_from: float = 0.0  # Unix timestamp
+    valid_until: float = 0.0  # Unix timestamp (0 = no expiry)
+    revoked: bool = False
+    revocation_reason: str = ""
+    added_at: float = 0.0
+
+    def to_dict(self) -> Dict[str, Any]:
+        return asdict(self)
+
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> "TrustRoot":
+        return cls(**{k: v for k, v in data.items() if k in cls.__dataclass_fields__})
+
+
+class TrustRootStore:
+    """
+    S61: Manages trusted signing keys for registry signature verification.
+
+    Keys are persisted to a JSON file. Supports rotation via overlap window
+    (multiple active keys). Revoked keys deterministically block verification.
+    """
+
+    def __init__(self, state_dir: str):
+        self._trust_dir = os.path.join(state_dir, "registry", "trust")
+        self._trust_path = os.path.join(self._trust_dir, "trust_roots.json")
+        self._roots: Dict[str, TrustRoot] = {}
+        os.makedirs(self._trust_dir, exist_ok=True)
+        self._load()
+
+    def _load(self) -> None:
+        if not os.path.exists(self._trust_path):
+            return
+        try:
+            with open(self._trust_path, "r", encoding="utf-8") as f:
+                data = json.load(f)
+            for key_id, root_data in data.items():
+                self._roots[key_id] = TrustRoot.from_dict(root_data)
+            logger.info(f"S61: Loaded {len(self._roots)} trust roots")
+        except Exception as e:
+            logger.error(f"S61: Failed to load trust roots: {e}")
+
+    def _save(self) -> None:
+        try:
+            data = {k: v.to_dict() for k, v in self._roots.items()}
+            tmp = self._trust_path + ".tmp"
+            with open(tmp, "w", encoding="utf-8") as f:
+                json.dump(data, f, indent=2)
+            os.replace(tmp, self._trust_path)
+        except Exception as e:
+            logger.error(f"S61: Failed to save trust roots: {e}")
+
+    def add_root(self, root: TrustRoot) -> None:
+        """Add a trusted signing key."""
+        if not root.added_at:
+            root.added_at = time.time()
+        # Compute fingerprint if not provided
+        if not root.fingerprint and root.public_key_pem:
+            root.fingerprint = hashlib.sha256(
+                root.public_key_pem.encode("utf-8")
+            ).hexdigest()[:16]
+        self._roots[root.key_id] = root
+        self._save()
+        logger.info(f"S61: Added trust root {root.key_id} (fp={root.fingerprint})")
+
+    def revoke_root(self, key_id: str, reason: str = "") -> bool:
+        """Revoke a trust root. Returns True if found and revoked."""
+        root = self._roots.get(key_id)
+        if not root:
+            return False
+        root.revoked = True
+        root.revocation_reason = reason
+        self._roots[key_id] = root
+        self._save()
+        logger.warning(f"S61: Revoked trust root {key_id}: {reason}")
+        return True
+
+    def get_active_roots(self) -> List[TrustRoot]:
+        """Return all non-revoked, currently valid trust roots."""
+        now = time.time()
+        active = []
+        for root in self._roots.values():
+            if root.revoked:
+                continue
+            if root.valid_from and now < root.valid_from:
+                continue
+            if root.valid_until and now > root.valid_until:
+                continue
+            active.append(root)
+        return active
+
+    def get_root(self, key_id: str) -> Optional[TrustRoot]:
+        return self._roots.get(key_id)
+
+    def list_roots(self) -> List[TrustRoot]:
+        return list(self._roots.values())
+
+    def verify_signature(
+        self,
+        data_bytes: bytes,
+        signature_b64: str,
+        key_id: Optional[str] = None,
+    ) -> Tuple[bool, str]:
+        """
+        S61: Verify a signature against active trust roots.
+
+        Args:
+            data_bytes: The data that was signed
+            signature_b64: Base64-encoded Ed25519 signature
+            key_id: Optional specific key_id to verify against
+
+        Returns:
+            (is_valid, message)
+        """
+        if not _HAS_CRYPTO:
+            return False, "S61: cryptography library not available (fail-closed)"
+
+        if not signature_b64:
+            return False, "S61: Missing signature"
+
+        try:
+            sig_bytes = base64.b64decode(signature_b64)  # type: ignore[name-defined]
+        except Exception:
+            return False, "S61: Invalid signature encoding (not valid base64)"
+
+        # Determine which keys to try
+        if key_id:
+            root = self._roots.get(key_id)
+            if not root:
+                return False, f"S61: Unknown key_id '{key_id}'"
+            if root.revoked:
+                return (
+                    False,
+                    f"S61: Key '{key_id}' has been revoked: {root.revocation_reason}",
+                )
+            candidates = [root]
+        else:
+            candidates = self.get_active_roots()
+
+        if not candidates:
+            return False, "S61: No active trust roots configured"
+
+        for root in candidates:
+            try:
+                public_key = serialization.load_pem_public_key(  # type: ignore[name-defined]
+                    root.public_key_pem.encode("utf-8")
+                )
+                if not isinstance(public_key, Ed25519PublicKey):  # type: ignore[name-defined]
+                    continue
+                public_key.verify(sig_bytes, data_bytes)
+                return True, f"S61: Signature verified with key '{root.key_id}'"
+            except Exception:
+                continue
+
+        return (
+            False,
+            "S61: Signature verification failed against all active trust roots",
+        )
+
+
 class RegistryQuarantineStore:
     """
     Manages the quarantine lifecycle for remote pack registry entries.
@@ -152,6 +334,9 @@ class RegistryQuarantineStore:
         # S39: Trust Policy
         # modes: "audit" (log warning on sig fail), "strict" (block on sig fail)
         self._policy_mode = os.environ.get("OPENCLAW_REGISTRY_POLICY", "audit").lower()
+
+        # S61: Trust root store for signature verification
+        self._trust_root_store = TrustRootStore(state_dir)
 
         os.makedirs(self._quarantine_dir, exist_ok=True)
         self._load()
@@ -425,24 +610,35 @@ class RegistryQuarantineStore:
             logger.warning(f"F41: Pack {key} integrity FAILED — moved to quarantine")
             return False
 
-    def _verify_signature(self, entry: RegistryEntry) -> tuple[bool, str]:
+    def _verify_signature(self, entry: RegistryEntry) -> Tuple[bool, str]:
         """
-        S39: Verify entry signature against trusted keys.
+        S61: Verify entry signature against trusted keys using Ed25519.
+
         Returns (is_valid, message).
 
-        NOTE: Current environment lacks crypto libraries (cryptography/nacl).
-        We function as a specialized placeholder hook.
+        Behavior:
+        - No signature present → fail ("Missing signature")
+        - cryptography unavailable → fail-closed
+        - No active trust roots → fail-closed
+        - Revoked signer → deterministic block
+        - Valid signature → pass
         """
         if not entry.signature:
             return False, "Missing signature"
 
-        # Placeholder for future crypto integration
-        # If we had a key, we would verify here.
-        # For now, we assume if signature is present, it claims to be signed.
-        # But we can't verify it.
-        # So we fail open in 'audit', fail closed in 'strict'.
+        # Build data to verify: canonical representation
+        data_str = f"{entry.name}@{entry.version}:{entry.sha256}"
+        data_bytes = data_str.encode("utf-8")
 
-        return False, "Signature verification unavailable (missing crypto lib)"
+        return self._trust_root_store.verify_signature(
+            data_bytes=data_bytes,
+            signature_b64=entry.signature,
+        )
+
+    @property
+    def trust_root_store(self) -> TrustRootStore:
+        """Access the trust root store for key management."""
+        return self._trust_root_store
 
     def activate(self, name: str, version: str) -> RegistryEntry:
         """

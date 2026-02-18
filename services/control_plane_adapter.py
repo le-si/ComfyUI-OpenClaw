@@ -35,8 +35,10 @@ ADAPTER_CONTRACT_VERSION = "1.0"
 # Degrade modes
 # ---------------------------------------------------------------------------
 
+
 class DegradeMode(enum.Enum):
     """Deterministic degrade behavior when external CP is unavailable."""
+
     NORMAL = "normal"
     DEGRADED_READ_ONLY = "degraded_read_only"
     RETRYABLE_UNAVAILABLE = "retryable_unavailable"
@@ -47,9 +49,11 @@ class DegradeMode(enum.Enum):
 # Circuit breaker
 # ---------------------------------------------------------------------------
 
+
 @dataclass
 class CircuitBreakerState:
     """Bounded circuit breaker for external control plane."""
+
     failure_count: int = 0
     last_failure_time: float = 0.0
     state: str = "closed"  # closed, open, half-open
@@ -91,9 +95,11 @@ class CircuitBreakerState:
 # Request/Response envelope
 # ---------------------------------------------------------------------------
 
+
 @dataclass
 class ControlPlaneRequest:
     """Versioned request envelope for external control plane."""
+
     action: str
     payload: Dict[str, Any] = field(default_factory=dict)
     idempotency_key: str = ""
@@ -115,6 +121,7 @@ class ControlPlaneRequest:
 @dataclass
 class ControlPlaneResponse:
     """Versioned response envelope from external control plane."""
+
     ok: bool
     action: str = ""
     data: Dict[str, Any] = field(default_factory=dict)
@@ -136,6 +143,7 @@ class ControlPlaneResponse:
 # ---------------------------------------------------------------------------
 # Adapter
 # ---------------------------------------------------------------------------
+
 
 class ControlPlaneAdapter:
     """
@@ -168,7 +176,7 @@ class ControlPlaneAdapter:
     @classmethod
     def from_env(cls) -> "ControlPlaneAdapter":
         """Create adapter from environment variables."""
-        from .control_plane import ENV_CONTROL_PLANE_URL, ENV_CONTROL_PLANE_TOKEN
+        from .control_plane import ENV_CONTROL_PLANE_TOKEN, ENV_CONTROL_PLANE_URL
 
         url = os.environ.get(ENV_CONTROL_PLANE_URL, "").strip()
         token = os.environ.get(ENV_CONTROL_PLANE_TOKEN, "").strip()
@@ -177,33 +185,43 @@ class ControlPlaneAdapter:
 
     # ----- Public API (contract v1) -----
 
-    def submit(self, workflow_json: str, params: Optional[Dict] = None) -> ControlPlaneResponse:
+    def submit(
+        self, workflow_json: str, params: Optional[Dict] = None
+    ) -> ControlPlaneResponse:
         """Submit a workflow for execution on the external control plane."""
-        return self._dispatch(ControlPlaneRequest(
-            action="submit",
-            payload={"workflow": workflow_json, "params": params or {}},
-        ))
+        return self._dispatch(
+            ControlPlaneRequest(
+                action="submit",
+                payload={"workflow": workflow_json, "params": params or {}},
+            )
+        )
 
     def status(self, job_id: str) -> ControlPlaneResponse:
         """Query job status from external control plane."""
-        return self._dispatch(ControlPlaneRequest(
-            action="status",
-            payload={"job_id": job_id},
-        ))
+        return self._dispatch(
+            ControlPlaneRequest(
+                action="status",
+                payload={"job_id": job_id},
+            )
+        )
 
     def capabilities(self) -> ControlPlaneResponse:
         """Get capabilities/policy snapshot from external control plane."""
-        return self._dispatch(ControlPlaneRequest(
-            action="capabilities",
-            payload={},
-        ))
+        return self._dispatch(
+            ControlPlaneRequest(
+                action="capabilities",
+                payload={},
+            )
+        )
 
     def diagnostics(self) -> ControlPlaneResponse:
         """Run diagnostics on external control plane."""
-        return self._dispatch(ControlPlaneRequest(
-            action="diagnostics",
-            payload={},
-        ))
+        return self._dispatch(
+            ControlPlaneRequest(
+                action="diagnostics",
+                payload={},
+            )
+        )
 
     def get_health(self) -> Dict:
         """Return adapter health including circuit breaker state."""
@@ -238,7 +256,8 @@ class ControlPlaneAdapter:
             )
 
         import random
-        from .safe_io import SSRFError, STANDARD_OUTBOUND_POLICY, safe_request_json
+
+        from .safe_io import STANDARD_OUTBOUND_POLICY, SSRFError, safe_request_json
 
         url = f"{self.base_url}/v1/{request.action}"
         parsed = urlparse(self.base_url)
@@ -311,7 +330,10 @@ class ControlPlaneAdapter:
                 last_error = str(e)
                 self._circuit_breaker.record_failure()
                 # DNS/transient resolution issues are retryable transport failures.
-                if "DNS resolution failed" in last_error or "No IP resolved" in last_error:
+                if (
+                    "DNS resolution failed" in last_error
+                    or "No IP resolved" in last_error
+                ):
                     logger.warning(
                         f"R106: Attempt {attempt + 1}/{self.MAX_RETRIES} DNS error: {last_error}"
                     )
@@ -334,11 +356,13 @@ class ControlPlaneAdapter:
             except Exception as e:
                 last_error = str(e)
                 self._circuit_breaker.record_failure()
-                logger.error(f"R106: Unexpected error on attempt {attempt + 1}: {last_error}")
+                logger.error(
+                    f"R106: Unexpected error on attempt {attempt + 1}: {last_error}"
+                )
 
             # Exponential backoff with jitter before retry
             if attempt < self.MAX_RETRIES - 1:
-                wait = (self.BACKOFF_FACTOR ** attempt) + random.uniform(0, 1)
+                wait = (self.BACKOFF_FACTOR**attempt) + random.uniform(0, 1)
                 time.sleep(wait)
 
         # All retries exhausted
@@ -348,4 +372,3 @@ class ControlPlaneAdapter:
             error=f"External CP unavailable after {self.MAX_RETRIES} attempts: {last_error}",
             degrade_mode=DegradeMode.RETRYABLE_UNAVAILABLE,
         )
-

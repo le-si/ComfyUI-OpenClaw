@@ -25,6 +25,7 @@ class TestR106ControlPlaneAdapter(unittest.TestCase):
                 ControlPlaneResponse,
                 DegradeMode,
             )
+
             return {
                 "ADAPTER_CONTRACT_VERSION": ADAPTER_CONTRACT_VERSION,
                 "CircuitBreakerState": CircuitBreakerState,
@@ -144,6 +145,7 @@ class TestR106ControlPlaneAdapter(unittest.TestCase):
         """Circuit breaker transitions to half-open after reset timeout."""
         m = self._import_module()
         import time as _t
+
         cb = m["CircuitBreakerState"](failure_threshold=1, reset_timeout_seconds=0.01)
         cb.record_failure()
         self.assertEqual(cb.state, "open")

@@ -164,7 +164,17 @@ if ($LASTEXITCODE -ne 0) {
 
 Write-Host "[tests] 3/4 backend unit tests"
 $env:MOLTBOT_STATE_DIR = "$root\moltbot_state\_local_unit"
-Invoke-Checked "backend unit tests" { & $venvPython scripts\run_unittests.py --start-dir tests --pattern "test_*.py" }
+Invoke-Checked "backend unit tests" {
+  & $venvPython scripts\run_unittests.py --start-dir tests --pattern "test_*.py" --enforce-skip-policy tests\skip_policy.json
+}
+
+if ($env:OPENCLAW_IMPL_RECORD_PATH) {
+  Write-Host "[tests] 3.5/4 implementation record lint (strict)"
+  # IMPORTANT: strict mode is opt-in via OPENCLAW_IMPL_RECORD_PATH to avoid retroactive legacy record failures.
+  Invoke-Checked "implementation record lint" {
+    & $venvPython scripts\lint_implementation_record.py --path $env:OPENCLAW_IMPL_RECORD_PATH --strict
+  }
+}
 
 Write-Host "[tests] 4/4 frontend E2E"
 Invoke-Checked "frontend E2E" { npm test }

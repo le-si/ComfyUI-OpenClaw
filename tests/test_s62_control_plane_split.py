@@ -19,8 +19,8 @@ class TestS62ControlPlaneSplit(unittest.TestCase):
         """Import with fallback for test isolation."""
         try:
             from services.control_plane import (
-                ControlPlaneMode,
                 HIGH_RISK_SURFACES,
+                ControlPlaneMode,
                 SplitPrereqReport,
                 enforce_control_plane_startup,
                 get_blocked_surfaces,
@@ -28,6 +28,7 @@ class TestS62ControlPlaneSplit(unittest.TestCase):
                 resolve_control_plane_mode,
                 validate_split_prerequisites,
             )
+
             return {
                 "ControlPlaneMode": ControlPlaneMode,
                 "HIGH_RISK_SURFACES": HIGH_RISK_SURFACES,
@@ -62,14 +63,18 @@ class TestS62ControlPlaneSplit(unittest.TestCase):
     def test_mode_explicit_embedded_overrides_public(self):
         """Explicit EMBEDDED env var overrides public default."""
         m = self._import_module()
-        with patch.dict(os.environ, {"OPENCLAW_CONTROL_PLANE_MODE": "embedded"}, clear=True):
+        with patch.dict(
+            os.environ, {"OPENCLAW_CONTROL_PLANE_MODE": "embedded"}, clear=True
+        ):
             mode = m["resolve_control_plane_mode"]("public")
             self.assertEqual(mode, m["ControlPlaneMode"].EMBEDDED)
 
     def test_mode_explicit_split_on_local(self):
         """Explicit SPLIT env var forces split even on local."""
         m = self._import_module()
-        with patch.dict(os.environ, {"OPENCLAW_CONTROL_PLANE_MODE": "split"}, clear=True):
+        with patch.dict(
+            os.environ, {"OPENCLAW_CONTROL_PLANE_MODE": "split"}, clear=True
+        ):
             mode = m["resolve_control_plane_mode"]("local")
             self.assertEqual(mode, m["ControlPlaneMode"].SPLIT)
 
@@ -84,7 +89,9 @@ class TestS62ControlPlaneSplit(unittest.TestCase):
         blocked_ids = {sid for sid, _ in blocked}
         expected_ids = {sid for sid, _ in m["HIGH_RISK_SURFACES"]}
         self.assertEqual(blocked_ids, expected_ids)
-        self.assertTrue(len(blocked) >= 6, f"Expected >= 6 blocked surfaces, got {len(blocked)}")
+        self.assertTrue(
+            len(blocked) >= 6, f"Expected >= 6 blocked surfaces, got {len(blocked)}"
+        )
 
     def test_local_embedded_blocks_nothing(self):
         """local + embedded blocks nothing."""
@@ -111,7 +118,9 @@ class TestS62ControlPlaneSplit(unittest.TestCase):
     def test_is_surface_blocked_local(self):
         """is_surface_blocked returns False in local mode."""
         m = self._import_module()
-        with patch.dict(os.environ, {"OPENCLAW_DEPLOYMENT_PROFILE": "local"}, clear=True):
+        with patch.dict(
+            os.environ, {"OPENCLAW_DEPLOYMENT_PROFILE": "local"}, clear=True
+        ):
             self.assertFalse(m["is_surface_blocked"]("webhook_execute"))
 
     # ------------------------------------------------------------------
@@ -225,9 +234,12 @@ class TestS62ControlPlaneSplit(unittest.TestCase):
         with patch.dict(os.environ, env, clear=True):
             result = m["enforce_control_plane_startup"]()
             required_keys = {
-                "deployment_profile", "control_plane_mode",
-                "blocked_surfaces", "startup_passed",
-                "errors", "warnings",
+                "deployment_profile",
+                "control_plane_mode",
+                "blocked_surfaces",
+                "startup_passed",
+                "errors",
+                "warnings",
             }
             self.assertTrue(required_keys.issubset(result.keys()))
 

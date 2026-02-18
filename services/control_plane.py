@@ -28,8 +28,10 @@ logger = logging.getLogger(__name__)
 # Mode contract
 # ---------------------------------------------------------------------------
 
+
 class ControlPlaneMode(enum.Enum):
     """Control-plane execution mode."""
+
     EMBEDDED = "embedded"
     SPLIT = "split"
 
@@ -45,19 +47,22 @@ ENV_SPLIT_COMPAT_OVERRIDE = "OPENCLAW_SPLIT_COMPAT_OVERRIDE"
 # ---------------------------------------------------------------------------
 
 # Each entry: (surface_id, human description)
-HIGH_RISK_SURFACES: FrozenSet[Tuple[str, str]] = frozenset({
-    ("webhook_execute", "Webhook execute ingress"),
-    ("callback_egress", "Callback egress dispatch"),
-    ("secrets_write", "Secrets write/update endpoints"),
-    ("tool_execution", "Tool execution paths"),
-    ("registry_sync", "Registry sync activation paths"),
-    ("transforms_exec", "Transforms execution paths"),
-})
+HIGH_RISK_SURFACES: FrozenSet[Tuple[str, str]] = frozenset(
+    {
+        ("webhook_execute", "Webhook execute ingress"),
+        ("callback_egress", "Callback egress dispatch"),
+        ("secrets_write", "Secrets write/update endpoints"),
+        ("tool_execution", "Tool execution paths"),
+        ("registry_sync", "Registry sync activation paths"),
+        ("transforms_exec", "Transforms execution paths"),
+    }
+)
 
 
 # ---------------------------------------------------------------------------
 # Resolver
 # ---------------------------------------------------------------------------
+
 
 def resolve_control_plane_mode(deployment_profile: str = "") -> ControlPlaneMode:
     """
@@ -84,6 +89,7 @@ def resolve_control_plane_mode(deployment_profile: str = "") -> ControlPlaneMode
 def is_split_mode() -> bool:
     """Convenience check for split mode."""
     from .deployment_profile import evaluate_deployment_profile
+
     profile = os.environ.get("OPENCLAW_DEPLOYMENT_PROFILE", "local")
     return resolve_control_plane_mode(profile) == ControlPlaneMode.SPLIT
 
@@ -91,6 +97,7 @@ def is_split_mode() -> bool:
 # ---------------------------------------------------------------------------
 # Surface blocking
 # ---------------------------------------------------------------------------
+
 
 def get_blocked_surfaces(
     deployment_profile: str,
@@ -122,9 +129,11 @@ def is_surface_blocked(surface_id: str) -> bool:
 # Startup validation
 # ---------------------------------------------------------------------------
 
+
 @dataclass
 class SplitPrereqReport:
     """Result of split-mode prerequisite validation."""
+
     passed: bool = True
     errors: List[str] = field(default_factory=list)
     warnings: List[str] = field(default_factory=list)
@@ -189,9 +198,11 @@ def enforce_control_plane_startup() -> Dict:
     """
     profile = os.environ.get("OPENCLAW_DEPLOYMENT_PROFILE", "local")
     mode = resolve_control_plane_mode(profile)
-    compat_override = os.environ.get(
-        ENV_SPLIT_COMPAT_OVERRIDE, ""
-    ).lower().strip() in ("1", "true", "yes")
+    compat_override = os.environ.get(ENV_SPLIT_COMPAT_OVERRIDE, "").lower().strip() in (
+        "1",
+        "true",
+        "yes",
+    )
 
     result: Dict = {
         "deployment_profile": profile,
@@ -212,8 +223,7 @@ def enforce_control_plane_startup() -> Dict:
             result["errors"] = prereq.errors
             result["warnings"] = prereq.warnings
             logger.error(
-                "S62: Split mode startup validation FAILED. "
-                f"Errors: {prereq.errors}"
+                "S62: Split mode startup validation FAILED. " f"Errors: {prereq.errors}"
             )
         else:
             result["warnings"] = prereq.warnings
@@ -231,9 +241,7 @@ def enforce_control_plane_startup() -> Dict:
                 "external control plane, or set "
                 "OPENCLAW_SPLIT_COMPAT_OVERRIDE=1 for dev-only bypass."
             )
-            logger.error(
-                "S62: public + embedded without override. Startup blocked."
-            )
+            logger.error("S62: public + embedded without override. Startup blocked.")
         else:
             result["warnings"].append(
                 "S62: public + embedded with compat override. "

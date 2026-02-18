@@ -84,6 +84,12 @@ class LLMClient:
     - Vision (images) for supported providers
     """
 
+    # CRITICAL: keep this process-wide dedupe for missing-key warnings.
+    # LLMClient is instantiated repeatedly (startup checks/UI polling paths).
+    # Logging every init causes high-volume terminal spam for the same root cause.
+    # Emit once per provider to preserve signal and avoid noisy regressions.
+    _missing_api_key_warning_emitted: set[str] = set()
+
     def __init__(
         self,
         provider: Optional[str] = None,
@@ -188,7 +194,10 @@ class LLMClient:
 
         # Validate key if required
         if requires_api_key(self.provider) and not self.api_key:
-            logger.warning(f"No API key found for provider '{self.provider}'")
+            # IMPORTANT: one-time warning per provider only (anti-spam guard).
+            if self.provider not in self._missing_api_key_warning_emitted:
+                logger.warning(f"No API key found for provider '{self.provider}'")
+                self._missing_api_key_warning_emitted.add(self.provider)
 
     def _get_api_type(self) -> ProviderType:
         """Get the API type for the current provider."""

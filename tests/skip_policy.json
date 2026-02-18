@@ -1,0 +1,9 @@
+{
+  "max_skipped": 4,
+  "no_skip_modules": [
+    "tests.test_s58_bridge_token_lifecycle",
+    "tests.test_s59_webhook_mapping_clamp",
+    "tests.test_s60_mae_route_segmentation",
+    "tests.test_s61_registry_signature"
+  ]
+}

@@ -13,6 +13,7 @@ import tempfile
 import unittest
 from pathlib import Path
 from unittest.mock import patch
+
 from cryptography.fernet import Fernet
 
 
@@ -33,6 +34,7 @@ class TestS57SecretsEncryption(unittest.TestCase):
                 save_encrypted_store,
                 validate_secret_policy,
             )
+
             return {
                 "ENVELOPE_VERSION": ENVELOPE_VERSION,
                 "EncryptedEnvelope": EncryptedEnvelope,
@@ -179,7 +181,9 @@ class TestS57SecretsEncryption(unittest.TestCase):
     def test_secret_write_not_blocked_local(self):
         """Secret writes are not blocked in local mode."""
         m = self._import_module()
-        with patch.dict(os.environ, {"OPENCLAW_DEPLOYMENT_PROFILE": "local"}, clear=True):
+        with patch.dict(
+            os.environ, {"OPENCLAW_DEPLOYMENT_PROFILE": "local"}, clear=True
+        ):
             self.assertFalse(m["is_secret_write_blocked"]())
 
     def test_secret_write_blocked_public_split(self):

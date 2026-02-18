@@ -525,6 +525,73 @@ def register_dual_route(server, method: str, path: str, handler) -> None:
                 print(f"[OpenClaw] Warning: Failed to register fallback route {t}: {e}")
 
 
+def _is_openclaw_managed_path(path: str) -> bool:
+    if not isinstance(path, str):
+        return False
+    return (
+        path.startswith("/openclaw")
+        or path.startswith("/moltbot")
+        or path.startswith("/api/openclaw")
+        or path.startswith("/api/moltbot")
+        or path.startswith("/bridge")
+        or path.startswith("/api/bridge")
+    )
+
+
+def _resolve_mae_profile() -> str:
+    profile = os.environ.get("OPENCLAW_DEPLOYMENT_PROFILE", "local").strip().lower()
+    if profile in {"public", "hardened"}:
+        return profile
+
+    try:
+        if __package__ and "." in __package__:
+            from ..services.runtime_profile import get_runtime_profile
+        else:
+            from services.runtime_profile import get_runtime_profile
+        runtime_profile = get_runtime_profile().value
+        if runtime_profile == "hardened":
+            return "hardened"
+    except Exception:
+        pass
+    return profile or "local"
+
+
+def _run_mae_startup_gate(server) -> None:
+    if not hasattr(server, "app"):
+        return
+
+    try:
+        if __package__ and "." in __package__:
+            from ..services.endpoint_manifest import (
+                generate_manifest,
+                validate_mae_posture,
+            )
+        else:
+            from services.endpoint_manifest import (
+                generate_manifest,
+                validate_mae_posture,
+            )
+    except Exception as e:
+        print(f"[OpenClaw] Warning: S60 MAE gate unavailable: {e}")
+        return
+
+    mae_profile = _resolve_mae_profile()
+    manifest = generate_manifest(server.app)
+    scoped_manifest = [
+        entry for entry in manifest if _is_openclaw_managed_path(entry.get("path", ""))
+    ]
+    ok, violations = validate_mae_posture(scoped_manifest, profile=mae_profile)
+    if ok:
+        return
+
+    message = "S60 MAE posture validation failed:\n" + "\n".join(
+        f"- {item}" for item in violations
+    )
+    if mae_profile in {"public", "hardened"}:
+        raise RuntimeError(message)
+    print(f"[OpenClaw] Warning: {message}")
+
+
 def register_routes(server) -> None:
     """
     Register API routes with the ComfyUI server.
@@ -679,6 +746,8 @@ def register_routes(server) -> None:
             print("[OpenClaw] Bridge module disabled; skipping route registration")
     except ImportError:
         pass
+
+    _run_mae_startup_gate(server)
 
     # S8/S23/F11 Asset Packs
     # R84 Boot Boundary: REGISTRY_SYNC (Packs management)

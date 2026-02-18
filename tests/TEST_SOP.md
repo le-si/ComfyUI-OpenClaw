@@ -39,6 +39,21 @@ To avoid local vs CI mismatches:
 - If a test truly requires an optional dependency, mark it with a **clear skip** when the dep is unavailable.
 - Record the environment in the implementation record (OS, Python, Node, and any extras installed) so mismatches are visible.
 
+## Verification Governance Additions (R110 / R112)
+
+- **R110 (skip governance)**:
+  - Backend unit-test runs in SOP must include:
+    - `--enforce-skip-policy tests/skip_policy.json`
+  - Skip report artifact is expected at `.tmp/unit_skip_report.json` (or custom `--skip-report` path).
+  - A pass result with skip-policy violations is invalid; treat as failure.
+
+- **R112 (security triple-assert)**:
+  - For security reject/degrade paths, tests should assert all three signals:
+    - HTTP status
+    - machine-readable response code (`code` or `error`)
+    - audit contract (`action` + `outcome`, and status/reason when applicable)
+  - Do not approve security-path tests that assert status only.
+
 ## Offline / Restricted Network Pre-commit (Fail Fast)
 
 If your environment cannot reach GitHub, `pre-commit` may hang while installing hook repos.
@@ -151,7 +166,7 @@ bash scripts/pre_push_checks.sh
 `scripts/pre_push_checks.sh` is the CI-parity guard and must include all 4 stages:
 1) `detect-secrets`
 2) all `pre-commit` hooks
-3) backend unit tests (`scripts/run_unittests.py --pattern "test_*.py"`)
+3) backend unit tests (`scripts/run_unittests.py --pattern "test_*.py" --enforce-skip-policy tests/skip_policy.json`)
 4) frontend E2E (`npm test`)
 
 IMPORTANT:
@@ -190,7 +205,7 @@ pre-commit run --all-files --show-diff-on-failure
 1) Backend unit tests (recommended; CI enforces)
 
 ```bash
-MOLTBOT_STATE_DIR="$(pwd)/moltbot_state/_local_unit" python scripts/run_unittests.py --start-dir tests --pattern "test_*.py"
+MOLTBOT_STATE_DIR="$(pwd)/moltbot_state/_local_unit" python scripts/run_unittests.py --start-dir tests --pattern "test_*.py" --enforce-skip-policy tests/skip_policy.json
 ```
 
 1) Frontend E2E (Playwright; CI enforces)

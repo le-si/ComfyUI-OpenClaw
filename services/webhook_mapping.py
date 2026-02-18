@@ -20,9 +20,49 @@ import os
 import re
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, FrozenSet, List, Optional, Set, Tuple
 
 logger = logging.getLogger("ComfyUI-OpenClaw.services.webhook_mapping")
+
+
+# ---------------------------------------------------------------------------
+# S59: Privileged field clamp
+# ---------------------------------------------------------------------------
+
+# Fields that MUST NOT be overridden via external mapping unless explicitly
+# allowlisted. Prevents privilege escalation through mapped payloads.
+PRIVILEGED_FIELDS: FrozenSet[str] = frozenset(
+    {
+        "template_id",
+        "profile_id",
+        "pack_id",
+        "tool_path",
+        "execution_target",
+        "execution_mode",
+        "admin_override",
+    }
+)
+
+# Explicit allowlist for narrowly approved privileged-field overrides.
+# Empty by default. Operators can populate via config to allow specific
+# mapping profiles to set specific privileged fields.
+# Format: {(profile_id, field_name), ...}
+ALLOWED_PRIVILEGED_OVERRIDES: Set[tuple] = set()
+
+# S59: Maximum source payload size (prevents DoS)
+MAX_PAYLOAD_SIZE = 256 * 1024  # 256KB
+
+# S59: Canonical schema required fields for post-map validation
+CANONICAL_REQUIRED_FIELDS = {"template_id"}
+CANONICAL_ALLOWED_TYPES = {
+    "template_id": str,
+    "profile_id": str,
+    "version": int,
+    "inputs": dict,
+    "job_id": str,
+    "trace_id": str,
+    "callback": dict,
+}
 
 
 # ---------------------------------------------------------------------------
@@ -200,15 +240,31 @@ def apply_mapping(
     """
     Apply a mapping profile to a source payload.
 
+    S59: Rejects mappings that target privileged fields unless the
+    (profile_id, field) pair is in the ALLOWED_PRIVILEGED_OVERRIDES set.
+
     Returns:
         (mapped_payload, warnings)
         mapped_payload is a dict shaped like WebhookJobRequest fields.
         warnings is a list of non-fatal issues encountered during mapping.
+
+    Raises:
+        ValueError: On missing required fields, coercion failure, or
+                    privileged-field mutation attempt.
     """
     result: Dict[str, Any] = copy.deepcopy(profile.defaults)
     warnings: List[str] = []
 
     for fm in profile.field_mappings:
+        # S59: Clamp privileged fields
+        target_root = fm.target_path.split(".")[0]
+        if target_root in PRIVILEGED_FIELDS:
+            if (profile.id, target_root) not in ALLOWED_PRIVILEGED_OVERRIDES:
+                raise ValueError(
+                    f"S59: Mapping blocked — target field '{target_root}' is privileged. "
+                    f"Profile '{profile.id}' is not allowlisted for this override."
+                )
+
         found, value = _resolve_path(source_payload, fm.source_path)
 
         if not found:
@@ -235,6 +291,51 @@ def apply_mapping(
         _set_path(result, fm.target_path, coerced)
 
     return result, warnings
+
+
+def validate_canonical_schema(
+    mapped_payload: Dict[str, Any],
+) -> Tuple[bool, List[str]]:
+    """
+    S59: Post-map canonical schema gate.
+
+    Validates that a mapped payload conforms to the expected WebhookJobRequest
+    shape before enqueue. Blocks payloads that fail validation.
+
+    Returns:
+        (is_valid, errors)
+    """
+    errors: List[str] = []
+
+    # Required fields
+    for field_name in CANONICAL_REQUIRED_FIELDS:
+        if field_name not in mapped_payload or not mapped_payload[field_name]:
+            errors.append(f"Missing required field: '{field_name}'")
+
+    # Type checks
+    for field_name, expected_type in CANONICAL_ALLOWED_TYPES.items():
+        if field_name in mapped_payload:
+            value = mapped_payload[field_name]
+            if value is not None and not isinstance(value, expected_type):
+                errors.append(
+                    f"Type mismatch for '{field_name}': expected {expected_type.__name__}, "
+                    f"got {type(value).__name__}"
+                )
+
+    # Size check on inputs
+    if "inputs" in mapped_payload and isinstance(mapped_payload["inputs"], dict):
+        import json
+
+        try:
+            inputs_size = len(json.dumps(mapped_payload["inputs"]))
+            if inputs_size > MAX_PAYLOAD_SIZE:
+                errors.append(
+                    f"Payload 'inputs' exceeds max size ({inputs_size} > {MAX_PAYLOAD_SIZE})"
+                )
+        except (TypeError, ValueError):
+            errors.append("Payload 'inputs' is not JSON-serializable")
+
+    return len(errors) == 0, errors
 
 
 # ---------------------------------------------------------------------------
@@ -355,6 +456,10 @@ def _register_builtin_profiles() -> None:
 
 _register_builtin_profiles()
 
+# S59: Allowlist builtin profiles for privileged-field access
+# The 'generic' profile needs template_id and profile_id to function.
+ALLOWED_PRIVILEGED_OVERRIDES.add(("generic", "template_id"))
+ALLOWED_PRIVILEGED_OVERRIDES.add(("generic", "profile_id"))
 
 # ---------------------------------------------------------------------------
 # Profile resolution

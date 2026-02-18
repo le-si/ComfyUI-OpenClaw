@@ -18,6 +18,15 @@ class BridgeScope(str, Enum):
     # Future: CONFIG_WRITE requires explicit opt-in
 
 
+# S58: Token lifecycle states
+class TokenStatus(str, Enum):
+    """Lifecycle status for bridge tokens."""
+
+    ACTIVE = "active"
+    EXPIRED = "expired"
+    REVOKED = "revoked"
+
+
 # Protocol Version (R85)
 BRIDGE_PROTOCOL_VERSION = 1
 
@@ -27,12 +36,25 @@ class DeviceToken:
     """
     Device/instance token for sidecar pairing.
     This is NOT the admin token—it's for sidecar ↔ ComfyUI identity.
+
+    S58 lifecycle fields:
+    - token_id: unique identifier for this token instance
+    - issued_at: unix timestamp when token was created
+    - status: current lifecycle state (active/expired/revoked)
+    - replaces: token_id of the token this one supersedes (rotation)
+    - overlap_until: unix timestamp after which the old token is invalid
     """
 
     device_id: str  # Unique identifier for this ComfyUI instance
     device_token: str  # Rotating token for auth
     scopes: List[BridgeScope] = field(default_factory=list)
     expires_at: Optional[float] = None  # Unix timestamp
+    # S58 lifecycle fields
+    token_id: str = ""  # Unique per-token identifier
+    issued_at: float = 0.0  # Unix timestamp
+    status: str = TokenStatus.ACTIVE.value
+    replaces: str = ""  # Previous token_id (rotation chain)
+    overlap_until: Optional[float] = None  # Overlap window end
 
 
 @dataclass

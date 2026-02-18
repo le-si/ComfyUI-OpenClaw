@@ -18,16 +18,15 @@ class TestF55SplitModeUX(unittest.TestCase):
     def _get_capabilities(self):
         try:
             from services.capabilities import get_capabilities
+
             return get_capabilities
         except ImportError:
             self.skipTest("capabilities module not available")
 
     def _get_control_plane(self):
         try:
-            from services.control_plane import (
-                ControlPlaneMode,
-                get_blocked_surfaces,
-            )
+            from services.control_plane import ControlPlaneMode, get_blocked_surfaces
+
             return {
                 "ControlPlaneMode": ControlPlaneMode,
                 "get_blocked_surfaces": get_blocked_surfaces,
@@ -42,7 +41,9 @@ class TestF55SplitModeUX(unittest.TestCase):
     def test_capabilities_contains_control_plane(self):
         """Capabilities response includes control_plane key."""
         get_capabilities = self._get_capabilities()
-        with patch.dict(os.environ, {"OPENCLAW_DEPLOYMENT_PROFILE": "local"}, clear=True):
+        with patch.dict(
+            os.environ, {"OPENCLAW_DEPLOYMENT_PROFILE": "local"}, clear=True
+        ):
             caps = get_capabilities()
             self.assertIn("control_plane", caps)
             self.assertIn("mode", caps["control_plane"])
@@ -50,21 +51,27 @@ class TestF55SplitModeUX(unittest.TestCase):
     def test_capabilities_local_mode_embedded(self):
         """Local profile shows embedded mode in capabilities."""
         get_capabilities = self._get_capabilities()
-        with patch.dict(os.environ, {"OPENCLAW_DEPLOYMENT_PROFILE": "local"}, clear=True):
+        with patch.dict(
+            os.environ, {"OPENCLAW_DEPLOYMENT_PROFILE": "local"}, clear=True
+        ):
             caps = get_capabilities()
             self.assertEqual(caps["control_plane"]["mode"], "embedded")
 
     def test_capabilities_public_mode_split(self):
         """Public profile shows split mode in capabilities."""
         get_capabilities = self._get_capabilities()
-        with patch.dict(os.environ, {"OPENCLAW_DEPLOYMENT_PROFILE": "public"}, clear=True):
+        with patch.dict(
+            os.environ, {"OPENCLAW_DEPLOYMENT_PROFILE": "public"}, clear=True
+        ):
             caps = get_capabilities()
             self.assertEqual(caps["control_plane"]["mode"], "split")
 
     def test_capabilities_blocked_surfaces_in_split(self):
         """Public+split capabilities shows blocked surfaces."""
         get_capabilities = self._get_capabilities()
-        with patch.dict(os.environ, {"OPENCLAW_DEPLOYMENT_PROFILE": "public"}, clear=True):
+        with patch.dict(
+            os.environ, {"OPENCLAW_DEPLOYMENT_PROFILE": "public"}, clear=True
+        ):
             caps = get_capabilities()
             self.assertIn("blocked_surfaces", caps["control_plane"])
             blocked = caps["control_plane"]["blocked_surfaces"]
@@ -74,7 +81,9 @@ class TestF55SplitModeUX(unittest.TestCase):
     def test_capabilities_no_blocked_in_embedded(self):
         """Local+embedded capabilities shows no blocked surfaces."""
         get_capabilities = self._get_capabilities()
-        with patch.dict(os.environ, {"OPENCLAW_DEPLOYMENT_PROFILE": "local"}, clear=True):
+        with patch.dict(
+            os.environ, {"OPENCLAW_DEPLOYMENT_PROFILE": "local"}, clear=True
+        ):
             caps = get_capabilities()
             blocked = caps["control_plane"]["blocked_surfaces"]
             self.assertEqual(blocked, [])
@@ -82,7 +91,9 @@ class TestF55SplitModeUX(unittest.TestCase):
     def test_capabilities_actions_have_blocked_reason_in_split(self):
         """Split mode marks impacted actions disabled with blocked_reason."""
         get_capabilities = self._get_capabilities()
-        with patch.dict(os.environ, {"OPENCLAW_DEPLOYMENT_PROFILE": "public"}, clear=True):
+        with patch.dict(
+            os.environ, {"OPENCLAW_DEPLOYMENT_PROFILE": "public"}, clear=True
+        ):
             caps = get_capabilities()
             actions = caps["actions"]
             self.assertFalse(actions["queue"]["enabled"])
@@ -112,8 +123,12 @@ class TestF55SplitModeUX(unittest.TestCase):
         blocked = cp["get_blocked_surfaces"]("public", cp["ControlPlaneMode"].SPLIT)
         surface_ids = [sid for sid, _ in blocked]
         expected = [
-            "callback_egress", "registry_sync", "secrets_write",
-            "tool_execution", "transforms_exec", "webhook_execute",
+            "callback_egress",
+            "registry_sync",
+            "secrets_write",
+            "tool_execution",
+            "transforms_exec",
+            "webhook_execute",
         ]
         self.assertEqual(sorted(surface_ids), sorted(expected))
 
@@ -130,16 +145,15 @@ class TestF55SplitModeUX(unittest.TestCase):
 
         self.assertEqual(DegradeMode.DEGRADED_READ_ONLY.value, "degraded_read_only")
         self.assertEqual(DegradeMode.HARD_FAIL.value, "hard_fail")
-        self.assertEqual(DegradeMode.RETRYABLE_UNAVAILABLE.value, "retryable_unavailable")
+        self.assertEqual(
+            DegradeMode.RETRYABLE_UNAVAILABLE.value, "retryable_unavailable"
+        )
         self.assertEqual(DegradeMode.NORMAL.value, "normal")
 
     def test_adapter_unreachable_returns_retryable_unavailable(self):
         """Adapter with unreachable URL returns retryable_unavailable after retries."""
         try:
-            from services.control_plane_adapter import (
-                ControlPlaneAdapter,
-                DegradeMode,
-            )
+            from services.control_plane_adapter import ControlPlaneAdapter, DegradeMode
         except ImportError:
             self.skipTest("control_plane_adapter not available")
 
@@ -152,10 +166,7 @@ class TestF55SplitModeUX(unittest.TestCase):
     def test_adapter_no_url_returns_hard_fail(self):
         """Adapter with no base_url returns hard_fail."""
         try:
-            from services.control_plane_adapter import (
-                ControlPlaneAdapter,
-                DegradeMode,
-            )
+            from services.control_plane_adapter import ControlPlaneAdapter, DegradeMode
         except ImportError:
             self.skipTest("control_plane_adapter not available")
 
@@ -171,7 +182,9 @@ class TestF55SplitModeUX(unittest.TestCase):
     def test_capabilities_preserves_existing_keys(self):
         """Adding control_plane does not remove existing keys."""
         get_capabilities = self._get_capabilities()
-        with patch.dict(os.environ, {"OPENCLAW_DEPLOYMENT_PROFILE": "local"}, clear=True):
+        with patch.dict(
+            os.environ, {"OPENCLAW_DEPLOYMENT_PROFILE": "local"}, clear=True
+        ):
             caps = get_capabilities()
             self.assertIn("api_version", caps)
             self.assertIn("runtime_profile", caps)

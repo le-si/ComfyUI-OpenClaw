@@ -33,6 +33,7 @@ ENV_SPLIT_COMPAT_OVERRIDE = "OPENCLAW_SPLIT_COMPAT_OVERRIDE"
 # Key management
 # ---------------------------------------------------------------------------
 
+
 def _derive_key(passphrase: str) -> bytes:
     """Derive a 32-byte encryption key from a passphrase using PBKDF2."""
     salt = b"openclaw-s57-v1"
@@ -42,6 +43,7 @@ def _derive_key(passphrase: str) -> bytes:
 def _generate_fernet_key() -> bytes:
     """Generate a Fernet-compatible key (url-safe base64 of 32 random bytes)."""
     from cryptography.fernet import Fernet
+
     return Fernet.generate_key()
 
 
@@ -54,9 +56,11 @@ def _is_hardened_mode() -> bool:
     """Check if running in HARDENED runtime profile (canonical source)."""
     try:
         from .runtime_profile import is_hardened_mode as _rt_hardened
+
         return _rt_hardened()
     except ImportError:
         from runtime_profile import is_hardened_mode as _rt_hardened  # type: ignore
+
         return _rt_hardened()
 
 
@@ -101,6 +105,7 @@ def _load_or_create_key(state_dir: Path) -> bytes:
         # Best-effort permissions
         try:
             import stat
+
             os.chmod(key_path, stat.S_IRUSR | stat.S_IWUSR)  # 0600
         except Exception:
             pass
@@ -117,9 +122,11 @@ def _load_or_create_key(state_dir: Path) -> bytes:
 # Fernet provides authenticated encryption with associated data.
 # Each token contains: version || timestamp || IV || ciphertext || HMAC.
 
+
 def _fernet_encrypt(data: bytes, key: bytes) -> bytes:
     """Encrypt data using Fernet (AEAD). Returns Fernet token bytes."""
     from cryptography.fernet import Fernet
+
     f = Fernet(key)
     return f.encrypt(data)
 
@@ -127,6 +134,7 @@ def _fernet_encrypt(data: bytes, key: bytes) -> bytes:
 def _fernet_decrypt(data: bytes, key: bytes) -> bytes:
     """Decrypt Fernet token. Raises InvalidToken on tamper/wrong key."""
     from cryptography.fernet import Fernet
+
     f = Fernet(key)
     return f.decrypt(data)
 
@@ -134,9 +142,10 @@ def _fernet_decrypt(data: bytes, key: bytes) -> bytes:
 @dataclass
 class EncryptedEnvelope:
     """Encrypted secret envelope."""
+
     version: str = ENVELOPE_VERSION
     encrypted_data: str = ""  # base64-encoded encrypted bytes
-    checksum: str = ""        # SHA-256 of plaintext for tamper detection
+    checksum: str = ""  # SHA-256 of plaintext for tamper detection
     created_at: float = 0.0
     provider_count: int = 0
 
@@ -180,6 +189,7 @@ def decrypt_secrets(envelope: EncryptedEnvelope, key: bytes) -> Dict[str, str]:
     Fernet provides built-in tamper detection; checksum is a secondary check.
     """
     from cryptography.fernet import InvalidToken
+
     try:
         token = envelope.encrypted_data.encode("ascii")
         plaintext = _fernet_decrypt(token, key)
@@ -199,9 +209,8 @@ def decrypt_secrets(envelope: EncryptedEnvelope, key: bytes) -> Dict[str, str]:
 # Encrypted store operations
 # ---------------------------------------------------------------------------
 
-def save_encrypted_store(
-    secrets: Dict[str, str], state_dir: Path
-) -> EncryptedEnvelope:
+
+def save_encrypted_store(secrets: Dict[str, str], state_dir: Path) -> EncryptedEnvelope:
     """Encrypt and save secrets to encrypted store file."""
     key = _load_or_create_key(state_dir)
     envelope = encrypt_secrets(secrets, key)
@@ -242,6 +251,7 @@ def load_encrypted_store(state_dir: Path) -> Optional[Dict[str, str]]:
 # Migration: plaintext -> encrypted
 # ---------------------------------------------------------------------------
 
+
 def migrate_plaintext_to_encrypted(state_dir: Path) -> bool:
     """
     Migrate plaintext secrets.json to encrypted secrets.enc.json.
@@ -280,9 +290,11 @@ def migrate_plaintext_to_encrypted(state_dir: Path) -> bool:
 # Split-mode secret-reference policy
 # ---------------------------------------------------------------------------
 
+
 @dataclass
 class SecretReference:
     """A reference to a secret stored on the external control plane."""
+
     provider_id: str
     reference_key: str  # opaque key for the external CP
     source: str = "external_control_plane"
@@ -313,9 +325,7 @@ def is_secret_write_blocked() -> bool:
     # Check override
     compat = os.environ.get(ENV_SPLIT_COMPAT_OVERRIDE, "").lower().strip()
     if compat in ("1", "true", "yes"):
-        logger.warning(
-            "S57: Secret write override active in split mode (DEV ONLY)"
-        )
+        logger.warning("S57: Secret write override active in split mode (DEV ONLY)")
         return False
 
     return True

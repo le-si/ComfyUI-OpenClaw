@@ -152,14 +152,6 @@ def validate_device_token(
     if not is_bridge_enabled():
         return False, "Bridge not enabled", None
 
-    # Check device token is configured
-    expected_token = get_bridge_device_token()
-    if not expected_token:
-        logger.error(
-            "Bridge enabled but OPENCLAW_BRIDGE_DEVICE_TOKEN (or legacy MOLTBOT_BRIDGE_DEVICE_TOKEN) not set"
-        )
-        return False, "Bridge misconfigured", None
-
     # Extract headers
     device_id = request.headers.get(HEADER_DEVICE_ID, "") or request.headers.get(
         LEGACY_HEADER_DEVICE_ID, ""
@@ -174,32 +166,87 @@ def validate_device_token(
     if not device_token:
         return False, "Missing device token", None
 
+    # S58: lifecycle-aware validation path.
+    # CRITICAL: keep this check before legacy static-token fallback so revoked/
+    # expired lifecycle tokens are deterministically denied on every bridge route.
+    try:
+        try:
+            from ..bridge_token_lifecycle import get_token_store
+        except ImportError:
+            from services.bridge_token_lifecycle import get_token_store  # type: ignore
+
+        required_scope_value = (
+            required_scope.value
+            if isinstance(required_scope, BridgeScope)
+            else required_scope
+        )
+        lifecycle_result = get_token_store().validate_token(
+            device_token, required_scope=required_scope_value
+        )
+    except Exception as e:
+        logger.warning(f"S58 lifecycle validation unavailable, falling back: {e}")
+        lifecycle_result = None
+
+    if lifecycle_result and lifecycle_result.ok and lifecycle_result.token:
+        token_device_id = lifecycle_result.token.device_id
+        if device_id and device_id != token_device_id:
+            return False, "Device ID mismatch", None
+        device_id = token_device_id
+    elif lifecycle_result and lifecycle_result.reject_reason != "unknown_token":
+        reason_map = {
+            "token_revoked": "Token revoked",
+            "token_expired": "Token expired",
+            "overlap_window_expired": "Token overlap window expired",
+            "insufficient_scope": "Missing required scope",
+            "token_not_found": "Token not found",
+        }
+        return (
+            False,
+            reason_map.get(lifecycle_result.reject_reason, "Invalid device token"),
+            None,
+        )
+    else:
+        # Legacy static-token fallback for backward compatibility.
+        expected_token = get_bridge_device_token()
+        if not expected_token:
+            logger.error(
+                "Bridge enabled but OPENCLAW_BRIDGE_DEVICE_TOKEN (or legacy MOLTBOT_BRIDGE_DEVICE_TOKEN) not set"
+            )
+            return False, "Bridge misconfigured", None
+
+        if not device_id:
+            return False, "Missing device ID", None
+
+        # Constant-time token comparison
+        if not hmac.compare_digest(device_token, expected_token):
+            logger.warning(f"Invalid device token from: {device_id[:8]}...")
+            return False, "Invalid device token", None
+
+        # Scope validation (legacy header contract)
+        if required_scope:
+            scopes_header = request.headers.get(
+                HEADER_SCOPES, ""
+            ) or request.headers.get(LEGACY_HEADER_SCOPES, "")
+            if not scopes_header:
+                logger.warning(
+                    f"Device {device_id[:8]} missing required scopes header."
+                )
+                return False, "Missing X-Moltbot-Scopes header", None
+
+            granted_scopes = set(
+                s.strip() for s in scopes_header.split(",") if s.strip()
+            )
+            if required_scope not in granted_scopes:
+                logger.warning(
+                    f"Device {device_id[:8]} missing scope {required_scope}. Granted: {granted_scopes}"
+                )
+                return False, f"Missing required scope: {required_scope}", None
+
     # Check allowlist if configured
     allowed_ids = get_allowed_device_ids()
     if allowed_ids is not None and device_id not in allowed_ids:
         logger.warning(f"Device ID not in allowlist: {device_id[:8]}...")
         return False, "Device not authorized", None
-
-    # Constant-time token comparison
-    if not hmac.compare_digest(device_token, expected_token):
-        logger.warning(f"Invalid device token from: {device_id[:8]}...")
-        return False, "Invalid device token", None
-
-    # Scope validation
-    if required_scope:
-        scopes_header = request.headers.get(HEADER_SCOPES, "") or request.headers.get(
-            LEGACY_HEADER_SCOPES, ""
-        )
-        if not scopes_header:
-            logger.warning(f"Device {device_id[:8]} missing required scopes header.")
-            return False, "Missing X-Moltbot-Scopes header", None
-
-        granted_scopes = set(s.strip() for s in scopes_header.split(",") if s.strip())
-        if required_scope not in granted_scopes:
-            logger.warning(
-                f"Device {device_id[:8]} missing scope {required_scope}. Granted: {granted_scopes}"
-            )
-            return False, f"Missing required scope: {required_scope}", None
 
     # R104: mTLS Binding Check
     is_mtls_valid, mtls_error = validate_mtls_binding(request, device_id)

@@ -299,7 +299,12 @@ fi
 
 echo "[pre-push] 3/4 backend unit tests"
 MOLTBOT_STATE_DIR="$ROOT_DIR/moltbot_state/_pre_push_unit" \
-  "$VENV_PY" scripts/run_unittests.py --start-dir tests --pattern "test_*.py"
+  "$VENV_PY" scripts/run_unittests.py --start-dir tests --pattern "test_*.py" --enforce-skip-policy tests/skip_policy.json
+
+if [ -n "${OPENCLAW_IMPL_RECORD_PATH:-}" ]; then
+  echo "[pre-push] 3.5/4 implementation record lint (strict)"
+  "$VENV_PY" scripts/lint_implementation_record.py --path "$OPENCLAW_IMPL_RECORD_PATH" --strict
+fi
 
 echo "[pre-push] 4/4 npm test (Playwright)"
 npm test

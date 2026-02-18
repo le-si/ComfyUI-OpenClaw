@@ -127,6 +127,12 @@ def setup_logger(name: str = "ComfyUI-OpenClaw") -> logging.Logger:
     Includes both console and file handlers with rotation.
     """
     logger = logging.getLogger(name)
+    # CRITICAL: keep propagate disabled.
+    # If this is changed to True, ComfyUI/root handlers re-emit the same record,
+    # and terminal output regresses to duplicated spam:
+    #   [openclaw.LLMClient] WARNING: ...
+    #   No API key found for provider ...
+    logger.propagate = False
 
     # Only add handler if not already added to avoid duplicates on reload
     if not logger.handlers:

@@ -122,7 +122,13 @@ else
 fi
 
 echo "[tests] 3/4 backend unit tests"
-MOLTBOT_STATE_DIR="$ROOT_DIR/moltbot_state/_local_unit" "$VENV_PY" scripts/run_unittests.py --start-dir tests --pattern "test_*.py"
+MOLTBOT_STATE_DIR="$ROOT_DIR/moltbot_state/_local_unit" "$VENV_PY" scripts/run_unittests.py --start-dir tests --pattern "test_*.py" --enforce-skip-policy tests/skip_policy.json
+
+if [ -n "${OPENCLAW_IMPL_RECORD_PATH:-}" ]; then
+  echo "[tests] 3.5/4 implementation record lint (strict)"
+  # IMPORTANT: strict mode is opt-in via OPENCLAW_IMPL_RECORD_PATH to avoid retroactive legacy record failures.
+  "$VENV_PY" scripts/lint_implementation_record.py --path "$OPENCLAW_IMPL_RECORD_PATH" --strict
+fi
 
 echo "[tests] 4/4 frontend E2E"
 npm test
