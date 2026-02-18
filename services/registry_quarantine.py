@@ -15,6 +15,8 @@ Default posture: DISABLED. Requires OPENCLAW_ENABLE_REGISTRY_SYNC=1.
 
 from __future__ import annotations
 
+# S61: Ed25519 signature verification
+import base64
 import hashlib
 import json
 import logging
@@ -24,10 +26,7 @@ from dataclasses import asdict, dataclass, field
 from enum import Enum
 from typing import Any, Dict, List, Optional, Tuple
 
-# S61: Ed25519 signature verification
 try:
-    import base64
-
     from cryptography.hazmat.primitives import serialization
     from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
 
