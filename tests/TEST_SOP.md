@@ -46,6 +46,10 @@ To avoid local vs CI mismatches:
     - `--enforce-skip-policy tests/skip_policy.json`
   - Skip report artifact is expected at `.tmp/unit_skip_report.json` (or custom `--skip-report` path).
   - A pass result with skip-policy violations is invalid; treat as failure.
+  - Public MAE hard-guarantee suites must be no-skip in both local SOP runs and CI:
+    - `tests.test_s60_mae_route_segmentation`
+    - `tests.test_s60_routes_startup_gate`
+    - `tests.security.test_endpoint_drift`
 
 - **R112 (security triple-assert)**:
   - For security reject/degrade paths, tests should assert all three signals:

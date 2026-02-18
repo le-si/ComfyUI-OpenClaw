@@ -213,3 +213,24 @@ python scripts/check_deployment_profile.py --profile public --strict-warnings
 ```
 
 Pair this with `tests/TEST_SOP.md` so deployment posture checks are validated alongside unit/E2E regressions.
+
+## 9. Public MAE Hard Guarantee
+
+Public MAE enforcement is not only a route-registration rule. It is a startup + CI guarantee:
+
+1. Startup gate blocks public/hardened posture violations before serving routes.
+2. Route-plane classification drift tests fail when new endpoints are not classified.
+3. CI runs MAE-critical suites as explicit no-skip gates:
+   - `tests.test_s60_mae_route_segmentation`
+   - `tests.test_s60_routes_startup_gate`
+   - `tests.security.test_endpoint_drift`
+
+Do not remove these suites from CI or skip-policy protection.
+
+## 10. Key and Token Lifecycle Operations
+
+Operational procedures for rotation/revocation/disaster recovery are documented in:
+
+- `docs/security_key_lifecycle_sop.md`
+
+This runbook is required for long-running public deployments and incident response readiness.

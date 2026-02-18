@@ -26,6 +26,7 @@ This project is intentionally **not** a general-purpose assistant platform with 
 - Bridge worker endpoints enforce device-token auth, scope checks, and idempotency handling
 - Startup module capability gates (disabled modules do not register routes/workers)
 - Endpoint inventory metadata and route drift tests to catch unclassified API exposure regressions
+- Public MAE route-plane posture is a hard guarantee: startup gate + CI no-skip drift suites must both pass
 - Tamper-evident, append-only audit trails for sensitive write/admin paths
 - Hardened external tool sandbox posture with fail-closed checks and filesystem path guards
 - Pack lifecycle file paths and pack API inputs are validated and root-bounded to prevent path traversal
@@ -37,6 +38,7 @@ This project is intentionally **not** a general-purpose assistant platform with 
 
 Deployment profiles and hardening checklists:
 - [Security Deployment Guide](docs/security_deployment_guide.md) (local / LAN / public templates + self-check command)
+- [Security Key/Token Lifecycle SOP](docs/security_key_lifecycle_sop.md) (trust-root, secrets key, and bridge token rotation/revocation/disaster recovery)
 
 ## Latest Updates - Click to expand
 

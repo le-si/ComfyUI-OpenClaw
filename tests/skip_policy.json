@@ -4,6 +4,8 @@
     "tests.test_s58_bridge_token_lifecycle",
     "tests.test_s59_webhook_mapping_clamp",
     "tests.test_s60_mae_route_segmentation",
-    "tests.test_s61_registry_signature"
+    "tests.test_s60_routes_startup_gate",
+    "tests.test_s61_registry_signature",
+    "tests.security.test_endpoint_drift"
   ]
 }

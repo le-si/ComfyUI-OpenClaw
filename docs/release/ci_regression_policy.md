@@ -1,36 +1,31 @@
 # CI Regression Policy
 
-To ensure stability and prevent regressions, all Pull Requests (PRs) must pass the following checks before merge.
+All pull requests must pass the repository SOP gate before merge.
 
 ## Mandatory Checks
 
 | Check | Command | Purpose |
-| :--- | :--- | :--- |
-| **Secret Detection** | `pre-commit run detect-secrets --all-files` | Prevent API key leaks |
-| **Lint/Format** | `pre-commit run --all-files` | Enforce code style (Black/Ruff) |
-| **Unit Tests** | `pytest tests/unit` | Verify component logic |
-| **Contract Tests** | `pytest tests/contract` | Verify API/Config stability |
-| **E2E Tests** | `npm test` | Verify frontend-backend integration |
+| --- | --- | --- |
+| Secret detection | `pre-commit run detect-secrets --all-files` | Prevent secret leakage |
+| Pre-commit hooks | `pre-commit run --all-files --show-diff-on-failure` | Enforce formatting and static checks |
+| Backend unit tests | `python scripts/run_unittests.py --start-dir tests --pattern "test_*.py" --enforce-skip-policy tests/skip_policy.json` | Validate backend behavior and skip governance |
+| Frontend E2E | `npm test` | Validate UI and frontend/backend integration |
+| Contract tests | `python -m pytest tests/contract -v` | Validate API/config contracts |
 
-## Contract Tests (New in M1)
+## Public MAE Hard-Guarantee Suites
 
-Contract tests (`tests/contract/`) enforce public API stability and configuration precedence.
-They must pass even when internal implementation details change.
+These suites are explicit no-skip CI gates to prevent route classification drift:
 
-### Scope
+- `tests.test_s60_mae_route_segmentation`
+- `tests.test_s60_routes_startup_gate`
+- `tests.security.test_endpoint_drift`
 
-1. **API Contract**:
-   - `/openclaw/health` structure.
-   - error response format (`ok`, `error`, `trace_id`).
-2. **Config Contract**:
-   - `OPENCLAW_` env vars must override `config.json`.
-   - `MOLTBOT_` legacy vars must still work (with lower priority).
-   - Secrets must never be exposed via API.
+If any of these fail or are skipped, CI must fail.
 
-## Breaking Changes
+## Change Management Rule
 
-If a change breaks a contract test:
+If a change intentionally modifies contract behavior:
 
-1. **Verify**: Is the breakage intentional?
-2. **Deprecate**: If yes, follow the Deprecation Policy.
-3. **Update**: Update the contract test to reflect the new behavior.
+1. Update affected tests and docs in the same PR.
+2. Record the behavior change and migration impact in release notes.
+3. Keep security-path tests on triple-assert semantics (status + machine code + audit signal).
