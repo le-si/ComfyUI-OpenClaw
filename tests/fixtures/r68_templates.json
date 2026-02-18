@@ -1,0 +1,1 @@
+{"templates": [{"id": "r68-test", "version": 1, "workflow": {"3": {"inputs": {"seed": "{{seed}}", "text": "{{prompt}}"}, "class_type": "KSampler"}}, "default_inputs": {"seed": 42, "prompt": "test"}}]}

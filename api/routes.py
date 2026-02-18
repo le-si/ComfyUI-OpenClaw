@@ -597,6 +597,20 @@ def register_routes(server) -> None:
     Register API routes with the ComfyUI server.
     Called from __init__.py during pack initialization.
     """
+    # S56: Startup deployment profile gate (fail-closed pre-route validation).
+    # Must run BEFORE any route or worker registration.
+    try:
+        try:
+            from ..services.startup_profile_gate import enforce_startup_gate
+        except (ImportError, ValueError):
+            from services.startup_profile_gate import enforce_startup_gate
+
+        enforce_startup_gate()
+    except RuntimeError:
+        # CRITICAL: fail-closed. Never continue route registration after S56
+        # startup gate failure.
+        raise
+
     print("[OpenClaw] Registering routes (Shim Alignment R26)...")
     prefixes = ["/openclaw", "/moltbot"]  # new, legacy
 

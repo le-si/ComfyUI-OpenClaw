@@ -17,26 +17,40 @@ This project is intentionally **not** a general-purpose assistant platform with 
 **Security stance (how this project differs from convenience-first automation packs):**
 
 - Localhost-first defaults; remote access is opt-in
+- Control Plane Split is enforced for public posture: high-risk control surfaces are externalized while embedded UI stays on safe UX/read paths
 - Explicit **Admin Token** boundary for write actions
 - Webhooks are **deny-by-default** until auth is configured
-- Encrypted webhook mode is **fail-closed** (invalid signature/decrypt/app-id checks are rejected)
-- Strict outbound SSRF policy (callbacks + custom LLM base URLs)
-- Pack lifecycle file paths and pack API inputs are validated and root-bounded to prevent path traversal
-- Bridge worker endpoints enforce device-token auth, scope checks, and idempotency handling
-- Replay risk is reduced with deterministic dedupe keys for event payloads without message IDs
-- Cryptography dependency is optional and only required when encrypted webhook mode is enabled
-- Secrets are never stored in browser storage (optional server-side key store is local-only convenience)
 - Profile-driven startup hardening with fail-closed enforcement in hardened mode
 - Startup module capability gates (disabled modules do not register routes/workers)
+- Encrypted webhook mode is **fail-closed** (invalid signature/decrypt/app-id checks are rejected)
 - Endpoint inventory metadata and route drift tests to catch unclassified API exposure regressions
 - Tamper-evident, append-only audit trails for sensitive write/admin paths
+- Strict outbound SSRF policy (callbacks + custom LLM base URLs)
+- Bridge worker endpoints enforce device-token auth, scope checks, and idempotency handling
+- Replay risk is reduced with deterministic dedupe keys for event payloads without message IDs
 - Hardened external tool sandbox posture with fail-closed checks and filesystem path guards
+- Pack lifecycle file paths and pack API inputs are validated and root-bounded to prevent path traversal
+- Secrets are never stored in browser storage (optional server-side key store is local-only convenience)
+- Cryptography dependency is optional and only required when encrypted webhook mode is enabled
 - Wave A/B/C closeout hardening: runtime/config/session stability contracts, strict outbound and supply-chain controls, and capability-aware operator guidance with bounded Parameter Lab/compare workflows
 
 Deployment profiles and hardening checklists:
 - [Security Deployment Guide](docs/security_deployment_guide.md) (local / LAN / public templates + self-check command)
 
 ## Latest Updates - Click to expand
+
+<details>
+
+<summary><strong>Wave D closeout: control-plane split, ingress and supply-chain hardening, and verification governance baseline</strong></summary>
+
+- Completed Wave D closeout on 2026-02-18 with full SOP validation:
+  - enforced split-mode control-plane boundaries for public deployments while preserving embedded daily UX flows
+  - finalized external control-plane adapter reliability behavior and split-mode degraded/blocked-action guidance
+  - completed secrets-at-rest hardening v2 with split-compatible secret-reference behavior
+  - closed bridge token lifecycle, legacy webhook ingress clamp, and public MAE route-plane enforcement gaps
+  - replaced registry signature placeholder posture with trust-root based cryptographic verification and signer governance
+  - established verification governance baseline with skip-budget enforcement, reject/degrade triple-assert contracts, and defect-first record lint gating
+</details>
 
 <details>
 
