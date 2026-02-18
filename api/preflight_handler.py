@@ -39,9 +39,19 @@ else:  # pragma: no cover (test-only import mode)
 
 # R98: Endpoint Metadata
 if __package__ and "." in __package__:
-    from ..services.endpoint_manifest import AuthTier, RiskTier, endpoint_metadata
+    from ..services.endpoint_manifest import (
+        AuthTier,
+        RiskTier,
+        RoutePlane,
+        endpoint_metadata,
+    )
 else:
-    from services.endpoint_manifest import AuthTier, RiskTier, endpoint_metadata
+    from services.endpoint_manifest import (
+        AuthTier,
+        RiskTier,
+        RoutePlane,
+        endpoint_metadata,
+    )
 
 logger = logging.getLogger("ComfyUI-OpenClaw.api.preflight")
 
@@ -80,6 +90,7 @@ def _deny_remote_admin_if_needed(request: web.Request) -> web.Response | None:
     summary="Run preflight check",
     description="Analyze workflow JSON for missing nodes and models.",
     audit="preflight.analyze",
+    plane=RoutePlane.ADMIN,
 )
 async def preflight_handler(request: web.Request) -> web.Response:
     """
@@ -153,6 +164,7 @@ async def preflight_handler(request: web.Request) -> web.Response:
     summary="Get inventory",
     description="Returns a snapshot of available nodes and models.",
     audit="preflight.inventory",
+    plane=RoutePlane.ADMIN,
 )
 async def inventory_handler(request: web.Request) -> web.Response:
     """

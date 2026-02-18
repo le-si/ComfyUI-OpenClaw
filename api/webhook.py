@@ -35,10 +35,20 @@ except ImportError:
 
 try:
     from ..services.diagnostics_flags import diagnostics
-    from ..services.endpoint_manifest import AuthTier, RiskTier, endpoint_metadata
+    from ..services.endpoint_manifest import (
+        AuthTier,
+        RiskTier,
+        RoutePlane,
+        endpoint_metadata,
+    )
 except ImportError:
     from services.diagnostics_flags import diagnostics
-    from services.endpoint_manifest import AuthTier, RiskTier, endpoint_metadata
+    from services.endpoint_manifest import (
+        AuthTier,
+        RiskTier,
+        RoutePlane,
+        endpoint_metadata,
+    )
 
 # R46: Scoped logger for safe-by-default redaction
 logger = diagnostics.get_logger("ComfyUI-OpenClaw.api.webhook", "webhook")
@@ -50,6 +60,7 @@ logger = diagnostics.get_logger("ComfyUI-OpenClaw.api.webhook", "webhook")
     summary="Webhook submit",
     description="Authenticated endpoint for external job requests (legacy pipeline).",
     audit="webhook.submit.legacy",
+    plane=RoutePlane.EXTERNAL,
 )
 async def webhook_handler(request: web.Request) -> web.Response:
     """

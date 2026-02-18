@@ -25,19 +25,20 @@ class TestS60RoutePlane(unittest.TestCase):
     """S60: RoutePlane enum and EndpointMetadata classification tests."""
 
     def test_route_plane_enum_values(self):
-        """RoutePlane has USER, ADMIN, INTERNAL."""
+        """RoutePlane has USER, ADMIN, INTERNAL, EXTERNAL."""
         self.assertEqual(RoutePlane.USER.value, "user")
         self.assertEqual(RoutePlane.ADMIN.value, "admin")
         self.assertEqual(RoutePlane.INTERNAL.value, "internal")
+        self.assertEqual(RoutePlane.EXTERNAL.value, "external")
 
-    def test_endpoint_metadata_default_plane_is_user(self):
-        """EndpointMetadata defaults to USER plane."""
+    def test_endpoint_metadata_default_plane_is_none(self):
+        """EndpointMetadata defaults to None (explicit classification required)."""
         meta = EndpointMetadata(
             auth_tier=AuthTier.PUBLIC,
             risk_tier=RiskTier.LOW,
             summary="Test endpoint",
         )
-        self.assertEqual(meta.route_plane, RoutePlane.USER)
+        self.assertIsNone(meta.route_plane)
 
     def test_endpoint_metadata_admin_plane(self):
         """EndpointMetadata can be set to ADMIN plane."""
@@ -79,8 +80,8 @@ class TestS60DecoratorPlane(unittest.TestCase):
         self.assertIsNotNone(meta)
         self.assertEqual(meta.route_plane, RoutePlane.ADMIN)
 
-    def test_decorator_default_plane_is_user(self):
-        """Decorator defaults to USER plane."""
+    def test_decorator_default_plane_is_none(self):
+        """Decorator defaults to None (explicit classification required)."""
 
         @endpoint_metadata(
             auth=AuthTier.PUBLIC,
@@ -92,7 +93,7 @@ class TestS60DecoratorPlane(unittest.TestCase):
 
         meta = getattr(public_handler, "__openclaw_meta__", None)
         self.assertIsNotNone(meta)
-        self.assertEqual(meta.route_plane, RoutePlane.USER)
+        self.assertIsNone(meta.route_plane)
 
 
 class TestS60MAEPostureValidation(unittest.TestCase):

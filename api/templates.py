@@ -28,9 +28,19 @@ else:  # pragma: no cover (test-only import mode)
 
 # R98: Endpoint Metadata
 if __package__ and "." in __package__:
-    from ..services.endpoint_manifest import AuthTier, RiskTier, endpoint_metadata
+    from ..services.endpoint_manifest import (
+        AuthTier,
+        RiskTier,
+        RoutePlane,
+        endpoint_metadata,
+    )
 else:
-    from services.endpoint_manifest import AuthTier, RiskTier, endpoint_metadata
+    from services.endpoint_manifest import (
+        AuthTier,
+        RiskTier,
+        RoutePlane,
+        endpoint_metadata,
+    )
 
 logger = logging.getLogger("ComfyUI-OpenClaw.api.templates")
 
@@ -64,6 +74,7 @@ def _ensure_templates_api_deps_ready() -> tuple[bool, str | None]:
     summary="List templates",
     description="Returns templates visible to the backend.",
     audit="templates.list",
+    plane=RoutePlane.ADMIN,
 )
 async def templates_list_handler(request: web.Request) -> web.Response:
     """

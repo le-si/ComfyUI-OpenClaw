@@ -28,9 +28,19 @@ else:  # pragma: no cover (test-only import mode)
 
 # R98: Endpoint Metadata
 if __package__ and "." in __package__:
-    from ..services.endpoint_manifest import AuthTier, RiskTier, endpoint_metadata
+    from ..services.endpoint_manifest import (
+        AuthTier,
+        RiskTier,
+        RoutePlane,
+        endpoint_metadata,
+    )
 else:
-    from services.endpoint_manifest import AuthTier, RiskTier, endpoint_metadata
+    from services.endpoint_manifest import (
+        AuthTier,
+        RiskTier,
+        RoutePlane,
+        endpoint_metadata,
+    )
 
 logger = logging.getLogger("ComfyUI-OpenClaw.services.parameter_lab")
 
@@ -382,6 +392,7 @@ def _require_admin(request: web.Request) -> Optional[web.Response]:
     summary="Create comparison",
     description="Create a bounded multi-model comparison plan.",
     audit="lab.compare.create",
+    plane=RoutePlane.ADMIN,
 )
 async def create_compare_handler(request: web.Request) -> web.Response:
     if web is None:
@@ -433,6 +444,7 @@ async def create_compare_handler(request: web.Request) -> web.Response:
     summary="Create sweep",
     description="Create a bounded parameter sweep plan.",
     audit="lab.sweep.create",
+    plane=RoutePlane.ADMIN,
 )
 async def create_sweep_handler(request: web.Request) -> web.Response:
     if web is None:
@@ -470,6 +482,7 @@ async def create_sweep_handler(request: web.Request) -> web.Response:
     summary="List experiments",
     description="List persistent experiments.",
     audit="lab.list",
+    plane=RoutePlane.ADMIN,
 )
 async def list_experiments_handler(request: web.Request) -> web.Response:
     if web is None:
@@ -489,6 +502,7 @@ async def list_experiments_handler(request: web.Request) -> web.Response:
     summary="Get experiment",
     description="Retrieve experiment details.",
     audit="lab.get",
+    plane=RoutePlane.ADMIN,
 )
 async def get_experiment_handler(request: web.Request) -> web.Response:
     if web is None:
@@ -514,6 +528,7 @@ async def get_experiment_handler(request: web.Request) -> web.Response:
     summary="Update experiment",
     description="Update experiment state (e.g. run results).",
     audit="lab.update",
+    plane=RoutePlane.ADMIN,
 )
 async def update_experiment_handler(request: web.Request) -> web.Response:
     if web is None:
@@ -550,6 +565,7 @@ async def update_experiment_handler(request: web.Request) -> web.Response:
     summary="Select winner",
     description="Select experiment winner and return params.",
     audit="lab.winner",
+    plane=RoutePlane.ADMIN,
 )
 async def select_apply_winner_handler(request: web.Request) -> web.Response:
     """

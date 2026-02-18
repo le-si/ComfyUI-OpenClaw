@@ -12,10 +12,22 @@ from aiohttp import web
 
 try:
     from ..services.access_control import require_admin_token
+    from ..services.endpoint_manifest import (
+        AuthTier,
+        RiskTier,
+        RoutePlane,
+        endpoint_metadata,
+    )
     from ..services.presets import Preset, preset_store
 except ImportError:
     # Fallback for ComfyUI's non-package loader or ad-hoc imports.
     from services.access_control import require_admin_token
+    from services.endpoint_manifest import (
+        AuthTier,
+        RiskTier,
+        RoutePlane,
+        endpoint_metadata,
+    )
     from services.presets import Preset, preset_store
 
 logger = logging.getLogger("ComfyUI-OpenClaw.api.presets")
@@ -24,6 +36,14 @@ logger = logging.getLogger("ComfyUI-OpenClaw.api.presets")
 class PresetHandlers:
     """Handlers for preset API."""
 
+    @endpoint_metadata(
+        auth=AuthTier.PUBLIC,  # Conditionally public
+        risk=RiskTier.LOW,
+        summary="List presets",
+        description="List available presets (dynamic auth).",
+        audit="presets.list",
+        plane=RoutePlane.USER,
+    )
     async def list_presets(self, request: web.Request) -> web.Response:
         """
         GET /moltbot/presets
@@ -57,6 +77,14 @@ class PresetHandlers:
         presets = preset_store.list_presets(category=category, tag=tag)
         return web.json_response([p.to_dict() for p in presets])
 
+    @endpoint_metadata(
+        auth=AuthTier.PUBLIC,  # Conditionally public
+        risk=RiskTier.LOW,
+        summary="Get preset",
+        description="Get preset details (dynamic auth).",
+        audit="presets.get",
+        plane=RoutePlane.USER,
+    )
     async def get_preset(self, request: web.Request) -> web.Response:
         """GET /moltbot/presets/{preset_id}"""
         # Milestone B: Auth Check
@@ -86,6 +114,14 @@ class PresetHandlers:
 
         return web.json_response(preset.to_dict())
 
+    @endpoint_metadata(
+        auth=AuthTier.ADMIN,
+        risk=RiskTier.MEDIUM,
+        summary="Create preset",
+        description="Create a new preset.",
+        audit="presets.create",
+        plane=RoutePlane.ADMIN,
+    )
     async def create_preset(self, request: web.Request) -> web.Response:
         """POST /moltbot/presets"""
         allowed, error = require_admin_token(request)
@@ -128,6 +164,14 @@ class PresetHandlers:
             logger.error(f"Failed to create preset: {e}")
             return web.json_response({"error": str(e)}, status=500)
 
+    @endpoint_metadata(
+        auth=AuthTier.ADMIN,
+        risk=RiskTier.MEDIUM,
+        summary="Update preset",
+        description="Update an existing preset.",
+        audit="presets.update",
+        plane=RoutePlane.ADMIN,
+    )
     async def update_preset(self, request: web.Request) -> web.Response:
         """PUT /moltbot/presets/{preset_id}"""
         allowed, error = require_admin_token(request)
@@ -170,6 +214,14 @@ class PresetHandlers:
 
         return web.json_response(preset.to_dict())
 
+    @endpoint_metadata(
+        auth=AuthTier.ADMIN,
+        risk=RiskTier.HIGH,
+        summary="Delete preset",
+        description="Delete a preset.",
+        audit="presets.delete",
+        plane=RoutePlane.ADMIN,
+    )
     async def delete_preset(self, request: web.Request) -> web.Response:
         """DELETE /moltbot/presets/{preset_id}"""
         allowed, error = require_admin_token(request)

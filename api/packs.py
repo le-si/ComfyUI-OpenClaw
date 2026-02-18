@@ -48,9 +48,19 @@ else:
 
 # R98: Endpoint Metadata
 if __package__ and "." in __package__:
-    from ..services.endpoint_manifest import AuthTier, RiskTier, endpoint_metadata
+    from ..services.endpoint_manifest import (
+        AuthTier,
+        RiskTier,
+        RoutePlane,
+        endpoint_metadata,
+    )
 else:
-    from services.endpoint_manifest import AuthTier, RiskTier, endpoint_metadata
+    from services.endpoint_manifest import (
+        AuthTier,
+        RiskTier,
+        RoutePlane,
+        endpoint_metadata,
+    )
 
 # Strict pattern for pack name/version URL route parameters.
 _SAFE_SEGMENT_RE = re.compile(r"^[a-zA-Z0-9._-]+$")
@@ -93,6 +103,7 @@ class PacksHandlers:
         summary="List packs",
         description="List installed packs.",
         audit="packs.list",
+        plane=RoutePlane.ADMIN,
     )
     async def list_packs_handler(self, request: web.Request) -> web.Response:
         """GET /packs - List installed packs."""
@@ -125,6 +136,7 @@ class PacksHandlers:
         summary="Import pack",
         description="Install pack from zip upload.",
         audit="packs.import",
+        plane=RoutePlane.ADMIN,
     )
     async def import_pack_handler(self, request: web.Request) -> web.Response:
         """POST /packs/import - Install pack from zip upload."""
@@ -176,6 +188,7 @@ class PacksHandlers:
         summary="Delete pack",
         description="Uninstall pack.",
         audit="packs.delete",
+        plane=RoutePlane.ADMIN,
     )
     async def delete_pack_handler(self, request: web.Request) -> web.Response:
         """DELETE /packs/{name}/{version} - Uninstall pack."""
@@ -215,6 +228,7 @@ class PacksHandlers:
         summary="Export pack",
         description="Download pack zip.",
         audit="packs.export",
+        plane=RoutePlane.ADMIN,
     )
     async def export_pack_handler(self, request: web.Request) -> web.Response:
         """GET /packs/export/{name}/{version} - Download pack zip."""

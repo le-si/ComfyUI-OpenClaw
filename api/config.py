@@ -149,10 +149,20 @@ def _cache_get(key: tuple):
 
 # S14/R98: Import Endpoint Metadata
 try:
-    from ..services.endpoint_manifest import AuthTier, RiskTier, endpoint_metadata
+    from ..services.endpoint_manifest import (
+        AuthTier,
+        RiskTier,
+        RoutePlane,
+        endpoint_metadata,
+    )
 except ImportError:
     # Test fallback
-    from services.endpoint_manifest import AuthTier, RiskTier, endpoint_metadata
+    from services.endpoint_manifest import (
+        AuthTier,
+        RiskTier,
+        RoutePlane,
+        endpoint_metadata,
+    )
 
 
 # Provider catalog for UI dropdown (R16 dynamic)
@@ -196,6 +206,7 @@ except ImportError:
     summary="Get configuration",
     description="Returns effective config, sources, and provider catalog.",
     audit="config.read",
+    plane=RoutePlane.ADMIN,
 )
 async def config_get_handler(request: web.Request) -> web.Response:
     """
@@ -311,6 +322,7 @@ def _extract_models_from_payload(payload: dict) -> list:
     summary="List remote models",
     description="Fetch a remote model list (best-effort) for OpenAI-compatible providers.",
     audit="llm.list_models",
+    plane=RoutePlane.ADMIN,
 )
 async def llm_models_handler(request: web.Request) -> web.Response:
     """
@@ -528,6 +540,7 @@ async def llm_models_handler(request: web.Request) -> web.Response:
     summary="Update configuration",
     description="Updates non-secret LLM config.",
     audit="config.update",
+    plane=RoutePlane.ADMIN,
 )
 async def config_put_handler(request: web.Request) -> web.Response:
     """
@@ -666,6 +679,7 @@ async def config_put_handler(request: web.Request) -> web.Response:
     summary="Test LLM connection",
     description="Tests LLM connection using provided or stored credentials.",
     audit="llm.test_connection",
+    plane=RoutePlane.ADMIN,
 )
 async def llm_test_handler(request: web.Request) -> web.Response:
     """
@@ -862,6 +876,7 @@ async def llm_test_handler(request: web.Request) -> web.Response:
     summary="Chat completion",
     description="Run a simple chat completion using server-side LLM config.",
     audit="llm.chat_completion",
+    plane=RoutePlane.ADMIN,
 )
 async def llm_chat_handler(request: web.Request) -> web.Response:
     """

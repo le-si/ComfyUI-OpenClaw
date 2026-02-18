@@ -18,9 +18,19 @@ except ImportError:
 
 # R98: Endpoint Metadata
 if __package__ and "." in __package__:
-    from ..services.endpoint_manifest import AuthTier, RiskTier, endpoint_metadata
+    from ..services.endpoint_manifest import (
+        AuthTier,
+        RiskTier,
+        RoutePlane,
+        endpoint_metadata,
+    )
 else:
-    from services.endpoint_manifest import AuthTier, RiskTier, endpoint_metadata
+    from services.endpoint_manifest import (
+        AuthTier,
+        RiskTier,
+        RoutePlane,
+        endpoint_metadata,
+    )
 
 logger = logging.getLogger("ComfyUI-OpenClaw.api.assist")
 
@@ -41,6 +51,7 @@ class AssistHandlers:
         summary="Run planner",
         description="Generate prompts from requirements via LLM.",
         audit="assist.planner",
+        plane=RoutePlane.ADMIN,
     )
     async def planner_handler(self, request):
         """
@@ -97,6 +108,7 @@ class AssistHandlers:
         summary="Run refiner",
         description="Refine prompt/parameters based on feedback.",
         audit="assist.refiner",
+        plane=RoutePlane.ADMIN,
     )
     async def refiner_handler(self, request):
         """

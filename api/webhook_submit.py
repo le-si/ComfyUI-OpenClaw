@@ -54,9 +54,19 @@ else:  # pragma: no cover (test-only import mode)
 
 # R98: Endpoint Metadata
 if __package__ and "." in __package__:
-    from ..services.endpoint_manifest import AuthTier, RiskTier, endpoint_metadata
+    from ..services.endpoint_manifest import (
+        AuthTier,
+        RiskTier,
+        RoutePlane,
+        endpoint_metadata,
+    )
 else:
-    from services.endpoint_manifest import AuthTier, RiskTier, endpoint_metadata
+    from services.endpoint_manifest import (
+        AuthTier,
+        RiskTier,
+        RoutePlane,
+        endpoint_metadata,
+    )
 
 logger = logging.getLogger("ComfyUI-OpenClaw.api.webhook_submit")
 
@@ -74,6 +84,7 @@ def safe_error_response(status: int, error: str, detail: str = "") -> web.Respon
     summary="Webhook submit",
     description="Authenticated endpoint for external job requests (modern pipeline).",
     audit="webhook.submit",
+    plane=RoutePlane.EXTERNAL,
 )
 async def webhook_submit_handler(request: web.Request) -> web.Response:
     """

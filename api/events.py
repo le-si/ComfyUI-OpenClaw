@@ -42,9 +42,19 @@ SSE_MAX_DURATION_SEC = 300  # 5 minutes
 
 # R98: Endpoint Metadata
 if __package__ and "." in __package__:
-    from ..services.endpoint_manifest import AuthTier, RiskTier, endpoint_metadata
+    from ..services.endpoint_manifest import (
+        AuthTier,
+        RiskTier,
+        RoutePlane,
+        endpoint_metadata,
+    )
 else:
-    from services.endpoint_manifest import AuthTier, RiskTier, endpoint_metadata
+    from services.endpoint_manifest import (
+        AuthTier,
+        RiskTier,
+        RoutePlane,
+        endpoint_metadata,
+    )
 
 
 @endpoint_metadata(
@@ -53,6 +63,7 @@ else:
     summary="Stream job events",
     description="SSE endpoint for job lifecycle events.",
     audit="events.stream",
+    plane=RoutePlane.ADMIN,
 )
 async def events_stream_handler(request: web.Request) -> web.StreamResponse:
     """
@@ -152,6 +163,7 @@ async def events_stream_handler(request: web.Request) -> web.StreamResponse:
     summary="Poll job events",
     description="JSON polling fallback for job events.",
     audit="events.poll",
+    plane=RoutePlane.ADMIN,
 )
 async def events_poll_handler(request: web.Request) -> web.Response:
     """

@@ -52,6 +52,7 @@ class RoutePlane(enum.Enum):
     USER = "user"  # Public user-facing routes
     ADMIN = "admin"  # Admin-only management routes
     INTERNAL = "internal"  # Internal-only (loopback, service mesh)
+    EXTERNAL = "external"  # External webhook/callback ingress surfaces
 
 
 @dataclass
@@ -65,7 +66,7 @@ class EndpointMetadata:
     required_scopes: List[str] = field(default_factory=list)  # For S46
     audit_action: Optional[str] = None  # For R99
     # S60: Route plane classification
-    route_plane: RoutePlane = RoutePlane.USER
+    route_plane: Optional[RoutePlane] = None
 
 
 # Registry to store metadata by handler function
@@ -79,7 +80,7 @@ def endpoint_metadata(
     description: str = "",
     scopes: Optional[List[str]] = None,
     audit: Optional[str] = None,
-    plane: RoutePlane = RoutePlane.USER,
+    plane: Optional[RoutePlane] = None,  # R116: No implicit default allowed
 ):
     """
     Decorator to attach security metadata to a handler function.
@@ -89,12 +90,19 @@ def endpoint_metadata(
             auth=AuthTier.ADMIN,
             risk=RiskTier.HIGH,
             summary="Restart Server",
-            audit="server.restart"
+            audit="server.restart",
+            plane=RoutePlane.ADMIN  # R116: Mandatory classification
         )
         async def handler(request): ...
     """
 
     def decorator(handler: Callable):
+        # R116: Enforce explicit plane classification
+        # We allow None during decoration to support legacy transition,
+        # but validation gate will fail.
+        # Ideally, we'd fail fast here, but that might crash import time if not all are migrated.
+        # Let's verify during manifest generation instead.
+
         meta = EndpointMetadata(
             auth_tier=auth,
             risk_tier=risk,
@@ -102,7 +110,7 @@ def endpoint_metadata(
             description=description,
             required_scopes=scopes or [],
             audit_action=audit,
-            route_plane=plane,
+            route_plane=plane,  # May be None if missed
         )
         _HANDLER_REGISTRY[handler] = meta
         # Attach to function for runtime introspection if needed
@@ -117,6 +125,10 @@ def get_metadata(handler: Callable) -> Optional[EndpointMetadata]:
     # Unwrap partials (common in aiohttp routes with bound methods)
     while isinstance(handler, (functools.partial,)):
         handler = handler.func
+
+    # Unwrap bound methods (e.g. class instance methods)
+    if inspect.ismethod(handler):
+        handler = handler.__func__
 
     # Check registry first
     if handler in _HANDLER_REGISTRY:
@@ -159,7 +171,7 @@ def generate_manifest(app) -> List[Dict[str, Any]]:
                 "risk": meta.risk_tier.value,
                 "summary": meta.summary,
                 "audit": meta.audit_action,
-                "plane": meta.route_plane.value,
+                "plane": meta.route_plane.value if meta.route_plane else None,
             }
 
         manifest.append(entry)
@@ -168,7 +180,7 @@ def generate_manifest(app) -> List[Dict[str, Any]]:
 
 
 # ---------------------------------------------------------------------------
-# S60: MAE posture validation
+# S60: MAE posture validation (Enhanced by S64)
 # ---------------------------------------------------------------------------
 
 import logging as _logging
@@ -181,42 +193,71 @@ def validate_mae_posture(
     profile: str = "local",
 ) -> Tuple[bool, List[str]]:
     """
-    S60: Validate that the endpoint manifest respects route-plane segmentation
-    for the given deployment profile.
+    S60/R116: Validate that the endpoint manifest respects route-plane segmentation
+    and S64 invariants for the given deployment profile.
 
-    In 'public' or 'hardened' profiles:
-    - No ADMIN or INTERNAL plane routes should be exposed on the user plane
-    - All classified routes must have a route_plane assigned
+    Enforces:
+    - S64.INV.005: All routes must have explicit plane classification (R116)
+    - S64.INV.006: All routes must have explicit auth classification
+    - S64.INV.002: No Admin/Internal plane routes exposed on User plane (Public/Hardened)
 
     Returns:
         (is_valid, violations)
     """
+    # Import here to avoid circular dependency
+    if __package__ and "." in __package__:
+        from .security_invariants import REGISTRY
+    else:
+        from services.security_invariants import REGISTRY
+
     violations: List[str] = []
 
-    if profile not in ("public", "hardened"):
-        # Local profile: no enforcement
-        return True, []
-
     for entry in manifest:
+        method = entry.get("method")
+        path = entry.get("path")
         meta = entry.get("metadata")
-        if not meta:
-            # Unclassified route in public profile is a violation
-            if entry.get("method") != "*":  # Skip catch-all routes
-                violations.append(
-                    f"Unclassified route in {profile} profile: "
-                    f"{entry.get('method')} {entry.get('path')}"
-                )
+
+        # Skip catch-all or unmanaged routes if they are truly outside our scope
+        if method == "*":
             continue
 
-        plane = meta.get("plane", "user")
-        auth = meta.get("auth", "public")
-
-        # ADMIN and INTERNAL plane routes must not be exposed without admin auth
-        if plane in ("admin", "internal") and auth == "public":
+        # S64.INV.005: Explicit Classification Gate
+        if not meta:
+            inv = REGISTRY["S64.INV.005"]
             violations.append(
-                f"S60: {plane}-plane route exposed with public auth: "
-                f"{entry.get('method')} {entry.get('path')}"
+                f"[{inv.id}] Unclassified route (missing metadata): "
+                f"{method} {path}. {inv.remediation}"
             )
+            continue
+
+        # S64.INV.006: Explicit Auth Tier
+        auth = meta.get("auth")
+        if not auth:
+            inv = REGISTRY["S64.INV.006"]
+            violations.append(
+                f"[{inv.id}] Route missing explicit Auth classification: "
+                f"{method} {path}. {inv.remediation}"
+            )
+
+        # S64.INV.005: Plane Check
+        plane = meta.get("plane")
+        if not plane:
+            inv = REGISTRY["S64.INV.005"]
+            violations.append(
+                f"[{inv.id}] Route missing explicit Plane classification: "
+                f"{method} {path}. {inv.remediation}"
+            )
+            continue
+
+        # Posture Checks (Profile Dependent)
+        if profile in ("public", "hardened"):
+            # S64.INV.002: Plane/Auth Compatibility
+            if plane in ("admin", "internal") and auth == "public":
+                inv = REGISTRY["S64.INV.002"]
+                violations.append(
+                    f"[{inv.id}] {plane}-plane route exposed with public auth: "
+                    f"{method} {path}. {inv.remediation}"
+                )
 
     if violations:
         for v in violations:

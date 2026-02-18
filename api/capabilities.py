@@ -12,10 +12,20 @@ else:
     from services.capabilities import get_capabilities
 
 
-try:
-    from ..services.endpoint_manifest import AuthTier, RiskTier, endpoint_metadata
-except ImportError:
-    from services.endpoint_manifest import AuthTier, RiskTier, endpoint_metadata
+if __package__ and "." in __package__:
+    from ..services.endpoint_manifest import (
+        AuthTier,
+        RiskTier,
+        RoutePlane,
+        endpoint_metadata,
+    )
+else:
+    from services.endpoint_manifest import (
+        AuthTier,
+        RiskTier,
+        RoutePlane,
+        endpoint_metadata,
+    )
 
 
 @endpoint_metadata(
@@ -24,6 +34,7 @@ except ImportError:
     summary="Get capabilities",
     description="Returns API version and feature flags.",
     audit="capabilities.list",
+    plane=RoutePlane.USER,
 )
 async def capabilities_handler(request: web.Request) -> web.Response:
     """

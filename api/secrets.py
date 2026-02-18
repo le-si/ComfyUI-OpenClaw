@@ -49,9 +49,19 @@ else:  # pragma: no cover (test-only import mode)
 
 # R98: Endpoint Metadata
 if __package__ and "." in __package__:
-    from ..services.endpoint_manifest import AuthTier, RiskTier, endpoint_metadata
+    from ..services.endpoint_manifest import (
+        AuthTier,
+        RiskTier,
+        RoutePlane,
+        endpoint_metadata,
+    )
 else:
-    from services.endpoint_manifest import AuthTier, RiskTier, endpoint_metadata
+    from services.endpoint_manifest import (
+        AuthTier,
+        RiskTier,
+        RoutePlane,
+        endpoint_metadata,
+    )
 
 logger = logging.getLogger("ComfyUI-OpenClaw.api.secrets")
 
@@ -123,6 +133,7 @@ def _rate_limit_admin(request: web.Request) -> Optional[web.Response]:
     summary="Get secret status",
     description="Returns secret configuration status (NO ACTUAL VALUES).",
     audit="secrets.status",
+    plane=RoutePlane.ADMIN,
 )
 async def secrets_status_handler(request: web.Request) -> web.Response:
     """
@@ -165,6 +176,7 @@ async def secrets_status_handler(request: web.Request) -> web.Response:
     summary="Write secret",
     description="Save API key to server store.",
     audit="secrets.write",
+    plane=RoutePlane.ADMIN,
 )
 async def secrets_put_handler(request: web.Request) -> web.Response:
     """
@@ -304,6 +316,7 @@ async def secrets_put_handler(request: web.Request) -> web.Response:
     summary="Delete secret",
     description="Clear provider secret.",
     audit="secrets.delete",
+    plane=RoutePlane.ADMIN,
 )
 async def secrets_delete_handler(request: web.Request) -> web.Response:
     """

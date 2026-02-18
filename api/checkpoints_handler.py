@@ -41,9 +41,19 @@ else:  # pragma: no cover (test-only import mode)
 
 # R98: Endpoint Metadata
 if __package__ and "." in __package__:
-    from ..services.endpoint_manifest import AuthTier, RiskTier, endpoint_metadata
+    from ..services.endpoint_manifest import (
+        AuthTier,
+        RiskTier,
+        RoutePlane,
+        endpoint_metadata,
+    )
 else:
-    from services.endpoint_manifest import AuthTier, RiskTier, endpoint_metadata
+    from services.endpoint_manifest import (
+        AuthTier,
+        RiskTier,
+        RoutePlane,
+        endpoint_metadata,
+    )
 
 
 logger = logging.getLogger("ComfyUI-OpenClaw.api.checkpoints")
@@ -87,6 +97,7 @@ def _deny_remote_admin_if_needed(request: web.Request) -> web.Response | None:
     summary="List checkpoints",
     description="List available workflow checkpoints.",
     audit="checkpoints.list",
+    plane=RoutePlane.ADMIN,
 )
 async def list_checkpoints_handler(request: web.Request) -> web.Response:
     """GET /openclaw/checkpoints"""
@@ -117,6 +128,7 @@ async def list_checkpoints_handler(request: web.Request) -> web.Response:
     summary="Create checkpoint",
     description="Create a new workflow checkpoint.",
     audit="checkpoints.create",
+    plane=RoutePlane.ADMIN,
 )
 async def create_checkpoint_handler(request: web.Request) -> web.Response:
     """POST /openclaw/checkpoints"""
@@ -169,6 +181,7 @@ async def create_checkpoint_handler(request: web.Request) -> web.Response:
     summary="Get checkpoint",
     description="Retrieve specific checkpoint details.",
     audit="checkpoints.get",
+    plane=RoutePlane.ADMIN,
 )
 async def get_checkpoint_handler(request: web.Request) -> web.Response:
     """GET /openclaw/checkpoints/{id}"""
@@ -202,6 +215,7 @@ async def get_checkpoint_handler(request: web.Request) -> web.Response:
     summary="Delete checkpoint",
     description="Delete a workflow checkpoint.",
     audit="checkpoints.delete",
+    plane=RoutePlane.ADMIN,
 )
 async def delete_checkpoint_handler(request: web.Request) -> web.Response:
     """DELETE /openclaw/checkpoints/{id}"""

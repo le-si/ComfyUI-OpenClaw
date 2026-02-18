@@ -50,9 +50,19 @@ else:  # pragma: no cover (test-only)
 
 # R98: Endpoint Metadata
 if __package__ and "." in __package__:
-    from ..services.endpoint_manifest import AuthTier, RiskTier, endpoint_metadata
+    from ..services.endpoint_manifest import (
+        AuthTier,
+        RiskTier,
+        RoutePlane,
+        endpoint_metadata,
+    )
 else:
-    from services.endpoint_manifest import AuthTier, RiskTier, endpoint_metadata
+    from services.endpoint_manifest import (
+        AuthTier,
+        RiskTier,
+        RoutePlane,
+        endpoint_metadata,
+    )
 
 logger = logging.getLogger("ComfyUI-OpenClaw.api.security_doctor")
 
@@ -63,6 +73,7 @@ logger = logging.getLogger("ComfyUI-OpenClaw.api.security_doctor")
     summary="Security Doctor",
     description="Run security posture diagnostics and remediation.",
     audit="security.doctor",
+    plane=RoutePlane.ADMIN,
 )
 async def security_doctor_handler(request: web.Request) -> web.Response:
     """

@@ -14,9 +14,19 @@ import time
 
 # R98: Endpoint Metadata
 if __package__ and "." in __package__:
-    from ..services.endpoint_manifest import AuthTier, RiskTier, endpoint_metadata
+    from ..services.endpoint_manifest import (
+        AuthTier,
+        RiskTier,
+        RoutePlane,
+        endpoint_metadata,
+    )
 else:
-    from services.endpoint_manifest import AuthTier, RiskTier, endpoint_metadata
+    from services.endpoint_manifest import (
+        AuthTier,
+        RiskTier,
+        RoutePlane,
+        endpoint_metadata,
+    )
 
 try:
     from aiohttp import web  # type: ignore
@@ -186,6 +196,7 @@ def _ensure_observability_deps_ready() -> tuple[bool, str | None]:
     summary="Health check",
     description="Returns pack status, uptime, dependencies, and stats.",
     audit="health.check",
+    plane=RoutePlane.USER,
 )
 async def health_handler(request: web.Request) -> web.Response:
     """
@@ -324,6 +335,7 @@ async def health_handler(request: web.Request) -> web.Response:
     summary="Tail logs",
     description="Returns the last N lines of the log file.",
     audit="logs.tail",
+    plane=RoutePlane.ADMIN,
 )
 async def logs_tail_handler(request: web.Request) -> web.Response:
     """GET /moltbot/logs/tail - Returns the last N lines of the log file."""
@@ -417,6 +429,7 @@ async def logs_tail_handler(request: web.Request) -> web.Response:
     summary="List jobs",
     description="Stub endpoint for job listing.",
     audit="jobs.list",
+    plane=RoutePlane.ADMIN,
 )
 async def jobs_handler(request: web.Request) -> web.Response:
     """
@@ -441,6 +454,7 @@ async def jobs_handler(request: web.Request) -> web.Response:
     summary="Get trace",
     description="Returns redacted timeline for a prompt.",
     audit="trace.get",
+    plane=RoutePlane.ADMIN,
 )
 async def trace_handler(request: web.Request) -> web.Response:
     """GET /moltbot/trace/{prompt_id} - Returns trace_id and redacted timeline."""

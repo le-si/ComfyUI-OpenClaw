@@ -23,11 +23,23 @@ from aiohttp import web
 # can silently import the WRONG module (another custom node or ComfyUI-adjacent package), causing
 # template allowlists to appear "missing" even when `data/templates/manifest.json` is correct.
 if __package__ and "." in __package__:
+    from ..services.endpoint_manifest import (
+        AuthTier,
+        RiskTier,
+        RoutePlane,
+        endpoint_metadata,
+    )
     from ..services.execution_budgets import BudgetExceededError
     from ..services.templates import is_template_allowed
     from ..services.trace import generate_trace_id
     from ..services.webhook_auth import AuthError
 else:  # pragma: no cover (test-only import mode)
+    from services.endpoint_manifest import (  # type: ignore
+        AuthTier,
+        RiskTier,
+        RoutePlane,
+        endpoint_metadata,
+    )
     from services.execution_budgets import BudgetExceededError  # type: ignore
     from services.templates import is_template_allowed  # type: ignore
     from services.trace import generate_trace_id  # type: ignore
@@ -76,6 +88,14 @@ class TriggerHandlers:
                 if not allowed:
                     raise AuthError(error or "Unauthorized")
 
+    @endpoint_metadata(
+        auth=AuthTier.ADMIN,
+        risk=RiskTier.HIGH,
+        summary="Fire trigger",
+        description="Fire an ad-hoc workflow trigger.",
+        audit="triggers.fire",
+        plane=RoutePlane.ADMIN,
+    )
     async def fire_trigger(self, request: web.Request) -> web.Response:
         """
         POST /moltbot/triggers/fire

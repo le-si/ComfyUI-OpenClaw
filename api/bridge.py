@@ -57,9 +57,19 @@ except ImportError:
 
 # R98: Endpoint Metadata
 if __package__ and "." in __package__:
-    from ..services.endpoint_manifest import AuthTier, RiskTier, endpoint_metadata
+    from ..services.endpoint_manifest import (
+        AuthTier,
+        RiskTier,
+        RoutePlane,
+        endpoint_metadata,
+    )
 else:
-    from services.endpoint_manifest import AuthTier, RiskTier, endpoint_metadata
+    from services.endpoint_manifest import (
+        AuthTier,
+        RiskTier,
+        RoutePlane,
+        endpoint_metadata,
+    )
 
 logger = logging.getLogger("ComfyUI-OpenClaw.api.bridge")
 
@@ -129,6 +139,7 @@ class BridgeHandlers:
         risk=RiskTier.LOW,
         summary="Bridge health",
         description="Returns bridge health status.",
+        plane=RoutePlane.USER,
     )
     async def health_handler(self, request: web.Request) -> web.Response:
         """
@@ -168,6 +179,7 @@ class BridgeHandlers:
         risk=RiskTier.LOW,
         summary="Bridge handshake",
         description="Negotiate protocol version.",
+        plane=RoutePlane.USER,
     )
     async def handshake_handler(self, request: web.Request) -> web.Response:
         """
@@ -199,6 +211,7 @@ class BridgeHandlers:
         summary="Bridge submit",
         description="Submit a job via sidecar bridge.",
         audit="bridge.submit",
+        plane=RoutePlane.INTERNAL,
     )
     async def submit_handler(self, request: web.Request) -> web.Response:
         """
@@ -427,6 +440,7 @@ class BridgeHandlers:
         summary="Bridge deliver",
         description="Request outbound delivery via sidecar.",
         audit="bridge.deliver",
+        plane=RoutePlane.INTERNAL,
     )
     async def deliver_handler(self, request: web.Request) -> web.Response:
         """
@@ -610,6 +624,7 @@ class BridgeHandlers:
         risk=RiskTier.LOW,
         summary="Worker poll",
         description="Worker polls for pending jobs.",
+        plane=RoutePlane.INTERNAL,
     )
     async def worker_poll_handler(self, request: web.Request) -> web.Response:
         """
@@ -647,6 +662,7 @@ class BridgeHandlers:
         summary="Worker result",
         description="Worker submits completed job result.",
         audit="bridge.worker.result",
+        plane=RoutePlane.INTERNAL,
     )
     async def worker_result_handler(self, request: web.Request) -> web.Response:
         """
@@ -741,6 +757,7 @@ class BridgeHandlers:
         risk=RiskTier.LOW,
         summary="Worker heartbeat",
         description="Worker reports its status.",
+        plane=RoutePlane.INTERNAL,
     )
     async def worker_heartbeat_handler(self, request: web.Request) -> web.Response:
         """

@@ -29,6 +29,11 @@ except ModuleNotFoundError:  # pragma: no cover
 
     _AIOHTTP_AVAILABLE = False
 
+import os
+import sys
+
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
+
 from api.webhook_validate import webhook_validate_handler
 from models.schemas import WebhookJobRequest
 from services.execution_budgets import BudgetExceededError

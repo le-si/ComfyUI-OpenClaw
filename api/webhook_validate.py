@@ -62,9 +62,19 @@ else:  # pragma: no cover (test-only import mode)
 
 # R98: Endpoint Metadata
 if __package__ and "." in __package__:
-    from ..services.endpoint_manifest import AuthTier, RiskTier, endpoint_metadata
+    from ..services.endpoint_manifest import (
+        AuthTier,
+        RiskTier,
+        RoutePlane,
+        endpoint_metadata,
+    )
 else:
-    from services.endpoint_manifest import AuthTier, RiskTier, endpoint_metadata
+    from services.endpoint_manifest import (
+        AuthTier,
+        RiskTier,
+        RoutePlane,
+        endpoint_metadata,
+    )
 
 logger = logging.getLogger("ComfyUI-OpenClaw.api.webhook_validate")
 
@@ -84,6 +94,7 @@ def _safe_error_response(status: int, error: str, detail: str = "") -> web.Respo
     summary="Webhook validate",
     description="Dry-run validation for webhook requests.",
     audit="webhook.validate",
+    plane=RoutePlane.EXTERNAL,
 )
 async def webhook_validate_handler(request: web.Request) -> web.Response:
     """

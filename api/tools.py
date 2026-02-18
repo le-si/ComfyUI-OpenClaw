@@ -20,9 +20,19 @@ except ImportError:
 
 # R98: Endpoint Metadata
 if __package__ and "." in __package__:
-    from ..services.endpoint_manifest import AuthTier, RiskTier, endpoint_metadata
+    from ..services.endpoint_manifest import (
+        AuthTier,
+        RiskTier,
+        RoutePlane,
+        endpoint_metadata,
+    )
 else:
-    from services.endpoint_manifest import AuthTier, RiskTier, endpoint_metadata
+    from services.endpoint_manifest import (
+        AuthTier,
+        RiskTier,
+        RoutePlane,
+        endpoint_metadata,
+    )
 
 logger = logging.getLogger("ComfyUI-OpenClaw.api.tools")
 
@@ -33,6 +43,7 @@ logger = logging.getLogger("ComfyUI-OpenClaw.api.tools")
     summary="List tools",
     description="List allowed external tools.",
     audit="tools.list",
+    plane=RoutePlane.ADMIN,
 )
 async def tools_list_handler(request: web.Request) -> web.Response:
     """
@@ -63,6 +74,7 @@ async def tools_list_handler(request: web.Request) -> web.Response:
     summary="Run tool",
     description="Execute an external tool.",
     audit="tools.run",
+    plane=RoutePlane.ADMIN,
 )
 async def tools_run_handler(request: web.Request) -> web.Response:
     """
