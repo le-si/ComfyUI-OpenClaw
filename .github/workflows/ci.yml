@@ -90,6 +90,26 @@ jobs:
         run: |
           python scripts/run_unittests.py --start-dir tests --pattern "test_*.py" --enforce-skip-policy tests/skip_policy.json
 
+  backend-e2e-real:
+    name: Backend E2E (real-backend lane, low-mock)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+      - name: Install test deps
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt
+          python -m pip install numpy pillow aiohttp
+      - name: Run real-backend lane
+        env:
+          MOLTBOT_STATE_DIR: ${{ github.workspace }}/moltbot_state/_ci_backend_e2e_real
+        run: |
+          # CRITICAL: this lane must stay low-mock and exercise real aiohttp request flow.
+          python scripts/run_unittests.py --module tests.test_r122_real_backend_lane --enforce-skip-policy tests/skip_policy.json --max-skipped 0
+
   contract-tests:
     name: Contract Tests (R52)
     strategy:

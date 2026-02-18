@@ -50,6 +50,8 @@ To avoid local vs CI mismatches:
     - `tests.test_s60_mae_route_segmentation`
     - `tests.test_s60_routes_startup_gate`
     - `tests.security.test_endpoint_drift`
+  - Real-backend low-mock lane must be no-skip in CI:
+    - `tests.test_r122_real_backend_lane`
 
 - **R112 (security triple-assert)**:
   - For security reject/degrade paths, tests should assert all three signals:
@@ -210,6 +212,12 @@ pre-commit run --all-files --show-diff-on-failure
 
 ```bash
 MOLTBOT_STATE_DIR="$(pwd)/moltbot_state/_local_unit" python scripts/run_unittests.py --start-dir tests --pattern "test_*.py" --enforce-skip-policy tests/skip_policy.json
+```
+
+1) Backend real E2E lane (low-mock; recommended CI parity spot-check)
+
+```bash
+MOLTBOT_STATE_DIR="$(pwd)/moltbot_state/_local_backend_e2e_real" python scripts/run_unittests.py --module tests.test_r122_real_backend_lane --enforce-skip-policy tests/skip_policy.json --max-skipped 0
 ```
 
 1) Frontend E2E (Playwright; CI enforces)
