@@ -81,6 +81,11 @@ if ! "$VENV_PY" -c "import aiohttp" >/dev/null 2>&1; then
   pip_install_or_fail "required by import paths used in unit tests" aiohttp
 fi
 
+if ! "$VENV_PY" -c "import cryptography" >/dev/null 2>&1; then
+  echo "[tests] Installing cryptography into project venv ($VENV_DIR) ..."
+  pip_install_or_fail "required for S57 secrets-at-rest encryption tests" cryptography
+fi
+
 NODE_MAJOR="$(node -p "process.versions.node.split('.')[0]")"
 if [ "$NODE_MAJOR" -lt 18 ]; then
   # Best-effort: try to use nvm if available

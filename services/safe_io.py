@@ -561,7 +561,9 @@ def safe_request_json(
         request.add_header("Content-Type", "application/json")
 
         # Add safe headers
-        ALLOWED_HEADER_PREFIXES = ("x-", "content-type")
+        # R106: external control-plane adapter requires Authorization header support.
+        # Keep this allowlist narrow to avoid leaking arbitrary caller headers.
+        ALLOWED_HEADER_PREFIXES = ("x-", "content-type", "authorization")
         if headers:
             for key, value in headers.items():
                 key_lower = key.lower()

@@ -71,6 +71,16 @@ async def tools_run_handler(request: web.Request) -> web.Response:
     Body: {"args": {"arg1": "val1", ...}}
     Requires: Admin Token.
     """
+    # S62: Block tool execution in public+split mode
+    try:
+        # CRITICAL: package-relative import must stay first in ComfyUI runtime.
+        from ..services.surface_guard import check_surface
+    except ImportError:
+        from services.surface_guard import check_surface  # type: ignore
+    blocked = check_surface("tool_execution", request)
+    if blocked:
+        return blocked
+
     if not is_tools_enabled():
         emit_audit_event(
             action="tools.run",

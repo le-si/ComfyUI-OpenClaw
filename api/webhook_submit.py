@@ -81,6 +81,16 @@ async def webhook_submit_handler(request: web.Request) -> web.Response:
     5. Render Template (F5)
     6. Submit to Queue (F5)
     """
+    # S62: Block webhook execution in public+split mode
+    try:
+        # CRITICAL: package-relative import must stay first in ComfyUI runtime.
+        from ..services.surface_guard import check_surface
+    except ImportError:
+        from services.surface_guard import check_surface  # type: ignore
+    blocked = check_surface("webhook_execute", request)
+    if blocked:
+        return blocked
+
     # S17: Rate Limit
     if not check_rate_limit(request, "webhook"):
         metrics.inc("webhook_denied")

@@ -172,6 +172,19 @@ class SecurityGate:
         except ImportError:
             warnings.append("Permission posture service failed to import")
 
+        # 6. Control-Plane Split Enforcement (S62)
+        try:
+            from .control_plane import enforce_control_plane_startup
+
+            cp_result = enforce_control_plane_startup()
+            if not cp_result.get("startup_passed", True):
+                for err in cp_result.get("errors", []):
+                    fatal_errors.append(f"S62 Control-Plane: {err}")
+            for w in cp_result.get("warnings", []):
+                warnings.append(f"S62 Control-Plane: {w}")
+        except ImportError:
+            warnings.append("S62 control_plane module failed to import")
+
         # In HARDENED mode, treat all warnings as FATAL
         if is_hardened_mode() and warnings:
             fatal_errors.extend(warnings)

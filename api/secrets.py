@@ -180,6 +180,16 @@ async def secrets_put_handler(request: web.Request) -> web.Response:
     - CSRF-protected (same-origin if no token)
     - Request body NEVER logged
     """
+    # S62: Block secrets write in public+split mode
+    try:
+        # CRITICAL: package-relative import must stay first in ComfyUI runtime.
+        from ..services.surface_guard import check_surface
+    except ImportError:
+        from services.surface_guard import check_surface  # type: ignore
+    blocked = check_surface("secrets_write", request)
+    if blocked:
+        return blocked
+
     # S26+: CSRF protection for convenience mode
     admin_token_configured = bool(get_admin_token())
     resp = require_same_origin_if_no_token(request, admin_token_configured)
@@ -306,6 +316,16 @@ async def secrets_delete_handler(request: web.Request) -> web.Response:
     - Rate-limited
     - CSRF-protected (same-origin if no token)
     """
+    # S62: Block secrets write in public+split mode
+    try:
+        # CRITICAL: package-relative import must stay first in ComfyUI runtime.
+        from ..services.surface_guard import check_surface
+    except ImportError:
+        from services.surface_guard import check_surface  # type: ignore
+    blocked = check_surface("secrets_write", request)
+    if blocked:
+        return blocked
+
     # S26+: CSRF protection for convenience mode
     admin_token_configured = bool(get_admin_token())
     resp = require_same_origin_if_no_token(request, admin_token_configured)

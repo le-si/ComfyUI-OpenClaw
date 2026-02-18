@@ -266,6 +266,21 @@ async def health_handler(request: web.Request) -> web.Response:
     except Exception:
         pass
 
+    # H3 (F55): Include control_plane info for frontend mode badge
+    cp_info = {}
+    runtime_prof = "minimal"
+    try:
+        try:
+            from ..services.capabilities import _get_control_plane_info
+            from ..services.runtime_profile import get_runtime_profile
+        except ImportError:
+            from services.capabilities import _get_control_plane_info
+            from services.runtime_profile import get_runtime_profile
+        cp_info = _get_control_plane_info()
+        runtime_prof = get_runtime_profile().value
+    except Exception:
+        pass
+
     return web.json_response(
         {
             "ok": True,
@@ -296,6 +311,9 @@ async def health_handler(request: web.Request) -> web.Response:
                 "observability": policy_mode,
                 "token_configured": token_configured,
             },
+            # H3 (F55): Control plane mode for frontend badge
+            "control_plane": cp_info,
+            "runtime_profile": runtime_prof,
         }
     )
 

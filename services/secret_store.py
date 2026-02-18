@@ -8,8 +8,10 @@ Security principles:
 - Never log secret values
 - Best-effort file permissions (0600 on POSIX)
 - Clear source tracking (env vs server_store)
+- S57: At-rest encryption via Fernet AEAD (secrets.enc.json)
+- Automatic migration from legacy plaintext secrets.json
 
-Storage location: {STATE_DIR}/secrets.json
+Storage location: {STATE_DIR}/secrets.enc.json
 """
 
 import json
@@ -27,15 +29,29 @@ except ImportError:
 
 logger = logging.getLogger("ComfyUI-OpenClaw.services.secret_store")
 
-# S25: Secret store filename
-SECRET_STORE_FILE = "secrets.json"
+# S57: Encrypted store filename (replaces legacy secrets.json)
+SECRET_STORE_FILE = "secrets.enc.json"
+LEGACY_STORE_FILE = "secrets.json"
+
+
+def _get_encryption_module():
+    """Lazy-load secrets_encryption to avoid circular imports."""
+    try:
+        from . import secrets_encryption
+
+        return secrets_encryption
+    except ImportError:
+        import secrets_encryption  # type: ignore
+
+        return secrets_encryption
 
 
 class SecretStore:
     """
-    Server-side secret storage with file-based persistence.
+    Server-side secret storage with encrypted file-based persistence.
 
     Thread-safe for read/write operations.
+    S57: All secrets are encrypted at rest using Fernet AEAD.
     """
 
     def __init__(self, state_dir: Optional[str] = None):
@@ -47,58 +63,102 @@ class SecretStore:
         """
         self._state_dir = Path(state_dir) if state_dir else Path(get_state_dir())
         self._store_path = self._state_dir / SECRET_STORE_FILE
+        self._legacy_path = self._state_dir / LEGACY_STORE_FILE
         self._secrets: Dict[str, str] = {}
         self._lock = threading.RLock()
+        self._encryption_key: Optional[bytes] = None
         self._load()
 
-    def _load(self) -> None:
-        """Load secrets from disk (best-effort)."""
-        with self._lock:
-            if not self._store_path.exists():
-                logger.debug(
-                    "S25: Secret store file not found (will be created on first write)"
-                )
-                return
+    def _get_key(self) -> bytes:
+        """Get or load the encryption key."""
+        if self._encryption_key is None:
+            enc = _get_encryption_module()
+            self._encryption_key = enc._load_or_create_key(self._state_dir)
+        return self._encryption_key
 
-            # Empty file check (crashed writes)
-            try:
-                if self._store_path.stat().st_size == 0:
-                    logger.warning(
-                        "S25: Secret store file empty (likely crashed write), treating as no secrets"
+    def _migrate_legacy(self) -> bool:
+        """Migrate legacy plaintext secrets.json to encrypted format."""
+        if not self._legacy_path.exists():
+            return False
+        if self._store_path.exists():
+            # Both exist — encrypted store takes precedence
+            return False
+
+        try:
+            with open(self._legacy_path, "r", encoding="utf-8") as f:
+                data = json.load(f)
+            if not isinstance(data, dict):
+                return False
+
+            self._secrets = data
+            self._save()
+
+            # Rename legacy file to prevent re-migration
+            backup_path = self._legacy_path.with_suffix(".json.bak")
+            self._legacy_path.rename(backup_path)
+            logger.info(
+                f"S57: Migrated {len(data)} secrets from plaintext to encrypted store "
+                f"(legacy file renamed to {backup_path.name})"
+            )
+            return True
+        except Exception as e:
+            logger.error(f"S57: Failed to migrate legacy secrets: {e}")
+            return False
+
+    def _load(self) -> None:
+        """Load secrets from disk (encrypted)."""
+        with self._lock:
+            # Try encrypted store first
+            if self._store_path.exists():
+                try:
+                    if self._store_path.stat().st_size == 0:
+                        logger.warning(
+                            "S57: Encrypted store file empty (likely crashed write)"
+                        )
+                        return
+
+                    with open(self._store_path, "r", encoding="utf-8") as f:
+                        envelope_data = json.load(f)
+
+                    # Decrypt the envelope
+                    enc = _get_encryption_module()
+                    envelope = enc.EncryptedEnvelope.from_dict(envelope_data)
+                    key = self._get_key()
+                    self._secrets = enc.decrypt_secrets(envelope, key)
+                    logger.info(
+                        f"S57: Loaded {len(self._secrets)} secrets from encrypted store"
                     )
                     return
-            except OSError:
+                except Exception as e:
+                    logger.error(f"S57: Failed to load encrypted store: {e}")
+                    return
+
+            # Try legacy migration
+            if self._migrate_legacy():
                 return
 
-            try:
-                with open(self._store_path, "r", encoding="utf-8") as f:
-                    data = json.load(f)
-                    if isinstance(data, dict):
-                        self._secrets = data
-                        # Never log secret values, only count
-                        logger.info(
-                            f"S25: Loaded {len(self._secrets)} secrets from store"
-                        )
-                    else:
-                        logger.warning(
-                            "S25: Invalid secret store format (expected dict)"
-                        )
-            except json.JSONDecodeError as e:
-                logger.error(f"S25: Failed to parse secret store: {e}")
-            except Exception as e:
-                logger.error(f"S25: Failed to load secret store: {e}")
+            # No store exists
+            logger.debug(
+                "S25: Secret store file not found (will be created on first write)"
+            )
 
     def _save(self) -> None:
-        """Save secrets to disk with best-effort permissions."""
+        """Save secrets to disk with encryption."""
         with self._lock:
             try:
                 # Ensure state dir exists
                 self._state_dir.mkdir(parents=True, exist_ok=True)
 
+                # Encrypt secrets
+                enc = _get_encryption_module()
+                key = self._get_key()
+                envelope = enc.encrypt_secrets(self._secrets, key)
+                envelope_dict = envelope.to_dict()
+
                 # Write atomically (temp file + rename)
                 temp_path = self._store_path.with_suffix(".tmp")
                 with open(temp_path, "w", encoding="utf-8") as f:
-                    json.dump(self._secrets, f, indent=2)
+                    json.dump(envelope_dict, f, indent=2)
 
                 # Best-effort file permissions (POSIX only)
                 try:
@@ -113,9 +173,9 @@ class SecretStore:
                 temp_path.replace(self._store_path)
 
                 # Never log secret values
-                logger.info(f"S25: Saved {len(self._secrets)} secrets to store")
+                logger.info(f"S57: Saved {len(self._secrets)} secrets (encrypted)")
             except Exception as e:
-                logger.error(f"S25: Failed to save secret store: {e}")
+                logger.error(f"S57: Failed to save encrypted store: {e}")
                 raise
 
     def get_secret(self, provider_id: str) -> Optional[str]:

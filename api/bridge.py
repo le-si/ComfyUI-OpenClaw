@@ -205,6 +205,16 @@ class BridgeHandlers:
         POST /bridge/submit
         Submit a job via sidecar bridge.
         """
+        # S62: Block webhook execution in public+split mode
+        try:
+            # CRITICAL: package-relative import must stay first in ComfyUI runtime.
+            from ..services.surface_guard import check_surface
+        except ImportError:
+            from services.surface_guard import check_surface  # type: ignore
+        blocked = check_surface("webhook_execute", request)
+        if blocked:
+            return blocked
+
         # Auth check
         is_valid, error_resp, device_id = require_bridge_auth(
             request, BridgeScope.JOB_SUBMIT
@@ -423,6 +433,16 @@ class BridgeHandlers:
         POST /bridge/deliver
         Request outbound delivery via sidecar.
         """
+        # S62: Block callback egress in public+split mode
+        try:
+            # CRITICAL: package-relative import must stay first in ComfyUI runtime.
+            from ..services.surface_guard import check_surface
+        except ImportError:
+            from services.surface_guard import check_surface  # type: ignore
+        blocked = check_surface("callback_egress", request)
+        if blocked:
+            return blocked
+
         # Auth check
         is_valid, error_resp, device_id = require_bridge_auth(
             request, BridgeScope.DELIVERY

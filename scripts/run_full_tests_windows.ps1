@@ -127,6 +127,16 @@ if (-not $hasCrypto) {
   Invoke-Checked "pip install pycryptodomex" { & $venvPython -m pip install pycryptodomex }
 }
 
+$hasCryptography = $true
+& $venvPython -c "import cryptography" | Out-Null
+if ($LASTEXITCODE -ne 0) {
+  $hasCryptography = $false
+}
+if (-not $hasCryptography) {
+  Write-Host "[tests] Installing cryptography into project venv (S57 Fernet AEAD) ..."
+  Invoke-Checked "pip install cryptography" { & $venvPython -m pip install cryptography }
+}
+
 # Ensure Node >= 18
 $nodeMajor = [int]((& node -p "process.versions.node.split('.')[0]").Trim())
 if ($nodeMajor -lt 18) {

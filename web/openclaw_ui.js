@@ -135,6 +135,31 @@ export class MoltbotUI {
                 if (data.pack) {
                     versionSpan.textContent = `v${data.pack.version}`;
                 }
+
+                // F55: Control plane mode indicator badge
+                const cpMode = data?.control_plane?.mode || data?.deployment_profile || "local";
+                const modeBadge = document.createElement("span");
+                modeBadge.className = `moltbot-mode-badge moltbot-mode-${cpMode}`;
+                modeBadge.textContent = cpMode.toUpperCase();
+                modeBadge.title = `Control plane: ${cpMode}`;
+                // Style inline for immediate visibility
+                modeBadge.style.cssText = `
+                    font-size: 10px; padding: 1px 6px; border-radius: 4px;
+                    font-weight: 600; margin-left: 6px; letter-spacing: 0.5px;
+                `;
+                if (cpMode === "split") {
+                    modeBadge.style.background = "#f59e0b";
+                    modeBadge.style.color = "#1a1a2e";
+                } else if (cpMode === "hardened") {
+                    modeBadge.style.background = "#ef4444";
+                    modeBadge.style.color = "#fff";
+                } else {
+                    modeBadge.style.background = "#22c55e";
+                    modeBadge.style.color = "#1a1a2e";
+                }
+                badges.appendChild(modeBadge);
+                this._controlPlaneMode = cpMode;
+
                 // S15: Check exposure
                 this.checkExposure(data?.access_policy);
 
@@ -142,7 +167,6 @@ export class MoltbotUI {
                 const obs = data.stats?.observability;
                 if (obs && obs.total_dropped > 0) {
                     const dropCount = obs.total_dropped;
-                    // Only warn if significant relative to capacity or distinct threshold
                     this.showBanner("warning", `\u26A0\uFE0F High load: ${dropCount} observability events dropped (Queue full). logs/traces might be incomplete.`);
                 }
             } else {
@@ -532,10 +556,43 @@ export class MoltbotActions {
 
     /**
      * Check if an action is allowed/mutating.
+     * F55: Enhanced with split-mode blocking UX.
      */
     _checkAction(actionName) {
-        if (!this.capabilities || !this.capabilities.actions) return { enabled: true, mutating: false }; // fallback safe
-        return this.capabilities.actions[actionName] || { enabled: false, mutating: false };
+        if (!this.capabilities || !this.capabilities.actions) return { enabled: true, mutating: false };
+        const cap = this.capabilities.actions[actionName] || { enabled: false, mutating: false };
+
+        // F55: If blocked in split mode, show remediation toast
+        if (!cap.enabled && cap.blocked_reason) {
+            this._showBlockedToast(actionName, cap.blocked_reason);
+        }
+        return cap;
+    }
+
+    /**
+     * F55: Show a toast notification when an action is blocked by surface guard.
+     */
+    _showBlockedToast(actionName, reason) {
+        const toast = document.createElement("div");
+        toast.className = "moltbot-blocked-toast";
+        toast.style.cssText = `
+            position: fixed; bottom: 20px; right: 20px; z-index: 99999;
+            background: #1e1e2e; border: 1px solid #f59e0b;
+            border-radius: 8px; padding: 12px 16px; max-width: 380px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.4);
+            font-family: 'Inter', sans-serif; font-size: 13px;
+            color: #e0e0e0; animation: slideIn 0.3s ease;
+        `;
+        toast.innerHTML = `
+            <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;">
+                <span style="font-size:16px;">?›¡ï¸?/span>
+                <strong style="color:#f59e0b;">Action Blocked - Split Mode</strong>
+            </div>
+            <div style="margin-bottom:4px;"><code>${actionName}</code> is not available in the current deployment mode.</div>
+            <div style="font-size:11px;color:#999;">${reason || "Use the external control plane for this operation."}</div>
+        `;
+        document.body.appendChild(toast);
+        setTimeout(() => toast.remove(), 6000);
     }
 
     async _runGuarded(actionName, fn) {
