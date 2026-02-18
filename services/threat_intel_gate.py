@@ -1,4 +1,3 @@
-
 """
 S43 — Threat-Intel Gate v1.
 
@@ -12,24 +11,27 @@ Policy Modes:
 """
 
 import enum
+import hashlib
 import logging
 import os
-import hashlib
 from dataclasses import dataclass
-from typing import Optional, Tuple, Dict, Any
+from typing import Any, Dict, Optional, Tuple
 
 logger = logging.getLogger("ComfyUI-OpenClaw.services.threat_intel_gate")
+
 
 class ThreatPolicy(enum.Enum):
     OFF = "off"
     AUDIT = "audit"
     STRICT = "strict"
 
+
 class ScanVerdict(enum.Enum):
     CLEAN = "clean"
     MALICIOUS = "malicious"
     UNKNOWN = "unknown"
-    ERROR = "error" # Provider unreachable
+    ERROR = "error"  # Provider unreachable
+
 
 @dataclass
 class ScanResult:
@@ -38,16 +40,17 @@ class ScanResult:
     provider: str = "none"
     score: float = 0.0
 
+
 class ThreatIntelGate:
     """
     Gate for evaluating files against threat policy.
     """
-    
+
     def __init__(self):
         self._policy = self._load_policy()
         # R89: Provider integration will be injected or loaded here.
         # For S43 baseline, we assume a "provider interface".
-        self._provider = None 
+        self._provider = None
 
     def _load_policy(self) -> ThreatPolicy:
         val = os.environ.get("OPENCLAW_THREAT_POLICY", "off").lower()
@@ -81,8 +84,8 @@ class ThreatIntelGate:
 
         if not os.path.exists(file_path):
             logger.warning(f"S43: File not found for scan: {file_path}")
-            # If Strict, strict missing file handling? 
-            # Usually if file is missing, we can't scan, so maybe allow? 
+            # If Strict, strict missing file handling?
+            # Usually if file is missing, we can't scan, so maybe allow?
             # Or if it's "check this upload", and it's missing, fail.
             # Assuming caller ensures existence. If not, fail safe.
             if self._policy == ThreatPolicy.STRICT:
@@ -90,22 +93,24 @@ class ThreatIntelGate:
             return True
 
         file_hash = self._compute_hash(file_path)
-        
+
         # 1. Hash Lookup (Optimization / Privacy)
         result = self._scan_hash(file_hash)
-        
+
         # 2. Upload (Opt-In / Fallback)
-        # R89 will implement resilience/upload logic. 
+        # R89 will implement resilience/upload logic.
         # S43 Gate just consumes the verdict.
-        
+
         # Decision Logic
         allowed, reason = self._apply_policy(result)
-        
+
         if not allowed:
             logger.warning(f"S43: BLOCKED {context} [{file_hash[:8]}] Reason: {reason}")
             return False
-            
-        logger.info(f"S43: ALLOWED {context} [{file_hash[:8]}] Verdict: {result.verdict.value}")
+
+        logger.info(
+            f"S43: ALLOWED {context} [{file_hash[:8]}] Verdict: {result.verdict.value}"
+        )
         return True
 
     def _scan_hash(self, file_hash: str) -> ScanResult:
@@ -115,7 +120,7 @@ class ThreatIntelGate:
             # STRICT -> Fail-Closed (Error)
             # AUDIT -> Log Error, return Unknown
             return ScanResult(ScanVerdict.ERROR, "No provider configured")
-            
+
         try:
             return self._provider.check_hash(file_hash)
         except Exception as e:
@@ -137,7 +142,9 @@ class ThreatIntelGate:
             if self._policy == ThreatPolicy.STRICT:
                 return False, f"Malicious content detected ({result.provider})"
             # AUDIT: Log but allow
-            logger.warning(f"S43: AUDIT - Malicious content detected but allowed by policy.")
+            logger.warning(
+                f"S43: AUDIT - Malicious content detected but allowed by policy."
+            )
             return True, "Audit Mode (Malicious)"
 
         if result.verdict == ScanVerdict.UNKNOWN:
@@ -154,8 +161,11 @@ class ThreatIntelGate:
 
         return True, "Default Allow"
 
+
 # Singleton
 _gate = None
+
+
 def get_gate() -> ThreatIntelGate:
     global _gate
     if _gate is None:

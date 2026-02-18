@@ -16,28 +16,41 @@ This project is intentionally **not** a general-purpose assistant platform with 
 
 **Security stance (how this project differs from convenience-first automation packs):**
 
-- Localhost-first defaults; remote access is opt-in
 - Control Plane Split is enforced for public posture: high-risk control surfaces are externalized while embedded UI stays on safe UX/read paths
+- Profile-driven startup hardening with fail-closed enforcement in hardened mode
+- Localhost-first defaults; remote access is opt-in
 - Explicit **Admin Token** boundary for write actions
 - Webhooks are **deny-by-default** until auth is configured
-- Profile-driven startup hardening with fail-closed enforcement in hardened mode
-- Startup module capability gates (disabled modules do not register routes/workers)
 - Encrypted webhook mode is **fail-closed** (invalid signature/decrypt/app-id checks are rejected)
-- Endpoint inventory metadata and route drift tests to catch unclassified API exposure regressions
-- Tamper-evident, append-only audit trails for sensitive write/admin paths
 - Strict outbound SSRF policy (callbacks + custom LLM base URLs)
 - Bridge worker endpoints enforce device-token auth, scope checks, and idempotency handling
-- Replay risk is reduced with deterministic dedupe keys for event payloads without message IDs
+- Startup module capability gates (disabled modules do not register routes/workers)
+- Endpoint inventory metadata and route drift tests to catch unclassified API exposure regressions
+- Tamper-evident, append-only audit trails for sensitive write/admin paths
 - Hardened external tool sandbox posture with fail-closed checks and filesystem path guards
 - Pack lifecycle file paths and pack API inputs are validated and root-bounded to prevent path traversal
+- Replay risk is reduced with deterministic dedupe keys for event payloads without message IDs
+- Wave E closeout hardening: deployment profile gates and critical flow parity are now enforced together with signed policy posture control, bounded anomaly telemetry, adversarial fuzz validation, and mutation-baseline regression sensitivity checks
+- Wave A/B/C closeout hardening: runtime/config/session stability contracts, strict outbound and supply-chain controls, and capability-aware operator guidance with bounded Parameter Lab/compare workflows
 - Secrets are never stored in browser storage (optional server-side key store is local-only convenience)
 - Cryptography dependency is optional and only required when encrypted webhook mode is enabled
-- Wave A/B/C closeout hardening: runtime/config/session stability contracts, strict outbound and supply-chain controls, and capability-aware operator guidance with bounded Parameter Lab/compare workflows
 
 Deployment profiles and hardening checklists:
 - [Security Deployment Guide](docs/security_deployment_guide.md) (local / LAN / public templates + self-check command)
 
 ## Latest Updates - Click to expand
+
+<details>
+
+<summary><strong>Wave E closeout: deployment guardrails, contract parity, and verification hardening chain completed</strong></summary>
+
+- Completed Wave E on 2026-02-18 with full SOP validation:
+  - Bundle A delivered startup deployment gate enforcement and deployment-profile matrix parity, then locked critical operator flow parity (including degraded-path behavior)
+  - Bundle B closed security contract parity gaps across token/mapping/route/signature state matrices and threat-intel resilience paths
+  - Bundle C completed signed policy posture control, bounded security anomaly telemetry, deterministic adversarial fuzz harness coverage, and mutation-baseline evidence generation
+  - full detect-secrets + pre-commit + backend unit + frontend E2E gate passed and evidence is recorded in the Bundle C implementation record
+
+</details>
 
 <details>
 

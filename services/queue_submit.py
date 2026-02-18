@@ -136,6 +136,16 @@ async def submit_prompt(
                 async with session.post(url, json=payload) as resp:
                     if resp.status == 200:
                         data = await resp.json()
+
+                        # R102 Hook
+                        try:
+                            q_size = data.get("number", 0)
+                            from .security_telemetry import get_security_telemetry
+
+                            get_security_telemetry().record_queue_saturation(q_size)
+                        except:
+                            pass
+
                         logger.info(
                             f"Queued prompt: {data.get('prompt_id')} (source={source}, trace_id={trace_id})"
                         )

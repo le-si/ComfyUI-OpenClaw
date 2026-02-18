@@ -251,6 +251,15 @@ def enforce_control_plane_startup() -> Dict:
             logger.warning(
                 "S62: Running public+embedded with compat override (DEV ONLY)."
             )
+            # R102 Hook
+            try:
+                from .security_telemetry import get_security_telemetry
+
+                get_security_telemetry().record_dangerous_override(
+                    "SPLIT_COMPAT_OVERRIDE", "system_env"
+                )
+            except ImportError:
+                pass
 
     else:
         # local/lan: always pass

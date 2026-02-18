@@ -264,6 +264,13 @@ def verify_tier_access(request, required_tier: AuthTier) -> Tuple[bool, Optional
         if is_loopback(remote):
             return True, None
 
+        # R102 Hook
+        try:
+            from .security_telemetry import get_security_telemetry
+
+            get_security_telemetry().record_auth_failure(remote)
+        except ImportError:
+            pass
         return False, "Internal (Loopback) access required."
 
     # Admin is allowed everything else
@@ -272,6 +279,14 @@ def verify_tier_access(request, required_tier: AuthTier) -> Tuple[bool, Optional
 
     if required_tier == AuthTier.ADMIN:
         # Admin required. Current is not Admin (checked above).
+        # R102 Hook
+        try:
+            from .security_telemetry import get_security_telemetry
+
+            remote = get_client_ip(request)
+            get_security_telemetry().record_auth_failure(remote)
+        except ImportError:
+            pass
         return False, "Admin access required."
 
     if required_tier == AuthTier.OBSERVABILITY:
@@ -287,8 +302,24 @@ def verify_tier_access(request, required_tier: AuthTier) -> Tuple[bool, Optional
         if current_tier == AuthTier.INTERNAL:
             return True, None
 
+        # R102 Hook
+        try:
+            from .security_telemetry import get_security_telemetry
+
+            remote = get_client_ip(request)
+            get_security_telemetry().record_auth_failure(remote)
+        except ImportError:
+            pass
         return False, "Observability access required."
 
+    # R102 Hook for generic failure
+    try:
+        from .security_telemetry import get_security_telemetry
+
+        remote = get_client_ip(request)
+        get_security_telemetry().record_auth_failure(remote)
+    except ImportError:
+        pass
     return False, f"Access denied. Required: {required_tier}, Current: {current_tier}"
 
 

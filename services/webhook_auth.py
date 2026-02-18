@@ -194,6 +194,15 @@ def verify_hmac(request: RequestLike, raw_body: bytes) -> Tuple[bool, str]:
 
         now = int(time.time())
         if abs(now - ts) > 300:
+            # R102 Hook
+            try:
+                from .security_telemetry import get_security_telemetry
+
+                get_security_telemetry().record_replay_rejection(
+                    "timestamp_out_of_range"
+                )
+            except ImportError:
+                pass
             return False, "timestamp_out_of_range"
 
         # Check nonce uniqueness
