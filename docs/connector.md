@@ -26,6 +26,7 @@ The connector runs alongside ComfyUI on your machine.
 - **WhatsApp**: Webhook (requires inbound HTTPS).
 - **WeChat Official Account**: Webhook (requires inbound HTTPS).
 - **KakaoTalk (Kakao i Open Builder)**: Webhook (requires inbound HTTPS).
+- **Slack (Events API)**: Webhook (requires inbound HTTPS).
 
 ## Setup
 
@@ -109,6 +110,20 @@ Set the following environment variables (or put them in a `.env` file if you use
 - `OPENCLAW_CONNECTOR_KAKAO_PORT`: Port (default `8096`).
 - `OPENCLAW_CONNECTOR_KAKAO_PATH`: Webhook path (default `/kakao/webhook`).
 
+**Slack (Events API):**
+
+*(Requires Inbound Connectivity - see below)*
+
+- `OPENCLAW_CONNECTOR_SLACK_BOT_TOKEN`: Bot User OAuth Token (`xoxb-...`).
+- `OPENCLAW_CONNECTOR_SLACK_SIGNING_SECRET`: Signing Secret (from App Credentials).
+- `OPENCLAW_CONNECTOR_SLACK_ALLOWED_USERS`: Comma-separated user IDs (e.g. `U12345, U67890`).
+- `OPENCLAW_CONNECTOR_SLACK_ALLOWED_CHANNELS`: Comma-separated channel IDs (e.g. `C12345`).
+- `OPENCLAW_CONNECTOR_SLACK_BIND`: Host to bind (default `127.0.0.1`).
+- `OPENCLAW_CONNECTOR_SLACK_PORT`: Port (default `8095`).
+- `OPENCLAW_CONNECTOR_SLACK_PATH`: Webhook path (default `/slack/events`).
+- `OPENCLAW_CONNECTOR_SLACK_REQUIRE_MENTION`: `true` (default) to require `@Bot` mention in public channels.
+- `OPENCLAW_CONNECTOR_SLACK_REPLY_IN_THREAD`: `true` (default) to reply in threads.
+
 **Image Delivery:**
 
 - `OPENCLAW_CONNECTOR_PUBLIC_BASE_URL`: Public HTTPS URL of your connector (e.g. `https://your-tunnel.example.com`). Required for sending images.
@@ -121,6 +136,7 @@ Set the following environment variables (or put them in a `.env` file if you use
 > LINE and WhatsApp also **require** `public_base_url` to be HTTPS.
 > WeChat currently supports text-first control. Image/media upload delivery is not implemented in phase 1.
 > Kakao currently supports text-first control and quick replies. Rich media delivery is not enabled in the default Kakao webhook flow.
+> Slack supports text responses and image uploads (via `files.upload` API).
 
 ### Command authorization policy
 
@@ -307,6 +323,43 @@ Kakao i Open Builder sends webhook requests to your connector Skill endpoint. Yo
   - `userRequest.utterance` -> command text
 - Response format follows Kakao SkillResponse v2.0 with text-first output and optional quick replies.
 - If `aiohttp` is missing, the adapter is skipped at startup.
+
+#### Slack Webhook Setup (Detailed)
+
+Slack Events API pushes JSON payloads to your connector. You must expose the endpoint publicly over HTTPS.
+
+1. **Create Slack App**:
+   - Go to [api.slack.com/apps](https://api.slack.com/apps).
+   - Create a new app (from scratch).
+   - Copy **Signing Secret** from Basic Information.
+
+2. **Configure Connector**:
+
+   ```bash
+   OPENCLAW_CONNECTOR_SLACK_BOT_TOKEN=xoxb-your-token
+   OPENCLAW_CONNECTOR_SLACK_SIGNING_SECRET=your-signing-secret
+   OPENCLAW_CONNECTOR_SLACK_ALLOWED_USERS=U12345
+   ```
+
+   Start the connector (`python -m connector`). Expose it via tunnel (e.g. Cloudflare) to `https://<public-host>/slack/events`.
+
+3. **Enable Events**:
+   - In **Event Subscriptions**:
+     - Enable Events.
+     - Set Request URL to `https://<public-host>/slack/events`.
+     - Slack will send a `url_verification` challenge; the connector handles this automatically. Verify connection.
+     - Subscribe to bot events: `message.channels`, `message.groups`, `message.im`, `app_mention`.
+
+4. **OAuth & Permissions**:
+   - In **OAuth & Permissions**:
+     - Add Scopes: `chat:write`, `files:write`, `channels:history` (if public), `groups:history` (if private), `im:history` (for DMs), `app_mentions:read`.
+     - Install App to Workspace.
+     - Copy **Bot User OAuth Token** (`xoxb-...`).
+
+5. **Test**:
+   - Invite bot to a channel: `/invite @BotName`.
+   - Mention bot: `@BotName /status`.
+   - DM bot: `/help`.
 
 ## Commands
 

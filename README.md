@@ -44,13 +44,15 @@ Deployment profiles and hardening checklists:
 - [Security Deployment Guide](docs/security_deployment_guide.md) (local / LAN / public templates + self-check command)
 - [Security Key/Token Lifecycle SOP](docs/security_key_lifecycle_sop.md) (trust-root, secrets key, and bridge token rotation/revocation/disaster recovery)
 
-## Latest Updates - Click to expand
+
+
+<details><summary><h2>Latest Updates - Click to expand</h2></summary>
 
 <details>
 
 <summary><strong>Post-Wave E closeout: Hardening chain completed</strong></summary>
 
-- Completed on 2026-02-19 with full SOP validation:
+- Completed on 2026-02 with full SOP validation:
   - Bundle A: established security invariants registry and startup/CI invariant gates, plus route-plane explicit-classification governance to prevent unmanaged endpoint exposure drift
   - Bundle B: converged outbound egress to a single safe path and added CI/local dependency parity preflight to prevent local-pass/CI-fail runtime drift
   - Bundle C: added adversarial verification execution gates (bounded fuzz + mutation smoke with artifacts) and dual-lane retry partition hardening for deterministic degrade/audit behavior
@@ -62,7 +64,7 @@ Deployment profiles and hardening checklists:
 
 <summary><strong>Wave E closeout: deployment guardrails, contract parity, and verification hardening chain completed</strong></summary>
 
-- Completed Wave E on 2026-02-18 with full SOP validation:
+- Completed Wave E with full SOP validation:
   - Bundle A delivered startup deployment gate enforcement and deployment-profile matrix parity, then locked critical operator flow parity (including degraded-path behavior)
   - Bundle B closed security contract parity gaps across token/mapping/route/signature state matrices and threat-intel resilience paths
   - Bundle C completed signed policy posture control, bounded security anomaly telemetry, deterministic adversarial fuzz harness coverage, and mutation-baseline evidence generation
@@ -74,7 +76,7 @@ Deployment profiles and hardening checklists:
 
 <summary><strong>Wave D closeout: control-plane split, ingress and supply-chain hardening, and verification governance baseline</strong></summary>
 
-- Completed Wave D closeout on 2026-02-18 with full SOP validation:
+- Completed Wave D closeout full SOP validation:
   - enforced split-mode control-plane boundaries for public deployments while preserving embedded daily UX flows
   - finalized external control-plane adapter reliability behavior and split-mode degraded/blocked-action guidance
   - completed secrets-at-rest hardening v2 with split-compatible secret-reference behavior
@@ -261,7 +263,7 @@ Deployment profiles and hardening checklists:
 </details>
 
 <details>
-<summary><strong>Security doctor, registry quarantine, and constrained transforms</strong></summary>
+<summary><strong> Security doctor, registry quarantine, and constrained transforms</strong></summary>
 
 - Added Security Doctor diagnostics surface (`GET /openclaw/security/doctor`) for operator-focused security posture checks and guarded remediation flow.
 - Added optional remote registry quarantine lifecycle controls with integrity verification, bounded local persistence, and explicit trust/audit gates.
@@ -269,7 +271,7 @@ Deployment profiles and hardening checklists:
 
 </details>
 
----
+</details>
 
 ## Table of Contents
 
@@ -340,7 +342,7 @@ Notes:
   - This writes to the server-side secret store (`{STATE_DIR}/secrets.json`).
   - Environment variables always take priority over stored keys.
 
-### 2) Configure webhook auth (required for `/webhook*`)
+### 2 Configure webhook auth (required for `/webhook*`)
 
 Webhooks are **deny-by-default** unless auth is configured:
 
@@ -349,7 +351,7 @@ Webhooks are **deny-by-default** unless auth is configured:
 - or `OPENCLAW_WEBHOOK_AUTH_MODE=bearer_or_hmac` to accept either
 - optional replay protection: `OPENCLAW_WEBHOOK_REQUIRE_REPLAY_PROTECTION=1`
 
-### 3) Optional (recommended): set an Admin Token
+### 3 Optional (recommended): set an Admin Token
 
 Admin/write actions (save config, `/llm/test`, key store) are protected by the **Admin Token**:
 

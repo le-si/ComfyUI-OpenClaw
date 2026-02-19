@@ -30,7 +30,7 @@ Before using OpenClaw in any internet-facing setup, you must explicitly accept:
 |---|---|---|
 | `local` | single operator on same machine | no remote admin, no proxy trust, high-risk features disabled unless explicitly needed |
 | `lan` | trusted private network | admin + observability token, webhook auth + replay protection, remote admin opt-in, risky features off |
-| `public` | internet-facing reverse proxy | strict token boundaries, trusted proxy config, remote admin off, risky features off, webhook auth fail-closed |
+| `public` | internet-facing reverse proxy | strict token boundaries, trusted proxy config, remote admin off, control-plane split required, risky features off, webhook auth fail-closed |
 
 ## 2. Self-check Command
 
@@ -130,6 +130,12 @@ OPENCLAW_OBSERVABILITY_TOKEN=change-this-obs-token
 # Public baseline: do not expose remote admin directly
 OPENCLAW_ALLOW_REMOTE_ADMIN=0
 
+# Public baseline: enforce split control plane (S62/R106)
+OPENCLAW_CONTROL_PLANE_MODE=split
+OPENCLAW_CONTROL_PLANE_URL=https://control-plane.internal
+OPENCLAW_CONTROL_PLANE_TOKEN=change-this-control-plane-token
+OPENCLAW_CONTROL_PLANE_TIMEOUT=10
+
 # Trust only known reverse proxy addresses
 OPENCLAW_TRUST_X_FORWARDED_FOR=1
 OPENCLAW_TRUSTED_PROXIES=127.0.0.1,10.0.0.0/8
@@ -155,13 +161,15 @@ OPENCLAW_SECURITY_DANGEROUS_BIND_OVERRIDE=0
 
 1. Never expose raw ComfyUI port directly to the internet.
 2. Enforce authentication at reverse proxy and application layers.
-3. Split user plane and admin plane if possible.
+3. Enforce split control plane in public posture (`OPENCLAW_CONTROL_PLANE_MODE=split` + external URL/TOKEN).
 4. Keep risky features disabled on public user-facing plane.
-5. Run:
-   - `python scripts/check_deployment_profile.py --profile public`
-6. Validate with project test and release gates before rollout:
-   - `tests/TEST_SOP.md`
-   - `RELEASE_CHECKLIST.md`
+5. Verify split posture from capabilities:
+   - `GET /openclaw/capabilities` and confirm `control_plane.mode=split`
+6. Run:
+    - `python scripts/check_deployment_profile.py --profile public`
+7. Validate with project test and release gates before rollout:
+    - `tests/TEST_SOP.md`
+    - `RELEASE_CHECKLIST.md`
 
 ## 6. Bridge in Public Profile (only when absolutely required)
 
@@ -187,9 +195,11 @@ The check fails if bridge is enabled without the mTLS/device-binding bundle.
 
 1. Do not use localhost convenience mode for shared/LAN/public deployments.
 2. Do not enable `OPENCLAW_SECURITY_DANGEROUS_BIND_OVERRIDE` in production.
-3. Do not enable external tools/registry sync/transforms on public user-facing plane by default.
-4. Do not use wildcard-like trust posture for callback destinations.
-5. Do not treat this as a "set and forget" deployment; re-run profile checks after every config change.
+3. Do not enable `OPENCLAW_SECURITY_DANGEROUS_PROFILE_OVERRIDE` in production.
+4. Do not enable `OPENCLAW_SPLIT_COMPAT_OVERRIDE` in production.
+5. Do not enable external tools/registry sync/transforms on public user-facing plane by default.
+6. Do not use wildcard-like trust posture for callback destinations.
+7. Do not treat this as a "set and forget" deployment; re-run profile checks after every config change.
 
 ## 8. Mechanical Gate Integration (Startup + CI)
 
@@ -202,6 +212,7 @@ python scripts/check_deployment_profile.py --profile "${OPENCLAW_DEPLOYMENT_PROF
 ```
 
 If the command exits non-zero, startup should fail closed.
+This validates deployment-profile posture (S56 baseline), but does not replace split-prerequisite checks.
 
 ### 8.2 CI gate command
 
@@ -214,6 +225,15 @@ python scripts/check_deployment_profile.py --profile public --strict-warnings
 ```
 
 Pair this with `tests/TEST_SOP.md` so deployment posture checks are validated alongside unit/E2E regressions.
+
+### 8.3 Public split verification (S62)
+
+For public deployments, also verify control-plane split prerequisites and active mode:
+
+1. Confirm startup has no S62 fatal errors (missing `OPENCLAW_CONTROL_PLANE_URL` / `OPENCLAW_CONTROL_PLANE_TOKEN`).
+2. Confirm runtime capability view reports split mode:
+   - `GET /openclaw/capabilities`
+   - `control_plane.mode` must be `split`
 
 ## 9. Public MAE Hard Guarantee
 
@@ -233,5 +253,7 @@ Do not remove these suites from CI or skip-policy protection.
 Operational procedures for rotation/revocation/disaster recovery are documented in:
 
 - `docs/security_key_lifecycle_sop.md`
+
+Coverage includes trust-root/signer revocation, secrets-at-rest key lifecycle, and bridge token rotation.
 
 This runbook is required for long-running public deployments and incident response readiness.

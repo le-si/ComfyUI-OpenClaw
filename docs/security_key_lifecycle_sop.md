@@ -10,7 +10,7 @@ Use this runbook for routine rotation, emergency revocation, and disaster recove
 
 ## 1. State Artifacts
 
-All paths are relative to `OPENCLAW_STATE_DIR`:
+All paths are relative to `OPENCLAW_STATE_DIR` (legacy fallback: `MOLTBOT_STATE_DIR`):
 
 | Material | File(s) | Purpose |
 | --- | --- | --- |
@@ -79,7 +79,7 @@ PY
 3. Generate a new key and re-encrypt the same secret payload.
 4. Restart service and verify secret reads.
 
-Reference script (run in maintenance window):
+Reference script (run in maintenance window; requires `cryptography` installed):
 
 ```bash
 python - <<'PY'

@@ -33,10 +33,10 @@ Set these Environment Variables:
 
 ```ini
 # Require a token for admin actions (Stop/Approve)
-OPENCLAW_CONNECTOR_ADMIN_TOKEN=your-strong-secret-token
+OPENCLAW_ADMIN_TOKEN=your-strong-secret-token
 
 # Require a token for Logs/Config viewing
-MOLTBOT_OBSERVABILITY_TOKEN=observability-secret
+OPENCLAW_OBSERVABILITY_TOKEN=observability-secret
 ```
 
 ### 3. Firewall Rules (Host)
@@ -67,4 +67,4 @@ sudo ufw allow from 192.168.1.0/24 to any port 8188
 1. Find your host IP (e.g., `192.168.1.10`).
 2. From another device on WiFi, visit `http://192.168.1.10:8188`.
 3. Open OpenClaw Settings.
-4. Try to view logs. It should challenge you for the `MOLTBOT_OBSERVABILITY_TOKEN` or deny access.
+4. Try to view logs. It should challenge you for the `OPENCLAW_OBSERVABILITY_TOKEN` or deny access.

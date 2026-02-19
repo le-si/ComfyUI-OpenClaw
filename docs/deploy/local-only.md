@@ -32,7 +32,7 @@ To see the GUI go to: http://127.0.0.1:8188
 
 No special configuration is required.
 
-- **Admin Token**: Not required for loopback-only operations (unless `OPENCLAW_CONNECTOR_ADMIN_TOKEN` is explicitly set).
+- **Admin Token**: Not required for loopback-only operations (unless `OPENCLAW_ADMIN_TOKEN` is explicitly set).
 - **Webhooks**: Disabled by default.
 - **Local LLM (optional)**:
   - Ollama: `http://127.0.0.1:11434`

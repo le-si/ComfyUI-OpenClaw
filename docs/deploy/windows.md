@@ -11,8 +11,8 @@ To set OpenClaw security tokens in the portable version, edit your `run_nvidia_g
 ```bat
 @echo off
 :: Security Tokens
-set OPENCLAW_CONNECTOR_ADMIN_TOKEN=my-secret-token
-set MOLTBOT_OBSERVABILITY_TOKEN=observability-token
+set OPENCLAW_ADMIN_TOKEN=my-secret-token
+set OPENCLAW_OBSERVABILITY_TOKEN=observability-token
 
 :: Run ComfyUI
 .\python_embeded\python.exe -s ComfyUI\main.py --windows-standalone-build
@@ -22,7 +22,7 @@ pause
 ### PowerShell
 
 ```powershell
-$env:OPENCLAW_CONNECTOR_ADMIN_TOKEN="my-secret-token"
+$env:OPENCLAW_ADMIN_TOKEN="my-secret-token"
 ./python_embeded/python.exe -s ComfyUI/main.py
 ```
 

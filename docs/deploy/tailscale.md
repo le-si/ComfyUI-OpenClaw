@@ -44,8 +44,8 @@ Now you can access ComfyUI from any device on your Tailnet.
 Since traffic comes via Tailscale, it might appear as "remote" or "proxy" traffic depending on configuration.
 To be safe:
 
-1. Set `OPENCLAW_CONNECTOR_ADMIN_TOKEN` to a strong secret.
-2. Enforce `MOLTBOT_OBSERVABILITY_TOKEN` if you plan to view logs remotely.
+1. Set `OPENCLAW_ADMIN_TOKEN` to a strong secret.
+2. Enforce `OPENCLAW_OBSERVABILITY_TOKEN` if you plan to view logs remotely.
 
 ### 4. "Red Lines"
 

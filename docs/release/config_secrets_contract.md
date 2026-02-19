@@ -1,8 +1,8 @@
 # OpenClaw Config & Secrets Contract (v1)
 
 > **Status**: normative
-> **Version**: 1.0.0
-> **Date**: 2026-02-09
+> **Version**: 1.0.1
+> **Date**: 2026-02-19
 
 This document defines the authoritative configuration contract for OpenClaw. It enumerates all supported environment variables, their precedence rules, and security classifications.
 
@@ -29,7 +29,7 @@ Controls the core LLM client used by nodes (Planner, Refiner, etc.).
 | `OPENCLAW_LLM_MODEL` | No | Provider default | Specific model ID (e.g., `gpt-4o`, `claude-3-5-sonnet`). |
 | `OPENCLAW_LLM_API_KEY` | **Yes*** | - | API Key for the configured provider. <br>*(Required unless using local provider or provider-specific key)* |
 | `OPENCLAW_LLM_BASE_URL` | No | Provider default | Override base URL (crucial for local/compatible providers). |
-| `OPENCLAW_LLM_TIMEOUT_SEC`| No | `120` | Request timeout in seconds. |
+| `OPENCLAW_LLM_TIMEOUT`| No | `120` | Request timeout in seconds. |
 
 **SSRF Protection:**
 
@@ -49,12 +49,15 @@ Controls access to APIs and administrative features.
 
 | Variable | Sensitivity | Description |
 | :--- | :--- | :--- |
-| `OPENCLAW_ADMIN_TOKEN` | **Critical** | Bearer token for Admin Write actions (Config, Presets, Schedules). <br>*If unset, Admin actions are restricted to structure Localhost.* |
+| `OPENCLAW_ADMIN_TOKEN` | **Critical** | Bearer token for Admin Write actions (Config, Presets, Schedules). <br>*If unset, admin writes are loopback-only with strict checks.* |
 | `OPENCLAW_OBSERVABILITY_TOKEN` | **High** | Token for Read-Only observability (Logs, Traces, Health). <br>*If unset, Remote observability is denied.* |
-| `OPENCLAW_WEBHOOK_SECRET` | **High** | Secret for signing/verifying inbound webhook payloads. |
+| `OPENCLAW_WEBHOOK_AUTH_MODE` | **High** | Webhook auth mode (`bearer`, `hmac`, `bearer_or_hmac`). |
+| `OPENCLAW_WEBHOOK_BEARER_TOKEN` | **High** | Bearer secret for inbound webhook auth when bearer mode is enabled. |
+| `OPENCLAW_WEBHOOK_HMAC_SECRET` | **High** | HMAC secret for inbound webhook auth when hmac mode is enabled. |
+| `OPENCLAW_WEBHOOK_REQUIRE_REPLAY_PROTECTION` | **High** | Set `1` to enforce replay protection for webhook requests. |
 | `OPENCLAW_REQUIRE_APPROVAL_FOR_TRIGGERS` | Low | Set `1` to require admin approval for all external triggers (default: `0`). |
 | `OPENCLAW_PRESETS_PUBLIC_READ` | Low | Set `0` to require Admin Token for listing presets (default: `1`). |
-| `OPENCLAW_STRICT_LOCALHOST_AUTH` | Low | Set `1` to enforce auth even on localhost (default: `1`). |
+| `OPENCLAW_STRICT_LOCALHOST_AUTH` | Low | Legacy compatibility toggle used by preset read paths; prefer explicit `OPENCLAW_PRESETS_PUBLIC_READ` + `OPENCLAW_ADMIN_TOKEN`. |
 
 ### 2.3 Connector & Delivery (Chat Apps)
 
@@ -75,8 +78,8 @@ Controls the `connector` sidecar process and outbound delivery.
 
 | Variable | Description |
 | :--- | :--- |
-| `OPENCLAW_CONNECTOR_DELIVERY_TIMEOUT` | Timeout (sec) for delivering results to chat (default: `60`). |
-| `OPENCLAW_CONNECTOR_MEDIA_PUBLIC_URL` | Public base URL for serving images to LINE/Webhooks. |
+| `OPENCLAW_CONNECTOR_DELIVERY_TIMEOUT_SEC` | Timeout (sec) for delivering results to chat (default: `600`). |
+| `OPENCLAW_CONNECTOR_PUBLIC_BASE_URL` | Public base URL for serving images to LINE/Webhooks. |
 | `OPENCLAW_CONNECTOR_MEDIA_PATH` | Local directory for staging media files. |
 
 ### 2.4 Execution Budgets & Limits
