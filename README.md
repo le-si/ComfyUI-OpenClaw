@@ -9,14 +9,14 @@ ComfyUI-OpenClaw is a **security-first orchestration layer** for ComfyUI that co
 - **A secure-by-default HTTP API** for automation (webhooks, triggers, schedules, approvals, presets)
 - **Public-ready control-plane split architecture** (embedded UX + externalized high-risk control surfaces)
 - **Verification-first hardening lanes** (route drift, real-backend E2E, adversarial fuzz/mutation gates)
-- **Now supports major messaging platforms, including Discord, Telegram, WhatsApp, LINE, WeChat, KakaoTalk, and Slack.**
+- **Now supports 7 major messaging platforms, including Discord, Telegram, WhatsApp, LINE, WeChat, KakaoTalk, and Slack.**
 - **And more exciting features being added continuously**
+
+This project is designed to make **ComfyUI a reliable automation target** with an explicit admin boundary and hardened defaults.
 
 ---
 
-This project is intentionally **not** a general-purpose assistant platform with broad remote execution surfaces. It is designed to make **ComfyUI a reliable automation target** with an explicit admin boundary and hardened defaults.
-
-**Security stance (how this project differs from convenience-first automation packs):**
+## Security stance (how this project differs from convenience-first automation packs):
 
 - Public MAE route-plane posture is a hard guarantee: startup gate + CI no-skip drift suites must both pass
 - Control Plane Split is enforced for public posture: high-risk control surfaces are externalized while embedded UI stays on safe UX/read paths

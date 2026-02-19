@@ -194,14 +194,63 @@ export const ParameterLabTab = {
         }
     },
 
+    // --- Dynamic Data Helpers ---
+
+    getNodeCatalog() {
+        if (!app.graph || !app.graph._nodes) return [];
+        return app.graph._nodes.map(n => ({
+            id: n.id,
+            title: n.title || n.type,
+            type: n.type
+        })).sort((a, b) => a.id - b.id);
+    },
+
+    getWidgetCatalog(nodeId) {
+        if (!nodeId || !app.graph) return [];
+        const node = app.graph.getNodeById(nodeId);
+        if (!node || !node.widgets) return [];
+        return node.widgets.map(w => ({
+            name: w.name,
+            type: w.type,
+            value: w.value,
+            options: w.options
+        }));
+    },
+
+    getValueCandidates(nodeId, widgetName) {
+        if (!nodeId || !widgetName || !app.graph) return [];
+        const node = app.graph.getNodeById(nodeId);
+        if (!node) return [];
+        const widget = node.widgets.find(w => w.name === widgetName);
+        if (!widget) return [];
+
+        // Return options if available, plus current value
+        const opts = widget.options && widget.options.values ? [...widget.options.values] : [];
+        if (!opts.includes(widget.value)) {
+            opts.unshift(widget.value);
+        }
+        return opts;
+    },
+
     addDimensionUI(defaults = null) {
         // Add a default blank dimension or use defaults
-        this.dimensions.push(defaults || {
+        // Allow migration from legacy values_str if needed
+        const newDim = defaults || {
             node_id: null,
             widget_name: "",
-            values_str: "", // user input as CSV
+            values: [], // Primary state
+            values_str: "", // Legacy/Fallback
             strategy: "grid"
-        });
+        };
+
+        // Migration: if values_str exists but values is empty, parse it?
+        // Done lazily at render time or generation time.
+        // Better to canonicalize here if defaults provided.
+        if (defaults && defaults.values_str && (!defaults.values || defaults.values.length === 0)) {
+            newDim.values = defaults.values_str.split(",").map(s => s.trim()).filter(Boolean);
+        }
+
+        this.dimensions.push(newDim);
         this.renderDimensions();
     },
 
@@ -215,35 +264,218 @@ export const ParameterLabTab = {
         if (this.dimensionCountEl) {
             this.dimensionCountEl.textContent = `${this.dimensions.length} configured`;
         }
+
+        // "Refresh" button (lightweight, just re-renders to pick up graph changes)
+        const toolbar = document.createElement("div");
+        toolbar.className = "moltbot-lab-config-toolbar";
+        const refreshBtn = document.createElement("button");
+        refreshBtn.className = "moltbot-btn-text";
+        refreshBtn.id = "lab-refresh-graph";
+        refreshBtn.title = "Refresh from Canvas";
+        refreshBtn.textContent = "\u21BB Refresh Options";
+        refreshBtn.onclick = () => this.renderDimensions();
+        toolbar.appendChild(refreshBtn);
+        this.configContainer.appendChild(toolbar);
+
         if (this.dimensions.length === 0) {
-            this.configContainer.innerHTML = "<div class='moltbot-hint'>No dimensions configured. Add one to start, or use 'Compare Models'.</div>";
+            const hint = document.createElement("div");
+            hint.className = "moltbot-hint";
+            hint.textContent = "No dimensions configured. Add one or use 'Compare Models'.";
+            this.configContainer.appendChild(hint);
             return;
         }
 
-        this.dimensions.forEach((dim, idx) => {
-            const row = document.createElement("div");
-            row.className = "moltbot-lab-dim-row";
-            row.innerHTML = `
-                <div class="moltbot-form-group">
-                    <label>Node ID</label>
-                    <input type="number" class="dim-node-id" value="${dim.node_id || ''}" placeholder="ID">
-                </div>
-                <div class="moltbot-form-group">
-                    <label>Widget</label>
-                    <input type="text" class="dim-widget" value="${dim.widget_name}" placeholder="Name">
-                </div>
-                <div class="moltbot-form-group wide">
-                    <label>Values (comma sep)</label>
-                    <input type="text" class="dim-values" value="${dim.values_str}" placeholder="1.0, 1.5, 2.0">
-                </div>
-                <button class="moltbot-btn-icon remove-dim" title="Remove Dimension" aria-label="Remove Dimension">x</button>
-            `;
+        const nodeCatalog = this.getNodeCatalog();
 
-            // Bind inputs
-            row.querySelector(".dim-node-id").onchange = (e) => dim.node_id = parseInt(e.target.value);
-            row.querySelector(".dim-widget").onchange = (e) => dim.widget_name = e.target.value;
-            row.querySelector(".dim-values").onchange = (e) => dim.values_str = e.target.value;
-            row.querySelector(".remove-dim").onclick = () => this.removeDimension(idx);
+        this.dimensions.forEach((dim, idx) => {
+            // Migration: Check before rendering
+            if ((!dim.values || dim.values.length === 0) && dim.values_str) {
+                const migrated = dim.values_str.split(",").map(s => s.trim()).filter(Boolean);
+                if (migrated.length > 0) dim.values = migrated;
+            }
+
+            const row = document.createElement("div");
+            row.className = "moltbot-lab-dim-row dynamic";
+
+            // 1. Node Selector
+            const nodeGroup = document.createElement("div");
+            nodeGroup.className = "moltbot-form-group narrow";
+            nodeGroup.innerHTML = `<label>Node</label>`;
+            const nodeSelect = document.createElement("select");
+            nodeSelect.className = "dim-node-select";
+
+            const defaultOpt = document.createElement("option");
+            defaultOpt.value = "";
+            defaultOpt.textContent = "Select Node...";
+            nodeSelect.appendChild(defaultOpt);
+
+            nodeCatalog.forEach(n => {
+                const opt = document.createElement("option");
+                opt.value = n.id;
+                opt.textContent = `[${n.id}] ${n.title}`;
+                if (dim.node_id === n.id) opt.selected = true;
+                nodeSelect.appendChild(opt);
+            });
+
+            nodeSelect.onchange = (e) => {
+                const newVal = parseInt(e.target.value);
+                if (!isNaN(newVal)) {
+                    dim.node_id = newVal;
+                    dim.widget_name = ""; // Reset widget on node change
+                    dim.values = [];      // Reset values
+                    this.renderDimensions();
+                }
+            };
+            nodeGroup.appendChild(nodeSelect);
+            row.appendChild(nodeGroup);
+
+            // 2. Widget Selector (Dependent)
+            const widgetGroup = document.createElement("div");
+            widgetGroup.className = "moltbot-form-group narrow";
+            widgetGroup.innerHTML = `<label>Widget</label>`;
+            const widgetSelect = document.createElement("select");
+            widgetSelect.className = "dim-widget-select";
+
+            if (dim.node_id) {
+                const widgets = this.getWidgetCatalog(dim.node_id);
+                const wDefaultOpt = document.createElement("option");
+                wDefaultOpt.value = "";
+                wDefaultOpt.textContent = "Select Widget...";
+                widgetSelect.appendChild(wDefaultOpt);
+
+                widgets.forEach(w => {
+                    const opt = document.createElement("option");
+                    opt.value = w.name;
+                    opt.textContent = `${w.name} (${w.type})`;
+                    if (dim.widget_name === w.name) opt.selected = true;
+                    widgetSelect.appendChild(opt);
+                });
+            } else {
+                const disabledOpt = document.createElement("option");
+                disabledOpt.value = "";
+                disabledOpt.textContent = "Select Node first";
+                disabledOpt.disabled = true;
+                disabledOpt.selected = true;
+                widgetSelect.appendChild(disabledOpt);
+                widgetSelect.disabled = true;
+            }
+
+            widgetSelect.onchange = (e) => {
+                dim.widget_name = e.target.value;
+                dim.values = []; // Reset val on widget change
+                this.renderDimensions();
+            };
+            widgetGroup.appendChild(widgetSelect);
+            row.appendChild(widgetGroup);
+
+            // 3. Value Management (Candidates + Chips)
+            const valueGroup = document.createElement("div");
+            valueGroup.className = "moltbot-form-group wide dynamic-values";
+            valueGroup.innerHTML = `<label>Values</label>`;
+
+            const valueControls = document.createElement("div");
+            valueControls.className = "dim-value-controls";
+
+            // Candidate Dropdown
+            const candidateSelect = document.createElement("select");
+            candidateSelect.className = "dim-candidate-select";
+            let candidates = [];
+            if (dim.node_id && dim.widget_name) {
+                candidates = this.getValueCandidates(dim.node_id, dim.widget_name);
+                const cDefaultOpt = document.createElement("option");
+                cDefaultOpt.value = "";
+                cDefaultOpt.textContent = "Add option...";
+                candidateSelect.appendChild(cDefaultOpt);
+
+                candidates.forEach(c => {
+                    const opt = document.createElement("option");
+                    // CRITICAL: keep DOM-construction + textContent; do not switch back to dynamic innerHTML interpolation.
+                    // Use stringified value for option value to ensure it works in HTML
+                    opt.value = String(c);
+                    opt.textContent = String(c);
+                    candidateSelect.appendChild(opt);
+                });
+
+                candidateSelect.onchange = (e) => {
+                    if (e.target.value) {
+                        // Attempt to preserve type from candidate list?
+                        // Candidates are mixed types. The value in option is stringified.
+                        // Fix: match original candidate by string comparison
+                        const match = candidates.find(c => String(c) === e.target.value);
+                        const valToAdd = match !== undefined ? match : e.target.value;
+
+                        if (!dim.values) dim.values = [];
+                        if (!dim.values.includes(valToAdd)) {
+                            dim.values.push(valToAdd);
+                            this.renderDimensions();
+                        }
+                        e.target.value = ""; // Reset
+                    }
+                };
+            } else {
+                candidateSelect.disabled = true;
+                candidateSelect.innerHTML = `<option>...</option>`;
+            }
+            valueControls.appendChild(candidateSelect);
+
+            // Manual Input (for floats, non-enums)
+            const manualInput = document.createElement("input");
+            manualInput.type = "text";
+            manualInput.className = "dim-manual-input";
+            manualInput.placeholder = "Custom val";
+            manualInput.onkeydown = (e) => {
+                if (e.key === "Enter") {
+                    const val = manualInput.value.trim();
+                    if (val) {
+                        // Try parse number/bool
+                        let typedVal = val;
+                        if (val === "true") typedVal = true;
+                        else if (val === "false") typedVal = false;
+                        else if (!isNaN(parseFloat(val)) && isFinite(val) && !val.match(/[a-zA-Z]/)) typedVal = parseFloat(val);
+
+                        if (!dim.values) dim.values = [];
+                        dim.values.push(typedVal);
+                        this.renderDimensions();
+                    }
+                }
+            };
+            valueControls.appendChild(manualInput);
+
+            valueGroup.appendChild(valueControls);
+
+            // Chips Container
+            const chips = document.createElement("div");
+            chips.className = "dim-value-chips";
+            (dim.values || []).forEach((v, vIdx) => {
+                const chip = document.createElement("span");
+                chip.className = "moltbot-chip";
+                // IMPORTANT: render value via textContent to avoid UI injection/markup breakage from workflow-provided strings.
+                chip.textContent = String(v) + " ";
+
+                const rmBtn = document.createElement("span");
+                rmBtn.className = "chip-rm";
+                rmBtn.dataset.idx = vIdx;
+                rmBtn.textContent = "x";
+                rmBtn.onclick = (e) => {
+                    dim.values.splice(vIdx, 1);
+                    this.renderDimensions();
+                };
+                chip.appendChild(rmBtn);
+                chips.appendChild(chip);
+            });
+            valueGroup.appendChild(chips);
+
+            // Legacy fallback removed (handled at start of loop)
+
+            row.appendChild(valueGroup);
+
+            // Remove Button
+            const rmBtn = document.createElement("button");
+            rmBtn.className = "moltbot-btn-icon remove-dim";
+            rmBtn.textContent = "x";
+            rmBtn.title = "Remove Dimension";
+            rmBtn.onclick = () => this.removeDimension(idx);
+            row.appendChild(rmBtn);
 
             this.configContainer.appendChild(row);
         });
@@ -283,16 +515,17 @@ export const ParameterLabTab = {
 
         // Add dimension pre-filled
         const options = widget.options?.values || [];
-        let defaultValues = "";
+        let initialValues = [];
         if (options.length > 0) {
             // Pick top 2 as example
-            defaultValues = options.slice(0, 2).join(", ");
+            initialValues = options.slice(0, 2);
         }
 
         this.addDimensionUI({
             node_id: node.id,
             widget_name: widget.name,
-            values_str: defaultValues,
+            values: initialValues,
+            values_str: initialValues.join(", "), // Legacy fallback
             strategy: "compare"
         });
 
@@ -300,35 +533,21 @@ export const ParameterLabTab = {
     },
 
     async generatePlan() {
-        // Validate
-        const validDims = this.dimensions.filter(d => d.node_id && d.widget_name && d.values_str);
+        // Validate: logic updated to check values array
+        const validDims = this.dimensions.filter(d => d.node_id && d.widget_name && d.values && d.values.length > 0);
+
         if (validDims.length === 0) {
-            moltbotUI.showBanner("error", "Please configure at least one valid dimension.");
+            moltbotUI.showBanner("error", "Please configure at least one valid dimension with values.");
             return;
         }
 
         // Prepare Payload
         const params = validDims.map(d => {
-            // Parse values (try number, boolean, string)
-            // For string values with commas (e.g. model names?), we need better CSV parsing.
-            // But usually model names don't have commas.
-            const rawVals = d.values_str.split(",").map(s => s.trim());
-            const values = rawVals.map(v => {
-                if (v === "true") return true;
-                if (v === "false") return false;
-                // Check if it looks like a number
-                const n = parseFloat(v);
-                // If it parses as a number but was meant as a string (e.g. "1.5" model name),
-                // we might have issues. But usually models have extensions.
-                // If it contains non-numeric chars, it's a string.
-                if (!isNaN(n) && isFinite(n) && !v.match(/[a-zA-Z]/)) return n;
-                return v;
-            });
-
+            // Use values directly (already typed from inputs/chips)
             return {
                 node_id: d.node_id,
                 widget_name: d.widget_name,
-                values: values,
+                values: d.values,
                 strategy: d.strategy || "grid"
             };
         });
