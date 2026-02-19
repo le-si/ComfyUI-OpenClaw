@@ -70,6 +70,7 @@ Failed preflight checks must be resolved before proceeding with full test suites
     - `tests.security.test_endpoint_drift`
   - Real-backend low-mock lane must be no-skip in CI:
     - `tests.test_r122_real_backend_lane`
+    - `tests.test_r123_real_backend_model_list_lane` (model-list loopback SSRF regression lane)
 
 - **R112 (security triple-assert)**:
   - For security reject/degrade paths, tests should assert all three signals:
@@ -190,16 +191,18 @@ Then every `git push` will run:
 bash scripts/pre_push_checks.sh
 ```
 
-`scripts/pre_push_checks.sh` is the CI-parity guard and must include all 4 stages:
+`scripts/pre_push_checks.sh` is the CI-parity guard and must include all 5 stages:
 
 1) `detect-secrets`
 2) all `pre-commit` hooks
 3) backend unit tests (`scripts/run_unittests.py --pattern "test_*.py" --enforce-skip-policy tests/skip_policy.json`)
-4) frontend E2E (`npm test`)
+4) backend real E2E lanes (`tests.test_r122_real_backend_lane` + `tests.test_r123_real_backend_model_list_lane`)
+5) frontend E2E (`npm test`)
 
 IMPORTANT:
 
 - Do not remove stage (3). If pre-push skips backend unit tests, local pushes can pass while GitHub CI fails later.
+- Do not remove stage (4). If pre-push skips real-backend lanes, model-list/webhook wiring regressions can bypass local checks and fail later in CI.
 - Keep dependency bootstrap in this script aligned with `.github/workflows/ci.yml` unit-test dependencies.
 
 1) Detect Secrets (baseline-based)
@@ -241,6 +244,7 @@ MOLTBOT_STATE_DIR="$(pwd)/moltbot_state/_local_unit" python scripts/run_unittest
 
 ```bash
 MOLTBOT_STATE_DIR="$(pwd)/moltbot_state/_local_backend_e2e_real" python scripts/run_unittests.py --module tests.test_r122_real_backend_lane --enforce-skip-policy tests/skip_policy.json --max-skipped 0
+MOLTBOT_STATE_DIR="$(pwd)/moltbot_state/_local_backend_e2e_real" python scripts/run_unittests.py --module tests.test_r123_real_backend_model_list_lane --enforce-skip-policy tests/skip_policy.json --max-skipped 0
 ```
 
 1) Frontend E2E (Playwright; CI enforces)

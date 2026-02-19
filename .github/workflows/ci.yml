@@ -134,6 +134,8 @@ jobs:
         run: |
           # CRITICAL: this lane must stay low-mock and exercise real aiohttp request flow.
           python scripts/run_unittests.py --module tests.test_r122_real_backend_lane --enforce-skip-policy tests/skip_policy.json --max-skipped 0
+          # R123: model-list loopback/private-IP SSRF parity must remain no-skip.
+          python scripts/run_unittests.py --module tests.test_r123_real_backend_model_list_lane --enforce-skip-policy tests/skip_policy.json --max-skipped 0
 
   contract-tests:
     name: Contract Tests (R52)

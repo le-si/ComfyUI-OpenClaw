@@ -152,34 +152,43 @@ if ($nodeMajor -lt 18) {
 
 Write-Host "[tests] Node version: $(node -v)"
 
-Write-Host "[tests] 0/4 R120 dependency preflight"
+Write-Host "[tests] 0/5 R120 dependency preflight"
 Invoke-Checked "preflight_check" { & $venvPython scripts\preflight_check.py --strict }
 
-Write-Host "[tests] 1/4 detect-secrets"
+Write-Host "[tests] 1/5 detect-secrets"
 Invoke-Checked "detect-secrets" { & $venvPython -m pre_commit run detect-secrets --all-files }
 
-Write-Host "[tests] 2/4 pre-commit all hooks (pass 1: autofix)"
+Write-Host "[tests] 2/5 pre-commit all hooks (pass 1: autofix)"
 & $venvPython -m pre_commit run --all-files --show-diff-on-failure
 if ($LASTEXITCODE -ne 0) {
   Write-Host "[tests] INFO: pre-commit reported changes/issues; running pass 2 verification..."
   Invoke-Checked "pre-commit all hooks (pass 2 verify)" { & $venvPython -m pre_commit run --all-files --show-diff-on-failure }
 }
 
-Write-Host "[tests] 3/4 backend unit tests"
+Write-Host "[tests] 3/5 backend unit tests"
 $env:MOLTBOT_STATE_DIR = "$root\moltbot_state\_local_unit"
 Invoke-Checked "backend unit tests" {
   & $venvPython scripts\run_unittests.py --start-dir tests --pattern "test_*.py" --enforce-skip-policy tests\skip_policy.json
 }
 
 if ($env:OPENCLAW_IMPL_RECORD_PATH) {
-  Write-Host "[tests] 3.5/4 implementation record lint (strict)"
+  Write-Host "[tests] 3.5/5 implementation record lint (strict)"
   # IMPORTANT: strict mode is opt-in via OPENCLAW_IMPL_RECORD_PATH to avoid retroactive legacy record failures.
   Invoke-Checked "implementation record lint" {
     & $venvPython scripts\lint_implementation_record.py --path $env:OPENCLAW_IMPL_RECORD_PATH --strict
   }
 }
 
-Write-Host "[tests] 4/4 frontend E2E"
+Write-Host "[tests] 4/5 backend real E2E lanes (R122/R123)"
+$env:MOLTBOT_STATE_DIR = "$root\moltbot_state\_local_backend_e2e_real"
+Invoke-Checked "backend real E2E lane R122" {
+  & $venvPython scripts\run_unittests.py --module tests.test_r122_real_backend_lane --enforce-skip-policy tests\skip_policy.json --max-skipped 0
+}
+Invoke-Checked "backend real E2E lane R123" {
+  & $venvPython scripts\run_unittests.py --module tests.test_r123_real_backend_model_list_lane --enforce-skip-policy tests\skip_policy.json --max-skipped 0
+}
+
+Write-Host "[tests] 5/5 frontend E2E"
 Invoke-Checked "frontend E2E" { npm test }
 
 Write-Host "[tests] PASS"

@@ -110,13 +110,13 @@ fi
 
 echo "[tests] Node version: $(node -v)"
 
-echo "[tests] 0/4 R120 dependency preflight"
+echo "[tests] 0/5 R120 dependency preflight"
 "$VENV_PY" scripts/preflight_check.py --strict
 
-echo "[tests] 1/4 detect-secrets"
+echo "[tests] 1/5 detect-secrets"
 "$VENV_PY" -m pre_commit run detect-secrets --all-files
 
-echo "[tests] 2/4 pre-commit all hooks (pass 1: autofix)"
+echo "[tests] 2/5 pre-commit all hooks (pass 1: autofix)"
 if "$VENV_PY" -m pre_commit run --all-files --show-diff-on-failure; then
   :
 else
@@ -124,16 +124,22 @@ else
   "$VENV_PY" -m pre_commit run --all-files --show-diff-on-failure
 fi
 
-echo "[tests] 3/4 backend unit tests"
+echo "[tests] 3/5 backend unit tests"
 MOLTBOT_STATE_DIR="$ROOT_DIR/moltbot_state/_local_unit" "$VENV_PY" scripts/run_unittests.py --start-dir tests --pattern "test_*.py" --enforce-skip-policy tests/skip_policy.json
 
 if [ -n "${OPENCLAW_IMPL_RECORD_PATH:-}" ]; then
-  echo "[tests] 3.5/4 implementation record lint (strict)"
+  echo "[tests] 3.5/5 implementation record lint (strict)"
   # IMPORTANT: strict mode is opt-in via OPENCLAW_IMPL_RECORD_PATH to avoid retroactive legacy record failures.
   "$VENV_PY" scripts/lint_implementation_record.py --path "$OPENCLAW_IMPL_RECORD_PATH" --strict
 fi
 
-echo "[tests] 4/4 frontend E2E"
+echo "[tests] 4/5 backend real E2E lanes (R122/R123)"
+MOLTBOT_STATE_DIR="$ROOT_DIR/moltbot_state/_local_backend_e2e_real" \
+  "$VENV_PY" scripts/run_unittests.py --module tests.test_r122_real_backend_lane --enforce-skip-policy tests/skip_policy.json --max-skipped 0
+MOLTBOT_STATE_DIR="$ROOT_DIR/moltbot_state/_local_backend_e2e_real" \
+  "$VENV_PY" scripts/run_unittests.py --module tests.test_r123_real_backend_model_list_lane --enforce-skip-policy tests/skip_policy.json --max-skipped 0
+
+echo "[tests] 5/5 frontend E2E"
 npm test
 
 echo "[tests] PASS"

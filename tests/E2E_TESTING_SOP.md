@@ -3,6 +3,10 @@
 This SOP documents the verified, repeatable steps to run Playwright E2E tests
 against a local **test harness** (no live ComfyUI backend required).
 
+Boundary:
+- This file covers frontend Playwright harness E2E only.
+- Backend low-mock real lanes (`R122`, `R123`) are specified in `tests/TEST_SOP.md`.
+
 ## 1. Requirements
 
 - Node.js 18+
