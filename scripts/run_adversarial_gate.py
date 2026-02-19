@@ -23,6 +23,7 @@ import argparse
 import json
 import os
 import random
+import re
 import subprocess
 import sys
 import time
@@ -140,20 +141,26 @@ def run_mutation_suite(threshold: float, artifact_dir: str) -> Dict[str, Any]:
         }
 
     try:
+        report_path = os.path.join(
+            os.path.dirname(__file__), "..", ".planning", "mutation_report.json"
+        )
+        # IMPORTANT: remove stale report before each run to avoid parsing
+        # previous results when the current mutation subprocess fails early.
+        if os.path.isfile(report_path):
+            os.remove(report_path)
+
         result = subprocess.run(
             [sys.executable, script],
             capture_output=True,
             text=True,
             timeout=300,
             cwd=os.path.join(os.path.dirname(__file__), ".."),
+            env={**os.environ, "PYTHONUNBUFFERED": "1"},
         )
 
         # Parse report
-        report_path = os.path.join(
-            os.path.dirname(__file__), "..", ".planning", "mutation_report.json"
-        )
         score = 0.0
-        report_data = {}
+        report_data: Dict[str, Any] = {}
 
         if os.path.isfile(report_path):
             with open(report_path, "r", encoding="utf-8") as f:
@@ -162,8 +169,30 @@ def run_mutation_suite(threshold: float, artifact_dir: str) -> Dict[str, Any]:
             killed = report_data.get("killed", 0)
             if total > 0:
                 score = (killed / total) * 100.0
+        else:
+            # Fallback: parse score from runner log when report is missing.
+            combined = f"{result.stdout or ''}\n{result.stderr or ''}"
+            m = re.search(r"Mutation Score:\s*([0-9]+(?:\.[0-9]+)?)%", combined)
+            if m:
+                score = float(m.group(1))
 
         passed = score >= threshold
+
+        error = None
+        # CRITICAL: treat mutation subprocess return code as authoritative.
+        # If mutation runner exits non-zero, this suite must fail even if a stale
+        # score could be parsed from logs.
+        if result.returncode != 0:
+            error = (
+                "mutation subprocess failed "
+                f"(rc={result.returncode}); "
+                "see stdout_tail/stderr_tail for details"
+            )
+            passed = False
+        elif not report_data:
+            # IMPORTANT: this indicates diagnostic degradation (e.g., runner did
+            # not emit report). Keep it visible in manifest for CI triage.
+            error = "mutation report missing; used score fallback from process output"
 
         return {
             "suite": "r113_mutation",
@@ -175,7 +204,9 @@ def run_mutation_suite(threshold: float, artifact_dir: str) -> Dict[str, Any]:
             "passed": passed,
             "report_path": report_path if os.path.isfile(report_path) else None,
             "stdout_tail": result.stdout[-500:] if result.stdout else "",
+            "stderr_tail": result.stderr[-500:] if result.stderr else "",
             "returncode": result.returncode,
+            "error": error,
         }
 
     except subprocess.TimeoutExpired:

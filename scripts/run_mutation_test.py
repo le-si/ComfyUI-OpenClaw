@@ -2,6 +2,7 @@ import ast
 import json
 import logging
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -14,10 +15,11 @@ TARGET_FILES = ["services/access_control.py"]
 TEST_COMMAND = [
     sys.executable,
     "scripts/run_unittests.py",
-    "--start-dir",
-    "tests",
-    "--pattern",
-    "test_access_control.py",
+    # CRITICAL: use explicit module loading instead of discovery+pattern.
+    # Discovery can silently run 0 tests in some CI layouts, which makes every
+    # mutant look "survived" and collapses score to 0%.
+    "--module",
+    "tests.test_access_control",
 ]
 
 logging.basicConfig(
@@ -88,12 +90,80 @@ def apply_mutation(file_path: str, mutation_index: int) -> str:
     return getattr(visitor, "applied_desc", "Unknown")
 
 
-def run_test_suite() -> bool:
+def _purge_target_bytecode(target_file: str) -> None:
+    """
+    Remove target module bytecode cache before each subprocess test run.
+
+    CRITICAL: mutation rewrites the same source file many times in rapid
+    succession. On some filesystems/timestamp granularities, stale .pyc reuse
+    can misclassify baseline/mutant outcomes.
+    """
+    target_dir = os.path.dirname(target_file)
+    module_name = os.path.splitext(os.path.basename(target_file))[0]
+    pycache_dir = os.path.join(target_dir, "__pycache__")
+    if not os.path.isdir(pycache_dir):
+        return
+    prefix = module_name + "."
+    for entry in os.listdir(pycache_dir):
+        if entry.startswith(prefix) and entry.endswith(".pyc"):
+            try:
+                os.remove(os.path.join(pycache_dir, entry))
+            except OSError:
+                # Best-effort cleanup; test subprocess will still run.
+                pass
+
+
+def run_test_suite(
+    target_file: str, *, context: str, retry_on_failure: bool = False
+) -> bool:
     try:
-        result = subprocess.run(
-            TEST_COMMAND, capture_output=True, text=True, timeout=30
-        )
-        return result.returncode == 0
+        attempts = 2 if retry_on_failure else 1
+        for attempt in range(1, attempts + 1):
+            _purge_target_bytecode(target_file)
+            result = subprocess.run(
+                TEST_COMMAND, capture_output=True, text=True, timeout=30
+            )
+            # IMPORTANT: treat "Ran 0 tests" as failure for mutation integrity.
+            # A green return code with zero executed tests invalidates mutation score.
+            combined = f"{result.stdout or ''}\n{result.stderr or ''}"
+            m = re.search(r"Ran\s+(\d+)\s+tests", combined)
+            tests_run = int(m.group(1)) if m else 0
+            if tests_run == 0:
+                logger.error(
+                    "Mutation %s invalid: test command executed 0 tests. "
+                    "Output tail: %s",
+                    context,
+                    combined[-500:].replace("\n", " "),
+                )
+                if retry_on_failure and attempt < attempts:
+                    logger.warning(
+                        "Retrying mutation %s test command (attempt %s/%s).",
+                        context,
+                        attempt + 1,
+                        attempts,
+                    )
+                    time.sleep(0.2)
+                    continue
+                return False
+            if result.returncode != 0:
+                logger.error(
+                    "Mutation %s test command failed (rc=%s). Output tail: %s",
+                    context,
+                    result.returncode,
+                    combined[-500:].replace("\n", " "),
+                )
+                if retry_on_failure and attempt < attempts:
+                    logger.warning(
+                        "Retrying mutation %s test command (attempt %s/%s).",
+                        context,
+                        attempt + 1,
+                        attempts,
+                    )
+                    time.sleep(0.2)
+                    continue
+                return False
+            return True
+        return False
     except subprocess.TimeoutExpired:
         return False
     except Exception as e:
@@ -101,8 +171,9 @@ def run_test_suite() -> bool:
         return False
 
 
-def run_mutation_workflow():
+def run_mutation_workflow() -> bool:
     report = {"total_mutants": 0, "killed": 0, "survived": 0, "details": []}
+    processed_targets = 0
 
     for target in TARGET_FILES:
         target_path = os.path.abspath(target)
@@ -110,7 +181,9 @@ def run_mutation_workflow():
 
         if not os.path.exists(target_path):
             logger.error(f"Target file not found: {target}")
-            continue
+            return False
+
+        processed_targets += 1
 
         logger.info(f"Targeting {target}...")
 
@@ -119,9 +192,11 @@ def run_mutation_workflow():
         # But wait, run_test_suite runs on current state.
 
         logger.info("Running baseline tests...")
-        if not run_test_suite():
+        if not run_test_suite(target_path, context="baseline", retry_on_failure=True):
+            # CRITICAL: baseline failure must fail the process with non-zero exit.
+            # Returning success here would let upstream gates treat mutation as pass.
             logger.error("Baseline tests failed! Cannot proceed with mutation testing.")
-            return
+            return False
 
         # 2. Count mutations
         num_mutations = count_mutations(target_path)
@@ -141,7 +216,7 @@ def run_mutation_workflow():
                 logger.info(f"Mutant {i+1}/{num_mutations}: {desc}")
 
                 # Run tests
-                passed = run_test_suite()
+                passed = run_test_suite(target_path, context="mutant")
 
                 if not passed:
                     logger.info("-> KILLED")
@@ -164,6 +239,10 @@ def run_mutation_workflow():
                 os.remove(backup_path)
                 logger.info("Restored original file.")
 
+    if processed_targets == 0:
+        logger.error("No mutation targets processed.")
+        return False
+
     # Generate Report
     score = 0
     if report["total_mutants"] > 0:
@@ -177,10 +256,12 @@ def run_mutation_workflow():
     logger.info("=" * 40)
 
     report_file = os.path.join(".planning", "mutation_report.json")
+    os.makedirs(os.path.dirname(report_file), exist_ok=True)
     with open(report_file, "w") as f:
         json.dump(report, f, indent=2)
     logger.info(f"Report saved to {report_file}")
+    return True
 
 
 if __name__ == "__main__":
-    run_mutation_workflow()
+    raise SystemExit(0 if run_mutation_workflow() else 1)
