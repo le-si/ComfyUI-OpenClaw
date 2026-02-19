@@ -100,6 +100,8 @@ class ConnectorConfig:
     slack_webhook_path: str = "/slack/events"
     slack_require_mention: bool = True
     slack_reply_in_thread: bool = True
+    slack_mode: str = "events"  # F57: events | socket
+    slack_app_token: Optional[str] = None  # F57: required in socket mode (xapp-...)
 
     # Privileged Access (ID match across platforms; Telegram Int vs Discord Str handled by router)
     admin_users: List[str] = field(default_factory=list)
@@ -122,6 +124,16 @@ class ConnectorConfig:
     # Global
     debug: bool = False
     state_path: Optional[str] = None
+
+    def __repr__(self):
+        """R117: redact secret/token/key fields in logs and debug output."""
+        d = self.__dict__.copy()
+        for k in d:
+            if "token" in k or "secret" in k or "key" in k:
+                if d[k]:
+                    d[k] = "***REDACTED***"
+        fields = ", ".join(f"{k}={v!r}" for k, v in d.items())
+        return f"{self.__class__.__name__}({fields})"
 
 
 def load_config() -> ConnectorConfig:
@@ -266,6 +278,8 @@ def load_config() -> ConnectorConfig:
         == "false"
     ):
         cfg.slack_reply_in_thread = False
+    cfg.slack_mode = os.environ.get("OPENCLAW_CONNECTOR_SLACK_MODE", "events").lower()
+    cfg.slack_app_token = os.environ.get("OPENCLAW_CONNECTOR_SLACK_APP_TOKEN")
 
     # Admin
     if admins := os.environ.get("OPENCLAW_CONNECTOR_ADMIN_USERS"):

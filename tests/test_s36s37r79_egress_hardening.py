@@ -290,6 +290,7 @@ class TestR79EgressCompliance(unittest.TestCase):
             # Missing a newly-added adapter causes false-positive R79 failures
             # in full-gate runs even when egress behavior is intentional.
             "connector/platforms/slack_webhook.py",
+            "connector/platforms/slack_socket_mode.py",
             # Providers
             "services/providers/anthropic.py",
             "services/providers/openai_compat.py",

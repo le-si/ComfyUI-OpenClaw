@@ -193,10 +193,14 @@ Invoke-Checked "R121 retry partition contract" {
   & $venvPython scripts\run_unittests.py --module tests.test_r121_retry_partition_contract --enforce-skip-policy tests\skip_policy.json --max-skipped 0
 }
 
-Write-Host "[tests] 6/8 Slack integration gates (R124/R125)"
+Write-Host "[tests] 6/8 Slack integration gates (R124/R125/R117/F57)"
 Invoke-Checked "Slack integration gates" {
   & $venvPython scripts\run_unittests.py --module tests.test_r124_slack_ingress_contract --enforce-skip-policy tests\skip_policy.json --max-skipped 0
   & $venvPython scripts\run_unittests.py --module tests.test_r125_slack_real_backend_lane --enforce-skip-policy tests\skip_policy.json --max-skipped 0
+  & $venvPython scripts\run_unittests.py --module tests.test_r117_observability_redaction_e2e --enforce-skip-policy tests\skip_policy.json --max-skipped 0
+  & $venvPython scripts\run_unittests.py --module tests.test_r117_observability_redaction_endpoints --enforce-skip-policy tests\skip_policy.json --max-skipped 0
+  & $venvPython scripts\run_unittests.py --module tests.test_f57_slack_transport_parity --enforce-skip-policy tests\skip_policy.json --max-skipped 0
+  & $venvPython scripts\run_unittests.py --module tests.test_f57_slack_socket_mode_startup --enforce-skip-policy tests\skip_policy.json --max-skipped 0
 }
 
 Write-Host "[tests] 7/8 R118 adversarial gate (smoke)"

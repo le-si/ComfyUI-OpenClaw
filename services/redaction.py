@@ -62,6 +62,11 @@ DEFAULT_PATTERNS: List[Tuple[re.Pattern, str]] = [
     ),
     # JWT tokens (rough heuristic: 3 base64 segments separated by dots)
     (re.compile(r"\beyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\b"), REDACTED),
+    # R117: Slack token families.
+    (re.compile(r"\bxoxb-[a-zA-Z0-9-]+", re.IGNORECASE), REDACTED),
+    (re.compile(r"\bxapp-[a-zA-Z0-9-]+", re.IGNORECASE), REDACTED),
+    (re.compile(r"\bxoxp-[a-zA-Z0-9-]+", re.IGNORECASE), REDACTED),
+    (re.compile(r"\bxoxr-[a-zA-Z0-9-]+", re.IGNORECASE), REDACTED),
 ]
 
 # Keys that should always be redacted in JSON (case-insensitive)

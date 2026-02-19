@@ -43,7 +43,7 @@ Set the following environment variables (or put them in a `.env` file if you use
 
 - `OPENCLAW_CONNECTOR_URL`: URL of your ComfyUI (default: `http://127.0.0.1:8188`)
 - `OPENCLAW_CONNECTOR_DEBUG`: Set to `1` for verbose logs.
-- `OPENCLAW_CONNECTOR_ADMIN_USERS`: Comma-separated list of user IDs allowed to run admin commands (e.g. `/run`, `/stop`, approvals, schedules).
+- `OPENCLAW_CONNECTOR_ADMIN_USERS`: Comma-separated list of user IDs allowed to run admin commands (for example `/stop`, approvals, schedules). Admin users are also treated as trusted senders for `/run`.
 - `OPENCLAW_CONNECTOR_ADMIN_TOKEN`: Admin token sent to OpenClaw (`X-OpenClaw-Admin-Token`).
 
 **Admin token behavior:**
@@ -257,7 +257,7 @@ WeChat Official Account pushes webhook requests to your connector. You must expo
    - verify connector receives command and returns text reply
 
 7. Verify trusted/untrusted behavior:
-   - if sender OpenID is in `OPENCLAW_CONNECTOR_WECHAT_ALLOWED_USERS`, `/run` can execute directly (subject to admin rules)
+   - if sender OpenID is in `OPENCLAW_CONNECTOR_WECHAT_ALLOWED_USERS`, `/run` can execute directly (subject to trust/approval policy and command policy)
    - if not allowlisted, sensitive actions are routed to approval flow
 
 **WeChat-specific notes:**
@@ -306,7 +306,7 @@ Kakao i Open Builder sends webhook requests to your connector Skill endpoint. Yo
    - verify connector receives command and returns a SkillResponse (`version: 2.0`)
 
 6. Verify trusted/untrusted behavior:
-   - if sender `userRequest.user.id` is in `OPENCLAW_CONNECTOR_KAKAO_ALLOWED_USERS`, `/run` can execute directly (subject to admin rules)
+   - if sender `userRequest.user.id` is in `OPENCLAW_CONNECTOR_KAKAO_ALLOWED_USERS`, `/run` can execute directly (subject to trust/approval policy and command policy)
    - if not allowlisted, sensitive actions are routed to approval flow
 
 7. Optional first-time allowlist bootstrap:
@@ -393,7 +393,32 @@ Slack uses the Events API webhook mode in OpenClaw. You must expose the endpoint
    - Rotate Slack bot token/signing secret on incident response.
    - Do not expose connector without HTTPS termination.
 
-Slack Socket Mode fallback is tracked separately and is not part of the current webhook setup.
+#### Slack Socket Mode Setup (Optional)
+
+Use Socket Mode when you cannot expose a public HTTPS webhook endpoint.
+
+1. **Enable Socket Mode in Slack**
+   - Open your Slack App settings.
+   - Go to **Socket Mode** and enable it.
+   - Create an App-Level Token (`xapp-...`) with `connections:write`.
+
+2. **Configure connector**
+
+   ```bash
+   OPENCLAW_CONNECTOR_SLACK_MODE=socket
+   OPENCLAW_CONNECTOR_SLACK_APP_TOKEN=xapp-your-token
+   # Bot token + signing secret are still required for parity and safety checks
+   OPENCLAW_CONNECTOR_SLACK_BOT_TOKEN=xoxb-your-token
+   OPENCLAW_CONNECTOR_SLACK_SIGNING_SECRET=your-signing-secret
+   ```
+
+3. **Start connector**
+   - `python -m connector`
+   - Expect log: `Slack Socket Mode connected.`
+
+Notes:
+- Socket Mode uses outbound WebSocket, so `OPENCLAW_CONNECTOR_SLACK_BIND`, `OPENCLAW_CONNECTOR_SLACK_PORT`, and `OPENCLAW_CONNECTOR_SLACK_PATH` are ignored in this mode.
+- Startup is fail-closed if `OPENCLAW_CONNECTOR_SLACK_APP_TOKEN` is missing or does not start with `xapp-`.
 
 ## Commands
 

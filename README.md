@@ -56,6 +56,9 @@ Deployment profiles and hardening checklists:
   - added Slack Events API adapter with signed ingress checks, replay/dedupe handling, bot-loop suppression, allowlist enforcement, and thread-aware reply delivery
   - wired Slack runtime policy into existing connector authorization boundaries so command trust behavior stays consistent with other platforms
   - added dedicated Slack verification lanes for ingress contract coverage and real-backend flow parity, both enforced by skip-policy and full-test scripts
+  - added optional Slack Socket Mode fallback transport with fail-closed startup checks and transport-parity behavior aligned to Events API safety controls
+  - expanded observability redaction coverage for Slack token families and added endpoint-level drift tests for logs/trace/config safety
+  - aligned local full-test scripts so Slack phase-2 suites run explicitly as part of the Slack integration gate step
   - synchronized verification evidence through detect-secrets, pre-commit, backend unit + real lanes, adversarial gate, and frontend E2E full pass
 
 </details>

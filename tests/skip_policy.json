@@ -11,6 +11,10 @@
     "tests.test_r123_real_backend_model_list_lane",
     "tests.test_r121_retry_partition_contract",
     "tests.test_r124_slack_ingress_contract",
-    "tests.test_r125_slack_real_backend_lane"
+    "tests.test_r125_slack_real_backend_lane",
+    "tests.test_r117_observability_redaction_e2e",
+    "tests.test_r117_observability_redaction_endpoints",
+    "tests.test_f57_slack_transport_parity",
+    "tests.test_f57_slack_socket_mode_startup"
   ]
 }

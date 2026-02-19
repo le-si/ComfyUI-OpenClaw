@@ -175,11 +175,32 @@ async def main():
         logger.info("Kakao adapter disabled.")
 
     if config.slack_bot_token and config.slack_signing_secret:
-        slack_server = SlackWebhookServer(config, router)
-        platforms["slack"] = slack_server
-        await slack_server.start()
-        if not tasks:
-            tasks.append(asyncio.create_task(asyncio.sleep(3600 * 24 * 365)))
+        if config.slack_mode == "socket":
+            # CRITICAL: Socket Mode must remain explicit opt-in; do not auto-fallback
+            # from webhook mode or security/ingress assumptions can drift silently.
+            from .platforms.slack_socket_mode import SlackSocketModeClient
+
+            slack_server = SlackSocketModeClient(config, router)
+        elif config.slack_mode == "events":
+            slack_server = SlackWebhookServer(config, router)
+        else:
+            logger.error(
+                "Invalid OPENCLAW_CONNECTOR_SLACK_MODE=%r. Expected 'events' or 'socket'.",
+                config.slack_mode,
+            )
+            slack_server = None
+            logger.error("Slack adapter startup aborted (fail-closed).")
+            # Keep connector alive for other platforms; Slack remains disabled.
+            # If Slack is the only platform, global no-platform guard below will exit.
+            pass
+
+        if slack_server is None:
+            logger.warning("Slack adapter disabled due to invalid mode config.")
+        else:
+            platforms["slack"] = slack_server
+            await slack_server.start()
+            if not tasks:
+                tasks.append(asyncio.create_task(asyncio.sleep(3600 * 24 * 365)))
     elif config.slack_bot_token:
         logger.warning("Slack configured but Signing Secret missing. Skipping.")
     else:

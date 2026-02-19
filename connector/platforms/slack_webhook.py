@@ -251,15 +251,24 @@ class SlackWebhookServer:
         except json.JSONDecodeError:
             return _make_response(web, status=400, text="Bad JSON")
 
-        # -- Step 3: url_verification challenge --
+        # -- Step 3: url_verification challenge (Webhook only) --
         if payload.get("type") == "url_verification":
             challenge = payload.get("challenge", "")
             return _make_json_response(web, {"challenge": challenge})
 
-        # -- Step 4: event_callback processing --
+        # -- Step 4: Process event --
+        try:
+            await self.process_event_payload(payload)
+        except ValueError:
+            return _make_response(web, status=400, text="Bad Request")
+        return _make_response(web, status=200, text="OK")
+
+    async def process_event_payload(self, payload: Dict[str, Any]) -> None:
+        """
+        Shared event processing path for both webhook and socket mode transports.
+        """
         if payload.get("type") != "event_callback":
-            # Ignore unknown payload types gracefully
-            return _make_response(web, status=200, text="OK")
+            return
 
         event = payload.get("event", {})
         event_id = payload.get("event_id", "")
@@ -268,15 +277,14 @@ class SlackWebhookServer:
         # -- Step 5: Replay / dedupe guard --
         if not event_id:
             logger.warning("Slack event missing event_id (rejected)")
-            return _make_response(web, status=400, text="Missing event_id")
+            raise ValueError("Missing event_id")
 
         if not self._replay_guard.check_and_record(event_id):
             logger.debug(f"Slack duplicate event_id={event_id} (accepted, no-op)")
-            # Return 200 to acknowledge; Slack will retry on non-2xx.
-            return _make_response(web, status=200, text="OK")
+            return
 
         # -- Step 6: Bot-loop prevention --
-        # Resolve bot user ID from authorizations or cache
+        # Resolve bot user ID from authorizations or cache.
         if self._bot_user_id is None:
             auths = payload.get("authorizations", [])
             if auths and isinstance(auths, list):
@@ -284,48 +292,34 @@ class SlackWebhookServer:
 
         sender_id = event.get("user", "")
         if sender_id and sender_id == self._bot_user_id:
-            # Ignore bot's own messages
-            return _make_response(web, status=200, text="OK")
+            return
 
-        # Also detect bot_id field (Slack webhook integrations)
         if event.get("bot_id"):
-            return _make_response(web, status=200, text="OK")
+            return
 
-        # Ignore message subtypes that are not user messages
         subtype = event.get("subtype", "")
         if subtype and subtype not in ("", "file_share"):
-            # e.g. message_changed, message_deleted, bot_message, etc.
-            return _make_response(web, status=200, text="OK")
+            return
 
         # -- Step 7: Event normalization --
-        # Supported events: message, app_mention
-        # De-duplication: if event is app_mention AND the same content would
-        # also arrive as a message event, use event_id to dedupe (already done
-        # in step 5 via replay guard). Also, for group channels with
-        # require_mention, we only process app_mention events (skip plain
-        # messages that don't mention the bot).
         text = event.get("text", "").strip()
         channel_id = event.get("channel", "")
         thread_ts = event.get("thread_ts", "")
         message_ts = event.get("ts", "")
 
         if event_type not in ("message", "app_mention"):
-            return _make_response(web, status=200, text="OK")
+            return
 
         if not text or not sender_id:
-            return _make_response(web, status=200, text="OK")
+            return
 
-        # S67: Require-mention policy for group channels
-        # Channel types: C=public, G=private group, D=DM, "im"
+        # S67: Require mention in group channels.
         is_dm = channel_id.startswith("D")
         if not is_dm and self.config.slack_require_mention:
-            # In group channels, only process app_mention events
-            # or messages that explicitly mention the bot
             if event_type != "app_mention":
                 if self._bot_user_id and f"<@{self._bot_user_id}>" not in text:
-                    return _make_response(web, status=200, text="OK")
+                    return
 
-        # Strip bot mention from text for cleaner command parsing
         if self._bot_user_id:
             text = text.replace(f"<@{self._bot_user_id}>", "").strip()
 
@@ -334,21 +328,20 @@ class SlackWebhookServer:
             user_result = self._user_allowlist.evaluate(sender_id)
             if user_result.decision == "deny":
                 logger.warning(f"Slack user {sender_id} denied by allowlist")
-                # Don't leak auth info; return 200 but silently drop
-                return _make_response(web, status=200, text="OK")
+                return
 
         if self._channel_allowlist.entries and channel_id:
             chan_result = self._channel_allowlist.evaluate(channel_id)
             if chan_result.decision == "deny":
                 logger.warning(f"Slack channel {channel_id} denied by allowlist")
-                return _make_response(web, status=200, text="OK")
+                return
 
         # -- Step 9: Build CommandRequest and route --
         req = CommandRequest(
             platform="slack",
             sender_id=sender_id,
             channel_id=channel_id,
-            username=sender_id,  # Slack doesn't include username in events
+            username=sender_id,
             message_id=event_id,
             text=text,
             timestamp=float(message_ts) if message_ts else time.time(),
@@ -369,9 +362,6 @@ class SlackWebhookServer:
                 )
         except Exception as e:
             logger.exception(f"Error handling Slack event: {e}")
-
-        # Always return 200 to Slack to prevent retries
-        return _make_response(web, status=200, text="OK")
 
     # ------------------------------------------------------------------
     # Slack Web API reply
