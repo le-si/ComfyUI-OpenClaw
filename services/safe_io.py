@@ -298,6 +298,7 @@ def validate_outbound_url(
     *,
     allow_hosts: Optional[Set[str]] = None,
     allow_any_public_host: bool = False,
+    allow_loopback_hosts: Optional[Set[str]] = None,
     policy: Optional[OutboundPolicy] = None,
 ) -> Tuple[str, str, int, list[str]]:
     """
@@ -307,6 +308,8 @@ def validate_outbound_url(
         url: URL to validate.
         allow_hosts: If provided, only these hosts are allowed.
         allow_any_public_host: If True, allow any host that resolves to a public IP.
+        allow_loopback_hosts: Optional host allowlist for controlled loopback-only
+            exceptions. This does not allow general private networks.
         policy: S51 OutboundPolicy for scheme+port enforcement.
 
     Returns:
@@ -346,6 +349,9 @@ def validate_outbound_url(
 
     # Normalize host
     normalized_host = _normalize_host(host)
+    normalized_loopback_allowlist = {
+        _normalize_host(h) for h in (allow_loopback_hosts or set())
+    }
 
     # Check allowlist if provided or enforced
     if not allow_any_public_host:
@@ -365,6 +371,21 @@ def validate_outbound_url(
         for _, _, _, _, sockaddr in addr_infos:
             ip = sockaddr[0]
             if is_private_ip(ip):
+                # CRITICAL:
+                # Only allow loopback IPs when the target host is explicitly listed in
+                # allow_loopback_hosts. Never relax this into blanket private-IP allow.
+                try:
+                    ip_obj = ipaddress.ip_address(ip)
+                except ValueError:
+                    ip_obj = None
+                if (
+                    ip_obj is not None
+                    and ip_obj.is_loopback
+                    and normalized_host in normalized_loopback_allowlist
+                ):
+                    if ip not in resolved_ips:
+                        resolved_ips.append(ip)
+                    continue
                 raise SSRFError(f"Private/reserved IP blocked: {ip}")
             if ip not in resolved_ips:
                 resolved_ips.append(ip)
@@ -518,9 +539,11 @@ def safe_fetch(
 def safe_request_json(
     method: str,
     url: str,
-    json_body: Any,
+    json_body: Any = None,
     *,
     allow_hosts: Optional[Set[str]] = None,
+    allow_any_public_host: bool = False,
+    allow_loopback_hosts: Optional[Set[str]] = None,
     headers: Optional[dict] = None,
     timeout_sec: int = 10,
     max_response_bytes: int = 1_000_000,
@@ -541,8 +564,15 @@ def safe_request_json(
 
     while True:
         # Validate URL + Pin IPs
+        # IMPORTANT:
+        # Keep these controls aligned with any caller pre-validation. Divergence
+        # between pre-check and request-time check caused S65 regressions.
         scheme, host, port, pinned_ips = validate_outbound_url(
-            current_url, allow_hosts=allow_hosts, policy=policy
+            current_url,
+            allow_hosts=allow_hosts,
+            allow_any_public_host=allow_any_public_host,
+            allow_loopback_hosts=allow_loopback_hosts,
+            policy=policy,
         )
 
         # Build request

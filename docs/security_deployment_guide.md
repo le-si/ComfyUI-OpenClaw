@@ -79,9 +79,10 @@ OPENCLAW_ADMIN_TOKEN=change-this-local-admin-token
 1. Keep ComfyUI bound to localhost only.
 2. Keep remote admin disabled.
 3. Keep external tools/registry sync/transforms disabled unless explicitly needed.
-4. Run:
+4. For local LLM providers (Ollama/LM Studio), use loopback URLs only (`localhost`/`127.0.0.1`/`::1`); keep `OPENCLAW_ALLOW_ANY_PUBLIC_LLM_HOST=0` and `OPENCLAW_ALLOW_INSECURE_BASE_URL=0`.
+5. Run:
    - `python scripts/check_deployment_profile.py --profile local`
-5. If you enable optional high-risk features, document why and time-box the change.
+6. If you enable optional high-risk features, document why and time-box the change.
 
 ## 4. LAN (Trusted Subnet)
 

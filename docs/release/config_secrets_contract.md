@@ -39,6 +39,10 @@ Controls the core LLM client used by nodes (Planner, Refiner, etc.).
 | `OPENCLAW_ALLOW_ANY_PUBLIC_LLM_HOST` | `0` | Set `1` to bypass host allowlist and allow any public IP. |
 | `OPENCLAW_ALLOW_INSECURE_BASE_URL` | `0` | Set `1` to allow HTTP or private IP targets (Dangerous!). |
 
+Notes:
+- Local providers (`ollama`, `lmstudio`) are loopback-only by design and should use `localhost` / `127.0.0.1` / `::1`.
+- Local loopback provider targets do not require enabling insecure SSRF flags.
+
 ### 2.2 Security & Authentication
 
 Controls access to APIs and administrative features.
@@ -50,7 +54,7 @@ Controls access to APIs and administrative features.
 | `OPENCLAW_WEBHOOK_SECRET` | **High** | Secret for signing/verifying inbound webhook payloads. |
 | `OPENCLAW_REQUIRE_APPROVAL_FOR_TRIGGERS` | Low | Set `1` to require admin approval for all external triggers (default: `0`). |
 | `OPENCLAW_PRESETS_PUBLIC_READ` | Low | Set `0` to require Admin Token for listing presets (default: `1`). |
-| `OPENCLAW_STRICT_LOCALHOST_AUTH` | Low | Set `1` to enforce auth even on localhost (default: `0`). |
+| `OPENCLAW_STRICT_LOCALHOST_AUTH` | Low | Set `1` to enforce auth even on localhost (default: `1`). |
 
 ### 2.3 Connector & Delivery (Chat Apps)
 

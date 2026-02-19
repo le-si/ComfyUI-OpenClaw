@@ -80,6 +80,7 @@ if __package__ and "." in __package__:
         get_admin_token,
         get_apply_semantics,
         get_effective_config,
+        get_llm_egress_controls,
         get_settings_schema,
         is_loopback_client,
         update_config,
@@ -110,6 +111,7 @@ else:  # pragma: no cover (test-only import mode)
         get_admin_token,
         get_apply_semantics,
         get_effective_config,
+        get_llm_egress_controls,
         get_settings_schema,
         is_loopback_client,
         update_config,
@@ -399,10 +401,10 @@ async def llm_models_handler(request: web.Request) -> web.Response:
 
     try:
         from ..services.providers.catalog import ProviderType, get_provider_info
-        from ..services.providers.keys import get_api_key_for_provider
+        from ..services.providers.keys import get_api_key_for_provider, requires_api_key
     except ImportError:
         from services.providers.catalog import ProviderType, get_provider_info
-        from services.providers.keys import get_api_key_for_provider
+        from services.providers.keys import get_api_key_for_provider, requires_api_key
 
     info = get_provider_info(provider)
     if not info:
@@ -443,7 +445,11 @@ async def llm_models_handler(request: web.Request) -> web.Response:
             )
 
     api_key = get_api_key_for_provider(provider)
-    if not api_key:
+    # CRITICAL:
+    # Local providers (e.g. ollama/lmstudio) intentionally work without API keys.
+    # Do not change this gate back to `if not api_key`, or local model-list loading
+    # will regress with false 400 errors.
+    if requires_api_key(provider) and not api_key:
         return web.json_response(
             {"ok": False, "error": f"No API key configured for provider '{provider}'."},
             status=400,
@@ -459,16 +465,12 @@ async def llm_models_handler(request: web.Request) -> web.Response:
         except ImportError:
             from services.safe_io import STANDARD_OUTBOUND_POLICY, validate_outbound_url
 
-        allowed_hosts = _get_llm_allowed_hosts()
-        allow_any = _env_flag(
-            "OPENCLAW_ALLOW_ANY_PUBLIC_LLM_HOST",
-            "MOLTBOT_ALLOW_ANY_PUBLIC_LLM_HOST",
-            default=False,
-        )
+        controls = get_llm_egress_controls(provider, base_url)
         validate_outbound_url(
             base_url,
-            allow_hosts=None if allow_any else allowed_hosts,
-            allow_any_public_host=allow_any,
+            allow_hosts=controls.get("allow_hosts"),
+            allow_any_public_host=bool(controls.get("allow_any_public_host")),
+            allow_loopback_hosts=controls.get("allow_loopback_hosts"),
             policy=STANDARD_OUTBOUND_POLICY,
         )
     except Exception as e:
@@ -492,19 +494,24 @@ async def llm_models_handler(request: web.Request) -> web.Response:
             )
 
         url = f"{base_url.rstrip('/')}/models"
+        request_headers = {
+            "User-Agent": f"ComfyUI-OpenClaw/{PACK_VERSION}",
+            "Accept": "application/json",
+        }
+        if api_key:
+            request_headers["Authorization"] = f"Bearer {api_key}"
 
         # S65: Enforce outbound policy via safe_io
         payload = safe_request_json(
             method="GET",
             url=url,
-            headers={
-                "User-Agent": f"ComfyUI-OpenClaw/{PACK_VERSION}",
-                "Authorization": f"Bearer {api_key}",
-                "Accept": "application/json",
-            },
+            json_body=None,
+            headers=request_headers,
             timeout_sec=10,
             policy=STANDARD_OUTBOUND_POLICY,
-            allow_hosts=None if allow_any else allowed_hosts,
+            allow_hosts=controls.get("allow_hosts"),
+            allow_any_public_host=bool(controls.get("allow_any_public_host")),
+            allow_loopback_hosts=controls.get("allow_loopback_hosts"),
         )
 
         models = _extract_models_from_payload(payload)

@@ -33,6 +33,10 @@ class TestS65EgressPolicyParity(unittest.TestCase):
 
             self.assertEqual(result["text"], "Hello")
             mock_safe.assert_called_once()
+            kwargs = mock_safe.call_args.kwargs
+            self.assertIn("allow_hosts", kwargs)
+            self.assertIn("allow_any_public_host", kwargs)
+            self.assertIn("allow_loopback_hosts", kwargs)
 
     def test_openai_compat_uses_safe_io(self):
         with patch("services.providers.openai_compat.safe_request_json") as mock_safe:
@@ -50,6 +54,10 @@ class TestS65EgressPolicyParity(unittest.TestCase):
 
             self.assertEqual(result["text"], "Hello")
             mock_safe.assert_called_once()
+            kwargs = mock_safe.call_args.kwargs
+            self.assertIn("allow_hosts", kwargs)
+            self.assertIn("allow_any_public_host", kwargs)
+            self.assertIn("allow_loopback_hosts", kwargs)
 
 
 class TestS65ModelListEgressConvergence(unittest.TestCase):

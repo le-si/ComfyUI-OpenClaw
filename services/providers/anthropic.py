@@ -51,6 +51,9 @@ def make_request(
     temperature: float = 0.7,
     max_tokens: int = 4096,
     timeout: float = 120.0,
+    allow_hosts: Optional[set[str]] = None,
+    allow_any_public_host: bool = False,
+    allow_loopback_hosts: Optional[set[str]] = None,
 ) -> Dict[str, Any]:
     """
     Make a request to Anthropic /v1/messages endpoint.
@@ -80,7 +83,9 @@ def make_request(
             headers=headers,
             timeout_sec=int(timeout),
             policy=STANDARD_OUTBOUND_POLICY,
-            allow_hosts=None,  # Use policy + strict DNS check
+            allow_hosts=allow_hosts,
+            allow_any_public_host=allow_any_public_host,
+            allow_loopback_hosts=allow_loopback_hosts,
         )
 
         # Extract text from response

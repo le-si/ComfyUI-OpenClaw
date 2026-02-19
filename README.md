@@ -493,6 +493,12 @@ Notes:
   - allow additional exact hosts via `OPENCLAW_LLM_ALLOWED_HOSTS=host1,host2`
   - or opt in to any public host via `OPENCLAW_ALLOW_ANY_PUBLIC_LLM_HOST=1`
   - `OPENCLAW_ALLOW_INSECURE_BASE_URL=1` disables SSRF blocking (not recommended)
+- Local providers (`ollama`, `lmstudio`) are loopback-only by design:
+  - valid targets: `localhost` / `127.0.0.1` / `::1`
+  - do **not** enable `OPENCLAW_ALLOW_INSECURE_BASE_URL` just to use local LLM
+  - recommended examples:
+    - Ollama: `http://127.0.0.1:11434`
+    - LM Studio: `http://localhost:1234/v1`
 
 ### Webhooks
 
@@ -767,6 +773,24 @@ python scripts/operator_doctor.py --json
 ### Webhooks return `403 auth_not_configured`
 
 Set webhook auth env vars (see Quick Start) and restart ComfyUI.
+
+### LLM model list shows `HTTP 403 ... Private/reserved IP blocked: 127.0.0.1`
+
+This error usually means your OpenClaw version is older than the local-loopback SSRF fix.
+For local providers, `127.0.0.1` and `localhost` are valid targets and do not require insecure SSRF flags.
+
+Checklist:
+
+1. Update OpenClaw to the latest release.
+2. For Ollama:
+   - run `ollama serve`
+   - verify `http://127.0.0.1:11434/api/tags` is reachable on the same machine
+3. In OpenClaw Settings:
+   - Provider: `Ollama (Local)` or `LM Studio (Local)`
+   - Base URL: leave empty (use provider default) or set loopback URL explicitly
+4. Keep these flags disabled:
+   - `OPENCLAW_ALLOW_ANY_PUBLIC_LLM_HOST=0`
+   - `OPENCLAW_ALLOW_INSECURE_BASE_URL=0`
 
 ### Admin Token: server-side vs UI
 

@@ -254,6 +254,20 @@ class LLMClient:
 
         return candidates_3d
 
+    def _get_egress_controls(
+        self, provider: str, base_url: Optional[str]
+    ) -> Dict[str, Any]:
+        """Build canonical SSRF controls for provider egress."""
+        try:
+            from ..services.runtime_config import get_llm_egress_controls
+        except ImportError:
+            from services.runtime_config import get_llm_egress_controls
+
+        # IMPORTANT:
+        # Keep provider egress controls centralized. Falling back to policy-only or
+        # ad-hoc allowlists causes path drift and can reintroduce S65 regressions.
+        return get_llm_egress_controls(provider, base_url or "")
+
     def _validate_candidate_url(self, provider: str, base_url: Optional[str]) -> bool:
         """
         Validate base_url against S16/S16.1 SSRF policy.
@@ -277,51 +291,25 @@ class LLMClient:
         except ImportError:
             from services.safe_io import STANDARD_OUTBOUND_POLICY, validate_outbound_url
 
-        def _env_flag(primary: str, legacy: str, default: bool = False) -> bool:
-            val = os.environ.get(primary)
-            if val is None:
-                val = os.environ.get(legacy)
-            if val is None:
-                return default
-            return str(val).strip().lower() in ("1", "true", "yes", "y", "on")
-
         try:
-            # S16.1: Strict host allowlist (exact match) OR explicit opt-in for any public host.
-            allowed_hosts_str = os.environ.get(
-                "OPENCLAW_LLM_ALLOWED_HOSTS"
-            ) or os.environ.get("MOLTBOT_LLM_ALLOWED_HOSTS", "")
-            allowed_hosts_env = set(
-                h.lower().strip() for h in allowed_hosts_str.split(",") if h.strip()
-            )
-            try:
-                from ..services.providers.catalog import get_default_public_llm_hosts
-            except ImportError:
-                from services.providers.catalog import (
-                    get_default_public_llm_hosts,  # type: ignore
-                )
-
-            allowed_hosts = set(get_default_public_llm_hosts()) | allowed_hosts_env
-            allow_any = _env_flag(
-                "OPENCLAW_ALLOW_ANY_PUBLIC_LLM_HOST",
-                "MOLTBOT_ALLOW_ANY_PUBLIC_LLM_HOST",
-                default=False,
-            )
+            controls = self._get_egress_controls(provider, base_url)
 
             # S16/S16.1/S51: Validate URL (raises on block).
             validate_outbound_url(
                 base_url,
-                allow_hosts=allowed_hosts if not allow_any else None,
-                allow_any_public_host=allow_any,
+                allow_hosts=controls.get("allow_hosts"),
+                allow_any_public_host=bool(controls.get("allow_any_public_host")),
+                allow_loopback_hosts=controls.get("allow_loopback_hosts"),
                 policy=STANDARD_OUTBOUND_POLICY,
             )
             return True
         except Exception as e:
             # Allow override via explicit risk-acceptance flag (keeps behavior consistent with runtime_config validation).
-            if _env_flag(
-                "OPENCLAW_ALLOW_INSECURE_BASE_URL",
-                "MOLTBOT_ALLOW_INSECURE_BASE_URL",
-                default=False,
-            ):
+            if (
+                os.environ.get("OPENCLAW_ALLOW_INSECURE_BASE_URL")
+                or os.environ.get("MOLTBOT_ALLOW_INSECURE_BASE_URL")
+                or ""
+            ).strip().lower() in ("1", "true", "yes", "y", "on"):
                 logger.warning(
                     f"Failover candidate {provider} with base_url={base_url} allowed by "
                     f"OPENCLAW_ALLOW_INSECURE_BASE_URL despite SSRF policy: {e}"
@@ -765,6 +753,8 @@ class LLMClient:
         max_tokens: int,
     ) -> Dict[str, Any]:
         """Complete using Anthropic Messages API."""
+        egress_controls = self._get_egress_controls(self.provider, self.base_url)
+
         if image_base64:
             message = anthropic.build_vision_message(
                 user_message, image_base64, image_media_type
@@ -781,6 +771,9 @@ class LLMClient:
             temperature=temperature,
             max_tokens=max_tokens,
             timeout=self.timeout,
+            allow_hosts=egress_controls.get("allow_hosts"),
+            allow_any_public_host=bool(egress_controls.get("allow_any_public_host")),
+            allow_loopback_hosts=egress_controls.get("allow_loopback_hosts"),
         )
 
     def _complete_openai_compat(
@@ -796,6 +789,7 @@ class LLMClient:
         tool_choice: Optional[str] = None,
     ) -> Dict[str, Any]:
         """Complete using OpenAI-compatible API."""
+        egress_controls = self._get_egress_controls(self.provider, self.base_url)
         messages = [{"role": "system", "content": system}]
 
         if image_base64:
@@ -817,6 +811,9 @@ class LLMClient:
             timeout=self.timeout,
             tools=tools,
             tool_choice=tool_choice,
+            allow_hosts=egress_controls.get("allow_hosts"),
+            allow_any_public_host=bool(egress_controls.get("allow_any_public_host")),
+            allow_loopback_hosts=egress_controls.get("allow_loopback_hosts"),
         )
 
     def get_provider_summary(self) -> Dict[str, Any]:

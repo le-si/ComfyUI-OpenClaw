@@ -6,7 +6,7 @@ import os
 import unittest
 from unittest.mock import Mock, patch
 
-from services.runtime_config import validate_config_update
+from services.runtime_config import get_llm_egress_controls, validate_config_update
 
 
 class TestSSRFPolicy(unittest.TestCase):
@@ -84,6 +84,17 @@ class TestSSRFPolicy(unittest.TestCase):
         ):
             sanitized, errors = validate_config_update(updates)
             self.assertEqual(errors, [])
+
+    def test_egress_controls_local_provider_loopback_only(self):
+        controls = get_llm_egress_controls("ollama", "http://127.0.0.1:11434")
+        self.assertIsNotNone(controls["allow_loopback_hosts"])
+        self.assertIn("127.0.0.1", controls["allow_loopback_hosts"])
+        self.assertIn("localhost", controls["allow_hosts"])
+
+    def test_egress_controls_custom_provider_does_not_get_loopback_exception(self):
+        controls = get_llm_egress_controls("custom", "http://127.0.0.1:11434")
+        self.assertIsNone(controls["allow_loopback_hosts"])
+        self.assertNotIn("127.0.0.1", controls["allow_hosts"])
 
 
 if __name__ == "__main__":

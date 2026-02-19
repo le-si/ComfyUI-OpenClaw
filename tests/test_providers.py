@@ -16,7 +16,10 @@ from services.providers.catalog import (
     PROVIDER_CATALOG,
     ProviderInfo,
     ProviderType,
+    get_loopback_host_aliases,
     get_provider_info,
+    is_local_provider,
+    is_loopback_host,
     list_providers,
 )
 from services.providers.keys import (
@@ -85,6 +88,21 @@ class TestProviderCatalog(unittest.TestCase):
         """Test that default models are defined for all providers."""
         for provider in PROVIDER_CATALOG.keys():
             self.assertIn(provider, DEFAULT_MODEL_BY_PROVIDER)
+
+    def test_local_provider_detection(self):
+        """Local providers should be identified explicitly."""
+        self.assertTrue(is_local_provider("ollama"))
+        self.assertTrue(is_local_provider("lmstudio"))
+        self.assertFalse(is_local_provider("openai"))
+
+    def test_loopback_helpers(self):
+        self.assertTrue(is_loopback_host("localhost"))
+        self.assertTrue(is_loopback_host("127.0.0.1"))
+        self.assertFalse(is_loopback_host("api.openai.com"))
+        self.assertEqual(
+            get_loopback_host_aliases("localhost"),
+            {"localhost", "127.0.0.1", "::1"},
+        )
 
 
 class TestProviderKeys(unittest.TestCase):

@@ -8,6 +8,7 @@ import json
 import logging
 import os
 from typing import Any, Dict, List, Optional, Tuple
+from urllib.parse import urlparse
 
 logger = logging.getLogger("ComfyUI-OpenClaw.services.runtime_config")
 
@@ -41,7 +42,12 @@ try:
     from .state_dir import get_state_dir
 
     CONFIG_FILE = os.path.join(get_state_dir(), "config.json")
-    from .providers.catalog import PROVIDER_CATALOG
+    from .providers.catalog import (
+        PROVIDER_CATALOG,
+        get_default_public_llm_hosts,
+        get_loopback_host_aliases,
+        is_local_provider,
+    )
     from .safe_io import SSRFError, is_private_ip, validate_outbound_url
 except ImportError:
     try:
@@ -49,7 +55,12 @@ except ImportError:
         from services.state_dir import get_state_dir  # type: ignore
 
         CONFIG_FILE = os.path.join(get_state_dir(), "config.json")
-        from services.providers.catalog import PROVIDER_CATALOG  # type: ignore
+        from services.providers.catalog import (  # type: ignore
+            PROVIDER_CATALOG,
+            get_default_public_llm_hosts,
+            get_loopback_host_aliases,
+            is_local_provider,
+        )
         from services.safe_io import is_private_ip  # type: ignore
         from services.safe_io import SSRFError, validate_outbound_url
     except ImportError:
@@ -58,6 +69,9 @@ except ImportError:
         )
         # Fallback to empty if missing
         PROVIDER_CATALOG = {}
+        get_default_public_llm_hosts = lambda: set()  # type: ignore
+        get_loopback_host_aliases = lambda _host: set()  # type: ignore
+        is_local_provider = lambda _provider: False  # type: ignore
 
         # Mock for validation if missing (Fail Closed)
         class SSRFError(ValueError):
@@ -223,6 +237,49 @@ def _env_flag(primary: str, legacy: str, default: bool = False) -> bool:
     else:
         return default
     return str(v).strip().lower() in ("1", "true", "yes", "on")
+
+
+def get_llm_egress_controls(provider: str, base_url: str) -> Dict[str, Any]:
+    """
+    Build canonical outbound SSRF controls for LLM egress paths.
+
+    IMPORTANT:
+    Callers must reuse this same control set for both pre-validation and request-time
+    validation. Diverging parameters caused the S65 loopback regression (pre-check
+    passed while request-time check failed with HTTP 403).
+    """
+    allowed_hosts_str = os.environ.get("OPENCLAW_LLM_ALLOWED_HOSTS") or os.environ.get(
+        "MOLTBOT_LLM_ALLOWED_HOSTS", ""
+    )
+    env_hosts = {h.lower().strip() for h in allowed_hosts_str.split(",") if h.strip()}
+    allowed_hosts = set(get_default_public_llm_hosts()) | env_hosts
+
+    allow_any = _env_flag(
+        "OPENCLAW_ALLOW_ANY_PUBLIC_LLM_HOST",
+        "MOLTBOT_ALLOW_ANY_PUBLIC_LLM_HOST",
+        default=False,
+    )
+
+    allow_loopback_hosts: Optional[set[str]] = None
+    try:
+        host = (urlparse(base_url).hostname or "").lower().rstrip(".")
+    except Exception:
+        host = ""
+
+    # CRITICAL:
+    # Local providers can use loopback only. Never widen this to blanket private IPs;
+    # doing so would reopen SSRF paths into internal networks.
+    if host and is_local_provider(provider):
+        loopback_aliases = get_loopback_host_aliases(host)
+        if loopback_aliases:
+            allow_loopback_hosts = loopback_aliases
+            allowed_hosts |= loopback_aliases
+
+    return {
+        "allow_hosts": None if allow_any else allowed_hosts,
+        "allow_any_public_host": allow_any,
+        "allow_loopback_hosts": allow_loopback_hosts,
+    }
 
 
 def get_scheduler_config() -> Dict[str, Any]:
@@ -414,19 +471,8 @@ def validate_config_update(updates: Dict[str, Any]) -> Tuple[Dict[str, Any], lis
                 # Matches known good default
                 pass
 
-            elif known_provider and known_provider.name.lower().endswith("(local)"):
-                # Loopback only for local providers
-                if not (
-                    val.startswith("http://localhost")
-                    or val.startswith("http://127.0.0.1")
-                ):
-                    errors.append(
-                        f"Local provider {provider_key} must use localhost URL"
-                    )
-                    continue
-
             else:
-                # Custom URL (either custom provider OR overriding default URL)
+                # Custom URL (either custom provider OR overriding default URL).
 
                 # Check opt-in for custom URLs
                 if provider_key == "custom" and not _env_flag(
@@ -439,37 +485,27 @@ def validate_config_update(updates: Dict[str, Any]) -> Tuple[Dict[str, Any], lis
                     )
                     continue
 
-                # S16.1: Strict Host Allowlist (Exact Match)
-                # Deny by default unless host is explicitly allowed.
-                # NOTE: built-in provider public hosts are allowlisted by default.
-                allowed_hosts_str = os.environ.get(
-                    "OPENCLAW_LLM_ALLOWED_HOSTS"
-                ) or os.environ.get("MOLTBOT_LLM_ALLOWED_HOSTS", "")
-                allowed_hosts_env = set(
-                    h.lower().strip() for h in allowed_hosts_str.split(",") if h.strip()
-                )
+                controls = get_llm_egress_controls(provider_key, val)
+
+                # Keep local providers strict: only loopback endpoints are acceptable.
+                if is_local_provider(provider_key) and not controls.get(
+                    "allow_loopback_hosts"
+                ):
+                    errors.append(
+                        f"Local provider {provider_key} must use localhost URL"
+                    )
+                    continue
+
                 try:
-                    from .providers.catalog import get_default_public_llm_hosts
                     from .safe_io import STANDARD_OUTBOUND_POLICY
 
-                    allowed_hosts = (
-                        set(get_default_public_llm_hosts()) | allowed_hosts_env
-                    )
-                except Exception:
-                    allowed_hosts = allowed_hosts_env
-
-                # Check opt-in for "Any Public Host" (risky, for flexibility)
-                allow_any = _env_flag(
-                    "OPENCLAW_ALLOW_ANY_PUBLIC_LLM_HOST",
-                    "MOLTBOT_ALLOW_ANY_PUBLIC_LLM_HOST",
-                    default=False,
-                )
-
-                try:
                     validate_outbound_url(
                         val,
-                        allow_hosts=allowed_hosts if not allow_any else None,
-                        allow_any_public_host=allow_any,
+                        allow_hosts=controls.get("allow_hosts"),
+                        allow_any_public_host=bool(
+                            controls.get("allow_any_public_host")
+                        ),
+                        allow_loopback_hosts=controls.get("allow_loopback_hosts"),
                         policy=STANDARD_OUTBOUND_POLICY,
                     )
                 except SSRFError as e:

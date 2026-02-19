@@ -318,6 +318,50 @@ def list_providers() -> list:
     return list(PROVIDER_CATALOG.keys())
 
 
+def _normalize_host(host: str) -> str:
+    return host.lower().strip().rstrip(".")
+
+
+def is_loopback_host(host: str) -> bool:
+    """Return True if host is one of the canonical loopback names."""
+    return _normalize_host(host) in {"localhost", "127.0.0.1", "::1"}
+
+
+def get_loopback_host_aliases(host: str) -> set[str]:
+    """
+    Return canonical loopback aliases when host is loopback.
+
+    This intentionally returns all canonical aliases so validation remains stable
+    regardless of whether callers use localhost, IPv4 loopback, or IPv6 loopback.
+    """
+    if not is_loopback_host(host):
+        return set()
+    return {"localhost", "127.0.0.1", "::1"}
+
+
+def is_local_provider(provider: str) -> bool:
+    """
+    Return True for catalog providers intended for local-loopback use.
+
+    Local providers are identified by:
+    - no API key requirement, and
+    - loopback default endpoint or explicit "(Local)" naming.
+    """
+    info = get_provider_info(provider)
+    if not info:
+        return False
+    if info.env_key_name is not None:
+        return False
+
+    try:
+        parsed = urlparse(info.base_url or "")
+        host = parsed.hostname or ""
+    except Exception:
+        host = ""
+
+    return is_loopback_host(host) or info.name.lower().endswith("(local)")
+
+
 def get_default_public_llm_hosts() -> set[str]:
     """
     Return the default *public* LLM hosts that are safe to allow by default.
@@ -326,8 +370,8 @@ def get_default_public_llm_hosts() -> set[str]:
     - We want built-in providers to work out-of-the-box without requiring users to
       configure an SSRF allowlist.
     - Custom Base URLs must still pass SSRF validation (host allowlist + public IP).
-    - Local providers are intentionally excluded here because SSRF validation blocks
-      loopback/private IPs by design.
+    - Local providers are intentionally excluded from this *public* allowlist.
+      Their loopback behavior is handled by explicit provider-aware controls.
     """
     hosts: set[str] = set()
 

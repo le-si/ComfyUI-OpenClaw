@@ -63,9 +63,47 @@ class TestModelListAPI(unittest.IsolatedAsyncioTestCase):
 
         # Verify safe_request_json was called (S65 compliance)
         mock_safe_request.assert_called_once()
-        call_kwargs = mock_safe_request.call_args
+        call_kwargs = mock_safe_request.call_args.kwargs
         # Should have passed allow_hosts (not allow_any)
-        self.assertIn("allow_hosts", call_kwargs.kwargs)
+        self.assertIn("allow_hosts", call_kwargs)
+        self.assertFalse(call_kwargs.get("allow_any_public_host", False))
+        self.assertIsNone(call_kwargs.get("json_body"))
+
+    @patch("api.config.get_effective_config")
+    @patch("services.providers.keys.get_api_key_for_provider")
+    @patch("services.providers.keys.requires_api_key")
+    @patch("api.config.check_rate_limit")
+    @patch("api.config.require_admin_token")
+    @patch("services.safe_io.safe_request_json")
+    async def test_handler_local_provider_no_api_key_allowed(
+        self,
+        mock_safe_request,
+        mock_require_admin,
+        mock_rate_limit,
+        mock_requires_key,
+        mock_get_key,
+        mock_get_config,
+    ):
+        """Local providers should not be blocked by API-key gate."""
+        mock_rate_limit.return_value = True
+        mock_require_admin.return_value = (True, None)
+        mock_get_config.return_value = (
+            {"provider": "ollama", "base_url": "http://127.0.0.1:11434"},
+            {},
+        )
+        mock_requires_key.return_value = False
+        mock_get_key.return_value = None
+        mock_safe_request.return_value = {"models": [{"id": "gemma3:4b"}]}
+
+        request = MagicMock()
+        request.query = {}
+        request.remote = "127.0.0.1"
+
+        resp = await llm_models_handler(request)
+        self.assertEqual(resp.status, 200)
+        data = json.loads(resp.body)
+        self.assertTrue(data["ok"])
+        self.assertIn("gemma3:4b", data["models"])
 
     @patch("api.config.get_effective_config")
     @patch("services.providers.keys.get_api_key_for_provider")
@@ -191,6 +229,48 @@ class TestModelListAPI(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(resp.status, 200)
         # Check cache key uses custom url
         self.assertIn(("custom", "http://custom-host:8080/v1"), _MODEL_LIST_CACHE)
+        kwargs = mock_safe_request.call_args.kwargs
+        self.assertFalse(kwargs.get("allow_any_public_host", False))
+        self.assertIsNotNone(kwargs.get("allow_hosts"))
+
+    @patch("api.config.get_effective_config")
+    @patch("services.providers.keys.get_api_key_for_provider")
+    @patch("api.config.check_rate_limit")
+    @patch("api.config.require_admin_token")
+    @patch("services.safe_io.safe_request_json")
+    @patch("services.safe_io.validate_outbound_url")
+    async def test_handler_allow_any_public_host_controls_are_consistent(
+        self,
+        mock_validate_url,
+        mock_safe_request,
+        mock_require_admin,
+        mock_rate_limit,
+        mock_get_key,
+        mock_get_config,
+    ):
+        mock_rate_limit.return_value = True
+        mock_require_admin.return_value = (True, None)
+        mock_get_config.return_value = (
+            {"provider": "custom", "base_url": "https://example.com/v1"},
+            {},
+        )
+        mock_get_key.return_value = "sk-custom"
+        mock_safe_request.return_value = {"models": [{"id": "x"}]}
+
+        request = MagicMock()
+        request.query = {}
+        request.remote = "127.0.0.1"
+
+        with patch.dict("os.environ", {"OPENCLAW_ALLOW_ANY_PUBLIC_LLM_HOST": "1"}):
+            resp = await llm_models_handler(request)
+
+        self.assertEqual(resp.status, 200)
+        validate_kwargs = mock_validate_url.call_args.kwargs
+        request_kwargs = mock_safe_request.call_args.kwargs
+        self.assertTrue(validate_kwargs["allow_any_public_host"])
+        self.assertTrue(request_kwargs["allow_any_public_host"])
+        self.assertIsNone(validate_kwargs["allow_hosts"])
+        self.assertIsNone(request_kwargs["allow_hosts"])
 
     @patch("api.config.get_effective_config")
     @patch("services.providers.keys.get_api_key_for_provider")

@@ -15,6 +15,7 @@ from services.safe_io import (
     resolve_under_root,
     safe_read_bytes,
     safe_read_text,
+    safe_request_json,
     safe_write_text,
     validate_outbound_url,
 )
@@ -178,6 +179,53 @@ class TestURLSafety(unittest.TestCase):
         with self.assertRaises(SSRFError) as ctx:
             validate_outbound_url("https://example.com", allow_hosts={"example.com"})
         self.assertIn("Private/reserved IP", str(ctx.exception))
+
+    @patch("socket.getaddrinfo")
+    def test_allow_loopback_private_ip_with_explicit_host_gate(self, mock_dns):
+        """Loopback may be allowed only with explicit allow_loopback_hosts host gate."""
+        mock_dns.return_value = [(2, 1, 6, "", ("127.0.0.1", 443))]
+
+        result = validate_outbound_url(
+            "https://localhost",
+            allow_hosts={"localhost"},
+            allow_loopback_hosts={"localhost"},
+        )
+        self.assertEqual(result, ("https", "localhost", 443, ["127.0.0.1"]))
+
+    @patch("socket.getaddrinfo")
+    def test_loopback_allowlist_does_not_allow_other_private_ranges(self, mock_dns):
+        """Loopback exception must not allow non-loopback private IPs."""
+        mock_dns.return_value = [(2, 1, 6, "", ("192.168.1.9", 443))]
+
+        with self.assertRaises(SSRFError) as ctx:
+            validate_outbound_url(
+                "https://localhost",
+                allow_hosts={"localhost"},
+                allow_loopback_hosts={"localhost"},
+            )
+        self.assertIn("Private/reserved IP", str(ctx.exception))
+
+    @patch("services.safe_io._build_pinned_opener")
+    @patch("services.safe_io.validate_outbound_url")
+    def test_safe_request_json_get_without_body(self, mock_validate, mock_build):
+        """GET requests should work when json_body is omitted/None."""
+        mock_validate.return_value = ("https", "example.com", 443, ["93.184.216.34"])
+
+        mock_response = MagicMock()
+        mock_response.getcode.return_value = 200
+        mock_response.read.return_value = b'{"ok": true}'
+
+        mock_opener = MagicMock()
+        mock_opener.open.return_value.__enter__.return_value = mock_response
+        mock_build.return_value = mock_opener
+
+        out = safe_request_json(
+            method="GET",
+            url="https://example.com/models",
+            json_body=None,
+            allow_hosts={"example.com"},
+        )
+        self.assertEqual(out["ok"], True)
 
     def test_host_normalization_case(self):
         """Test host normalization is case-insensitive."""
