@@ -17,10 +17,9 @@ htmlcov/
 coverage.xml
 *.cover
 REFERENCE/
-AGENT_CONTEXT.md
-AGENTS.md
-AGENT.md
+AGEN*.md
 ROADMAP.md
+scripts/sync_split.py
 tests_output.txt
 node_modules/
 playwright-report/
