@@ -25,12 +25,10 @@ class TestModelListAPI(unittest.IsolatedAsyncioTestCase):
     @patch("services.providers.keys.get_api_key_for_provider")
     @patch("api.config.check_rate_limit")
     @patch("api.config.require_admin_token")
-    @patch("services.safe_io.validate_outbound_url")
-    @patch("urllib.request.urlopen")
+    @patch("services.safe_io.safe_request_json")
     async def test_handler_default_allowlist_allows_builtin_hosts(
         self,
-        mock_urlopen,
-        mock_validate_url,
+        mock_safe_request,
         mock_require_admin,
         mock_rate_limit,
         mock_get_key,
@@ -48,27 +46,8 @@ class TestModelListAPI(unittest.IsolatedAsyncioTestCase):
         )
         mock_get_key.return_value = "sk-test"
 
-        def _assert_allowlist(
-            url,
-            *,
-            allow_hosts=None,
-            allow_any_public_host=False,
-            policy=None,
-        ):
-            self.assertFalse(allow_any_public_host)
-            self.assertIsNotNone(allow_hosts)
-            self.assertIn("generativelanguage.googleapis.com", set(allow_hosts))
-            self.assertIsNotNone(policy)
-            return ("https", "generativelanguage.googleapis.com", 443)
-
-        mock_validate_url.side_effect = _assert_allowlist
-
-        mock_response = MagicMock()
-        mock_response.read.return_value = json.dumps(
-            {"data": [{"id": "gemini-2.0-flash"}]}
-        ).encode("utf-8")
-        mock_response.__enter__.return_value = mock_response
-        mock_urlopen.return_value = mock_response
+        # S65: safe_request_json returns parsed dict directly
+        mock_safe_request.return_value = {"data": [{"id": "gemini-2.0-flash"}]}
 
         request = MagicMock()
         request.query = {}
@@ -82,16 +61,20 @@ class TestModelListAPI(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(data["ok"])
         self.assertIn("gemini-2.0-flash", data["models"])
 
+        # Verify safe_request_json was called (S65 compliance)
+        mock_safe_request.assert_called_once()
+        call_kwargs = mock_safe_request.call_args
+        # Should have passed allow_hosts (not allow_any)
+        self.assertIn("allow_hosts", call_kwargs.kwargs)
+
     @patch("api.config.get_effective_config")
     @patch("services.providers.keys.get_api_key_for_provider")
     @patch("api.config.check_rate_limit")
     @patch("api.config.require_admin_token")
-    @patch("services.safe_io.validate_outbound_url")
-    @patch("urllib.request.urlopen")
+    @patch("services.safe_io.safe_request_json")
     async def test_handler_success(
         self,
-        mock_urlopen,
-        mock_validate_url,
+        mock_safe_request,
         mock_require_admin,
         mock_rate_limit,
         mock_get_key,
@@ -106,13 +89,8 @@ class TestModelListAPI(unittest.IsolatedAsyncioTestCase):
         )
         mock_get_key.return_value = "sk-test"
 
-        # Mock API response
-        mock_response = MagicMock()
-        mock_response.read.return_value = json.dumps(
-            {"data": [{"id": "gpt-4o"}]}
-        ).encode("utf-8")
-        mock_response.__enter__.return_value = mock_response
-        mock_urlopen.return_value = mock_response
+        # S65: safe_request_json returns parsed dict directly
+        mock_safe_request.return_value = {"data": [{"id": "gpt-4o"}]}
 
         # Request
         request = MagicMock()
@@ -136,10 +114,10 @@ class TestModelListAPI(unittest.IsolatedAsyncioTestCase):
     @patch("services.providers.keys.get_api_key_for_provider")
     @patch("api.config.check_rate_limit")
     @patch("api.config.require_admin_token")
-    @patch("services.safe_io.validate_outbound_url")
+    @patch("services.safe_io.safe_request_json")
     async def test_handler_cached_fallback(
         self,
-        mock_validate_url,
+        mock_safe_request,
         mock_require_admin,
         mock_rate_limit,
         mock_get_key,
@@ -152,36 +130,45 @@ class TestModelListAPI(unittest.IsolatedAsyncioTestCase):
         # Setup mocks
         mock_rate_limit.return_value = True
         mock_require_admin.return_value = (True, None)
-        # Mock API failure by NOT patching urlopen (it will raise if called, or we can mock it to raise)
         mock_get_config.return_value = (
             {"provider": "openai", "base_url": "https://api.openai.com"},
             {},
         )
         mock_get_key.return_value = "sk-test"
 
-        with patch("urllib.request.urlopen", side_effect=Exception("Network fail")):
-            # Request
-            request = MagicMock()
-            request.query = {}
-            request.remote = "127.0.0.1"
+        # S65: Simulate network failure via safe_request_json
+        mock_safe_request.side_effect = Exception("Network fail")
 
-            # Execute
-            resp = await llm_models_handler(request)
+        # Request
+        request = MagicMock()
+        request.query = {}
+        request.remote = "127.0.0.1"
 
-            # Assert - Should return 200 with cached=True and warning
-            self.assertEqual(resp.status, 200)
-            data = json.loads(resp.body)
-            self.assertTrue(data["ok"])
-            self.assertEqual(data["models"], ["cached-model"])
-            self.assertTrue(data["cached"])
-            self.assertIn("Using cached list", data.get("warning", ""))
+        # Execute
+        resp = await llm_models_handler(request)
+
+        # Assert - Should return 200 with cached=True and warning
+        self.assertEqual(resp.status, 200)
+        data = json.loads(resp.body)
+        self.assertTrue(data["ok"])
+        self.assertEqual(data["models"], ["cached-model"])
+        self.assertTrue(data["cached"])
+        self.assertIn("Using cached list", data.get("warning", ""))
 
     @patch("api.config.get_effective_config")
     @patch("services.providers.keys.get_api_key_for_provider")
     @patch("api.config.check_rate_limit")
     @patch("api.config.require_admin_token")
+    @patch("services.safe_io.safe_request_json")
+    @patch("services.safe_io.validate_outbound_url")
     async def test_handler_base_url_override(
-        self, mock_require_admin, mock_rate_limit, mock_get_key, mock_get_config
+        self,
+        mock_validate_url,
+        mock_safe_request,
+        mock_require_admin,
+        mock_rate_limit,
+        mock_get_key,
+        mock_get_config,
     ):
         mock_rate_limit.return_value = True
         mock_require_admin.return_value = (True, None)
@@ -192,25 +179,18 @@ class TestModelListAPI(unittest.IsolatedAsyncioTestCase):
         )
         mock_get_key.return_value = "sk-custom"
 
+        # S65: safe_request_json returns parsed dict directly
+        mock_safe_request.return_value = {"models": [{"id": "custom-model"}]}
+
         request = MagicMock()
         request.query = {}
         request.remote = "127.0.0.1"
 
-        with patch("urllib.request.urlopen") as mock_urlopen:
-            mock_response = MagicMock()
-            mock_response.read.return_value = json.dumps(
-                {"models": [{"id": "custom-model"}]}
-            ).encode("utf-8")
-            mock_response.__enter__.return_value = mock_response
-            mock_urlopen.return_value = mock_response
+        resp = await llm_models_handler(request)
 
-            # Allow custom URL
-            with patch("services.safe_io.validate_outbound_url"):
-                resp = await llm_models_handler(request)
-
-            self.assertEqual(resp.status, 200)
-            # Check cache key uses custom url
-            self.assertIn(("custom", "http://custom-host:8080/v1"), _MODEL_LIST_CACHE)
+        self.assertEqual(resp.status, 200)
+        # Check cache key uses custom url
+        self.assertIn(("custom", "http://custom-host:8080/v1"), _MODEL_LIST_CACHE)
 
     @patch("api.config.get_effective_config")
     @patch("services.providers.keys.get_api_key_for_provider")

@@ -280,6 +280,8 @@ if [ "$NODE_MAJOR" -lt 18 ]; then
 fi
 
 echo "[pre-push] Node version: $(node -v)"
+echo "[pre-push] 0/4 R120 dependency preflight"
+"$VENV_PY" scripts/preflight_check.py --strict
 echo "[pre-push] 1/4 detect-secrets"
 run_pre_commit_safe run detect-secrets --all-files
 

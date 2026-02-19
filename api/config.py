@@ -10,6 +10,14 @@ import logging
 import time
 
 try:
+    from ..config import PACK_VERSION
+except ImportError:  # pragma: no cover
+    try:
+        from config import PACK_VERSION  # type: ignore
+    except ImportError:
+        PACK_VERSION = "0.1.0"
+
+try:
     from aiohttp import web
 except ImportError:  # pragma: no cover (optional for unit tests)
     # CRITICAL test/CI fallback:
@@ -470,22 +478,35 @@ async def llm_models_handler(request: web.Request) -> web.Response:
 
     # Fetch /models
     try:
-        import urllib.error
-        import urllib.request
+        try:
+            from ..services.safe_io import (
+                STANDARD_OUTBOUND_POLICY,
+                SSRFError,
+                safe_request_json,
+            )
+        except ImportError:
+            from services.safe_io import (
+                STANDARD_OUTBOUND_POLICY,
+                SSRFError,
+                safe_request_json,
+            )
 
         url = f"{base_url.rstrip('/')}/models"
-        req = urllib.request.Request(url, method="GET")
-        try:
-            from ..config import PACK_VERSION
-        except ImportError:  # pragma: no cover
-            from config import PACK_VERSION  # type: ignore
-        req.add_header("User-Agent", f"ComfyUI-OpenClaw/{PACK_VERSION}")
-        req.add_header("Authorization", f"Bearer {api_key}")
-        req.add_header("Accept", "application/json")
 
-        with urllib.request.urlopen(req, timeout=10) as resp:
-            body = resp.read(1_000_000)
-        payload = json.loads(body.decode("utf-8", errors="replace"))
+        # S65: Enforce outbound policy via safe_io
+        payload = safe_request_json(
+            method="GET",
+            url=url,
+            headers={
+                "User-Agent": f"ComfyUI-OpenClaw/{PACK_VERSION}",
+                "Authorization": f"Bearer {api_key}",
+                "Accept": "application/json",
+            },
+            timeout_sec=10,
+            policy=STANDARD_OUTBOUND_POLICY,
+            allow_hosts=None if allow_any else allowed_hosts,
+        )
+
         models = _extract_models_from_payload(payload)
 
         # R60: Insert/update bounded cache
@@ -494,24 +515,34 @@ async def llm_models_handler(request: web.Request) -> web.Response:
         return web.json_response(
             {"ok": True, "provider": provider, "models": models, "cached": False}
         )
-    except urllib.error.HTTPError as e:
-        # Fallback: serve stale cache entry (if any) on fetch failure
-        stale = _MODEL_LIST_CACHE.get(cache_key)
-        if stale:
-            _ts, models = stale
-            warning = f"Using cached list (refresh failed: HTTP {e.code} {e.reason})"
-            return web.json_response(
-                {
-                    "ok": True,
-                    "provider": provider,
-                    "models": models,
-                    "cached": True,
-                    "warning": warning,
-                }
-            )
+    except SSRFError as e:
         return web.json_response(
-            {"ok": False, "error": f"HTTP error {e.code}: {e.reason}"}, status=502
+            {"ok": False, "error": f"SSRF policy blocked outbound URL: {e}"}, status=403
         )
+    except RuntimeError as e:
+        # safe_request_json raises RuntimeError for HTTP errors (non-200) contextually
+        # check if it looks like an HTTP error
+        str_e = str(e)
+        if "HTTP" in str_e:
+            # Fallback: serve stale cache entry (if any) on fetch failure
+            stale = _MODEL_LIST_CACHE.get(cache_key)
+            if stale:
+                _ts, models = stale
+                warning = f"Using cached list (refresh failed: {str_e})"
+                return web.json_response(
+                    {
+                        "ok": True,
+                        "provider": provider,
+                        "models": models,
+                        "cached": True,
+                        "warning": warning,
+                    }
+                )
+            return web.json_response(
+                {"ok": False, "error": f"Upstream error: {str_e}"}, status=502
+            )
+        raise e
+
     except Exception as e:
         stale = _MODEL_LIST_CACHE.get(cache_key)
         if stale:

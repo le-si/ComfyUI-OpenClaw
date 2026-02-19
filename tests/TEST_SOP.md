@@ -39,6 +39,24 @@ To avoid local vs CI mismatches:
 - If a test truly requires an optional dependency, mark it with a **clear skip** when the dep is unavailable.
 - Record the environment in the implementation record (OS, Python, Node, and any extras installed) so mismatches are visible.
 
+## Dependency Parity Preflight (R120)
+
+Before running tests or deploying, validation of the build environment is required to ensure parity.
+
+- **Run the preflight check**:
+
+  ```bash
+  python scripts/preflight_check.py
+  ```
+
+- **Checks performed**:
+  - Python version (>=3.10)
+  - Node.js version (>=18.0.0)
+  - Essential Python dependencies (cryptography)
+  - Optional: Use `--strict` to fail on warnings.
+
+Failed preflight checks must be resolved before proceeding with full test suites.
+
 ## Verification Governance Additions (R110 / R112)
 
 - **R110 (skip governance)**:
@@ -77,6 +95,7 @@ Do **not** switch hooks to `repo: local` unless CI is updated to match, or you w
 ## Pre-commit Cache Repair (If Cache Is Corrupt)
 
 Symptoms:
+
 - `InvalidManifestError` or missing `.pre-commit-hooks.yaml`
 - partial venv in pre-commit cache
 - repeated install failures even after network is restored
@@ -100,6 +119,7 @@ If GitHub is unreachable, the above will still fail; fix connectivity or configu
 ## Windows Lock-File Guardrail (Required on WinError 5)
 
 When you see:
+
 - `PermissionError: [WinError 5] Access is denied`
 - failure deleting `...\\.cache\\pre-commit\\...\\Scripts\\*.exe`
 
@@ -121,6 +141,7 @@ Use this exact sequence (PowerShell):
    - rerun step (3)
 
 Rules:
+
 - Do not run multiple pre-commit commands in parallel on Windows.
 - Do not mark tests as passed if hooks were interrupted by lock errors.
 
@@ -170,12 +191,14 @@ bash scripts/pre_push_checks.sh
 ```
 
 `scripts/pre_push_checks.sh` is the CI-parity guard and must include all 4 stages:
+
 1) `detect-secrets`
 2) all `pre-commit` hooks
 3) backend unit tests (`scripts/run_unittests.py --pattern "test_*.py" --enforce-skip-policy tests/skip_policy.json`)
 4) frontend E2E (`npm test`)
 
 IMPORTANT:
+
 - Do not remove stage (3). If pre-push skips backend unit tests, local pushes can pass while GitHub CI fails later.
 - Keep dependency bootstrap in this script aligned with `.github/workflows/ci.yml` unit-test dependencies.
 
@@ -342,6 +365,7 @@ After starting the connector, expose it via tunnel and set the LINE webhook URL 
 If messages are ignored, enable debug and check allowlist logs (user/group/room IDs).
 
 #### LINE Image Delivery (F33) — Quick Test
+
 1) Ensure `OPENCLAW_CONNECTOR_PUBLIC_BASE_URL` is set to a **public HTTPS** URL.
 2) Send `/run <template_id> <prompt> --approval` and approve if required.
 3) On completion, the bot should push an image message to LINE.
@@ -456,7 +480,7 @@ The UI can **use** an Admin Token for authenticated requests, but **cannot set o
 $env:OPENCLAW_ADMIN_TOKEN="your_admin_token_here"
 ```
 
-2) **Restart ComfyUI**
+1) **Restart ComfyUI**
 2) **Enter the same token in the Settings UI**
    - This only stores it in the browser session for API calls.
 

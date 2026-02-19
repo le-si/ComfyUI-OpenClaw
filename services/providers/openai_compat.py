@@ -1,13 +1,15 @@
-"""
-OpenAI-Compatible API Adapter.
-R16: Request builder for OpenAI-compatible /chat/completions endpoints.
-"""
-
 import json
 import logging
-import urllib.error
-import urllib.request
 from typing import Any, Dict, List, Optional
+
+try:
+    from ..provider_errors import ProviderHTTPError
+    from ..retry_after import get_retry_after_seconds
+    from ..safe_io import STANDARD_OUTBOUND_POLICY, SSRFError, safe_request_json
+except ImportError:
+    from services.provider_errors import ProviderHTTPError
+    from services.retry_after import get_retry_after_seconds
+    from services.safe_io import STANDARD_OUTBOUND_POLICY, SSRFError, safe_request_json
 
 logger = logging.getLogger("ComfyUI-OpenClaw.services.providers.openai_compat")
 
@@ -74,7 +76,7 @@ def make_request(
 
     Returns: {"text": str, "raw": dict}
     """
-    # Build endpoint URL
+    # Build endpoint URL (S65: safe_io handles normalization)
     endpoint = f"{base_url.rstrip('/')}/chat/completions"
 
     # Build request payload
@@ -89,85 +91,57 @@ def make_request(
     if api_key:
         headers["Authorization"] = f"Bearer {api_key}"
 
-    # Make request
-    data = json.dumps(payload).encode("utf-8")
-    req = urllib.request.Request(endpoint, data=data, headers=headers, method="POST")
-
     try:
-        with urllib.request.urlopen(req, timeout=timeout) as response:
-            raw = json.loads(response.read().decode("utf-8"))
+        # S65: Enforce restricted outbound policy (HTTPS, standard ports)
+        # safe_request_json handles SSRF checks, DNS pinning, and redirects.
+        raw = safe_request_json(
+            method="POST",
+            url=endpoint,
+            json_body=payload,
+            headers=headers,
+            timeout_sec=int(timeout),
+            policy=STANDARD_OUTBOUND_POLICY,
+            allow_hosts=None,  # Use policy + strict DNS check
+        )
 
-            # Extract text from response
-            text = ""
-            if "choices" in raw and len(raw["choices"]) > 0:
-                choice = raw["choices"][0]
-                if "message" in choice and "content" in choice["message"]:
-                    text = choice["message"]["content"]
+        # Extract text from response
+        text = ""
+        if "choices" in raw and len(raw["choices"]) > 0:
+            choice = raw["choices"][0]
+            if "message" in choice and "content" in choice["message"]:
+                text = choice["message"]["content"]
 
-            return {"text": text, "raw": raw}
+        return {"text": text, "raw": raw}
 
-    except urllib.error.HTTPError as e:
-        # R14/R37: Parse retry-after from headers/body
-        try:
-            # IMPORTANT: ComfyUI runtime requires package-relative imports.
-            # CRITICAL: Do not collapse this to top-level imports; it breaks in custom_nodes.
-            try:
-                from ..provider_errors import ProviderHTTPError
-                from ..retry_after import get_retry_after_seconds
-            except ImportError:
-                from services.provider_errors import ProviderHTTPError
-                from services.retry_after import get_retry_after_seconds
+    except RuntimeError as e:
+        # S65/R14: Attempt to reconstruct ProviderHTTPError from safe_io exception
 
-            # Get response headers and body
-            headers = dict(e.headers) if hasattr(e, "headers") else {}
-            error_body_str = e.read().decode("utf-8") if e.fp else ""
+        # Try to parse status code
+        params = str(e)
+        status_code = 500
+        import re
 
-            # Try to parse as JSON
-            try:
-                error_body = json.loads(error_body_str) if error_body_str else None
-            except json.JSONDecodeError:
-                error_body = {"raw": error_body_str[:500]}
+        m = re.search(r"HTTP error (\d+)", params)
+        if m:
+            status_code = int(m.group(1))
 
-            # Extract retry-after
-            retry_after = get_retry_after_seconds(
-                headers=headers, error_body=error_body
-            )
+        logger.error(f"OpenAI-compat API error: {e}")
 
-            # Extract error message (OpenAI format)
-            if error_body and isinstance(error_body, dict):
-                message = error_body.get("error", {}).get(
-                    "message", error_body_str[:200]
-                )
-            else:
-                message = f"HTTP {e.code}"
+        raise ProviderHTTPError(
+            status_code=status_code,
+            message=str(e),
+            provider="openai_compat",
+            model=model,
+            retry_after=0,
+        )
 
-            # Log with retry-after context
-            logger.error(
-                f"OpenAI-compat API error {e.code}: {message[:500]} (retry_after={retry_after}s)"
-            )
+    except SSRFError as e:
+        logger.error(f"OpenAI-compat SSRF blocked: {e}")
+        raise RuntimeError(f"Security policy blocked request: {e}")
 
-            # Raise structured error (provider name from base_url context or 'openai_compat')
-            raise ProviderHTTPError(
-                status_code=e.code,
-                message=message,
-                provider="openai_compat",  # Generic, could be OpenAI/Groq/etc
-                model=model,
-                retry_after=retry_after,
-                headers=headers,
-                body=error_body,
-            )
-        except ImportError:
-            # Fallback if provider_errors not available
-            error_body = e.read().decode("utf-8") if e.fp else ""
-            logger.error(f"OpenAI-compat API error {e.code}: {error_body[:500]}")
-            raise RuntimeError(f"API request failed: {e.code} - {error_body[:200]}")
-
-    except urllib.error.URLError as e:
-        logger.error(f"OpenAI-compat URL error: {e.reason}")
-        raise RuntimeError(f"API connection failed: {e.reason}")
-    except json.JSONDecodeError as e:
-        logger.error(f"OpenAI-compat JSON decode error: {e}")
-        raise RuntimeError(f"Invalid API response: {e}")
+    except Exception as e:
+        logger.error(f"OpenAI-compat unexpected error: {e}")
+        raise RuntimeError(f"API request failed: {e}")
 
 
 def build_vision_message(

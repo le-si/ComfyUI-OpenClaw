@@ -152,6 +152,9 @@ if ($nodeMajor -lt 18) {
 
 Write-Host "[tests] Node version: $(node -v)"
 
+Write-Host "[tests] 0/4 R120 dependency preflight"
+Invoke-Checked "preflight_check" { & $venvPython scripts\preflight_check.py --strict }
+
 Write-Host "[tests] 1/4 detect-secrets"
 Invoke-Checked "detect-secrets" { & $venvPython -m pre_commit run detect-secrets --all-files }
 

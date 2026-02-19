@@ -110,6 +110,9 @@ fi
 
 echo "[tests] Node version: $(node -v)"
 
+echo "[tests] 0/4 R120 dependency preflight"
+"$VENV_PY" scripts/preflight_check.py --strict
+
 echo "[tests] 1/4 detect-secrets"
 "$VENV_PY" -m pre_commit run detect-secrets --all-files
 
