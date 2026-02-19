@@ -286,6 +286,10 @@ class TestR79EgressCompliance(unittest.TestCase):
             "connector/platforms/telegram_polling.py",
             "connector/platforms/wechat_webhook.py",
             "connector/platforms/whatsapp_webhook.py",
+            # IMPORTANT: Keep connector platform adapters in parity here.
+            # Missing a newly-added adapter causes false-positive R79 failures
+            # in full-gate runs even when egress behavior is intentional.
+            "connector/platforms/slack_webhook.py",
             # Providers
             "services/providers/anthropic.py",
             "services/providers/openai_compat.py",

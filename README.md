@@ -9,7 +9,7 @@ ComfyUI-OpenClaw is a **security-first orchestration layer** for ComfyUI that co
 - **A secure-by-default HTTP API** for automation (webhooks, triggers, schedules, approvals, presets)
 - **Public-ready control-plane split architecture** (embedded UX + externalized high-risk control surfaces)
 - **Verification-first hardening lanes** (route drift, real-backend E2E, adversarial fuzz/mutation gates)
-- **Now supports major messaging platforms, including Discord, Telegram, WhatsApp, LINE, WeChat and KakaoTalk.**
+- **Now supports major messaging platforms, including Discord, Telegram, WhatsApp, LINE, WeChat, KakaoTalk, and Slack.**
 - **And more exciting features being added continuously**
 
 ---
@@ -47,6 +47,18 @@ Deployment profiles and hardening checklists:
 
 
 <details><summary><h2>Latest Updates - Click to expand</h2></summary>
+
+<details>
+
+<summary><strong>Slack app support closeout: secure Events API ingress, connector parity, and no-skip verification lanes</strong></summary>
+
+- Completed Slack implementation hardening chain with full SOP validation:
+  - added Slack Events API adapter with signed ingress checks, replay/dedupe handling, bot-loop suppression, allowlist enforcement, and thread-aware reply delivery
+  - wired Slack runtime policy into existing connector authorization boundaries so command trust behavior stays consistent with other platforms
+  - added dedicated Slack verification lanes for ingress contract coverage and real-backend flow parity, both enforced by skip-policy and full-test scripts
+  - synchronized verification evidence through detect-secrets, pre-commit, backend unit + real lanes, adversarial gate, and frontend E2E full pass
+
+</details>
 
 <details>
 

@@ -13,10 +13,10 @@ The connector runs alongside ComfyUI on your machine.
 
 **Security**:
 
-- **Transport Model**: Telegram/Discord are outbound. LINE/WhatsApp/WeChat/KakaoTalk require inbound HTTPS webhook endpoints.
-- **Allowlist**: Only users/chats you explicitly allow can send commands.
+- **Transport Model**: Telegram/Discord are outbound. LINE/WhatsApp/WeChat/KakaoTalk/Slack require inbound HTTPS webhook endpoints.
+- **Allowlist/Trust Model**: Allowlists define trusted senders/channels. Non-allowlisted senders are treated as untrusted (for example, `/run` is approval-routed instead of auto-executed).
 - **Local Secrets**: Bot tokens are stored in your local environment, never sent to ComfyUI.
-- **Admin Boundary**: Control-plane actions call admin endpoints on the local ComfyUI instance. See `OPENCLAW_CONNECTOR_ADMIN_TOKEN` below.
+- **Admin Boundary**: Control-plane actions call admin endpoints on the local OpenClaw server and require connector-side admin token configuration for admin command paths.
 
 ## Supported Platforms
 
@@ -48,8 +48,9 @@ Set the following environment variables (or put them in a `.env` file if you use
 
 **Admin token behavior:**
 
-- If the OpenClaw server has `OPENCLAW_ADMIN_TOKEN` configured, you must set `OPENCLAW_CONNECTOR_ADMIN_TOKEN` to the same value or admin calls will return HTTP 403.
-- If the OpenClaw server is in loopback-only convenience mode (no Admin Token configured), the connector can still call admin endpoints via `localhost` without sending a token.
+- Connector admin command paths require `OPENCLAW_CONNECTOR_ADMIN_TOKEN` to be set in connector runtime.
+- If the OpenClaw server has `OPENCLAW_ADMIN_TOKEN` configured, `OPENCLAW_CONNECTOR_ADMIN_TOKEN` must match it or admin calls return HTTP 403.
+- Without `OPENCLAW_CONNECTOR_ADMIN_TOKEN`, admin command flows (`/approve`, `/reject`, `/trace`, schedules) are blocked by connector policy before upstream calls.
 
 **Telegram:**
 
@@ -326,40 +327,73 @@ Kakao i Open Builder sends webhook requests to your connector Skill endpoint. Yo
 
 #### Slack Webhook Setup (Detailed)
 
-Slack Events API pushes JSON payloads to your connector. You must expose the endpoint publicly over HTTPS.
+Slack uses the Events API webhook mode in OpenClaw. You must expose the endpoint publicly over HTTPS.
 
-1. **Create Slack App**:
+1. **Create the Slack App**
    - Go to [api.slack.com/apps](https://api.slack.com/apps).
-   - Create a new app (from scratch).
-   - Copy **Signing Secret** from Basic Information.
+   - Create a new app (From scratch) and select your workspace.
+   - In **Basic Information**, copy the **Signing Secret**.
 
-2. **Configure Connector**:
+2. **Configure OAuth Scopes and install**
+   - Go to **OAuth & Permissions**.
+   - Add bot scopes:
+     - `chat:write`
+     - `files:write`
+     - `app_mentions:read`
+     - `im:history` (DM support)
+     - `channels:history` (public channel messages)
+     - `groups:history` (private channel messages)
+   - Click **Install to Workspace**.
+   - Copy the **Bot User OAuth Token** (`xoxb-...`).
+
+3. **Configure connector environment variables**
 
    ```bash
    OPENCLAW_CONNECTOR_SLACK_BOT_TOKEN=xoxb-your-token
    OPENCLAW_CONNECTOR_SLACK_SIGNING_SECRET=your-signing-secret
-   OPENCLAW_CONNECTOR_SLACK_ALLOWED_USERS=U12345
+   OPENCLAW_CONNECTOR_SLACK_ALLOWED_USERS=U12345,U67890
+   OPENCLAW_CONNECTOR_SLACK_ALLOWED_CHANNELS=C12345
+   OPENCLAW_CONNECTOR_SLACK_BIND=127.0.0.1
+   OPENCLAW_CONNECTOR_SLACK_PORT=8095
+   OPENCLAW_CONNECTOR_SLACK_PATH=/slack/events
+   OPENCLAW_CONNECTOR_SLACK_REQUIRE_MENTION=true
+   OPENCLAW_CONNECTOR_SLACK_REPLY_IN_THREAD=true
+   OPENCLAW_CONNECTOR_ADMIN_TOKEN=replace-with-openclaw-admin-token
    ```
 
-   Start the connector (`python -m connector`). Expose it via tunnel (e.g. Cloudflare) to `https://<public-host>/slack/events`.
+   Notes:
+   - `OPENCLAW_CONNECTOR_ADMIN_TOKEN` must match server `OPENCLAW_ADMIN_TOKEN` if server-side admin token is enabled.
+   - Slack ingress is fail-closed: invalid/missing signature, stale timestamp, and replayed events are rejected.
 
-3. **Enable Events**:
-   - In **Event Subscriptions**:
-     - Enable Events.
-     - Set Request URL to `https://<public-host>/slack/events`.
-     - Slack will send a `url_verification` challenge; the connector handles this automatically. Verify connection.
-     - Subscribe to bot events: `message.channels`, `message.groups`, `message.im`, `app_mention`.
+4. **Start connector and expose webhook endpoint**
+   - Start connector: `python -m connector`
+   - Expose local endpoint to public HTTPS (Cloudflare Tunnel/ngrok/reverse proxy):
+     - local upstream: `http://127.0.0.1:8095`
+     - public URL: `https://<public-host>/slack/events`
 
-4. **OAuth & Permissions**:
-   - In **OAuth & Permissions**:
-     - Add Scopes: `chat:write`, `files:write`, `channels:history` (if public), `groups:history` (if private), `im:history` (for DMs), `app_mentions:read`.
-     - Install App to Workspace.
-     - Copy **Bot User OAuth Token** (`xoxb-...`).
+5. **Enable Event Subscriptions**
+   - Go to **Event Subscriptions** and enable events.
+   - Set **Request URL** to `https://<public-host>/slack/events`.
+   - Slack sends `url_verification`; connector responds automatically.
+   - Add bot events:
+     - `app_mention`
+     - `message.channels`
+     - `message.groups`
+     - `message.im`
 
-5. **Test**:
-   - Invite bot to a channel: `/invite @BotName`.
-   - Mention bot: `@BotName /status`.
-   - DM bot: `/help`.
+6. **Invite and validate**
+   - Invite the app to target channels: `/invite @YourBot`.
+   - In channel: `@YourBot /status` (when `OPENCLAW_CONNECTOR_SLACK_REQUIRE_MENTION=true`).
+   - In DM: `/help`.
+   - Verify connector logs show signed ingress accepted and replies delivered.
+
+7. **Security checklist before production**
+   - Keep `OPENCLAW_CONNECTOR_SLACK_ALLOWED_USERS`/`OPENCLAW_CONNECTOR_SLACK_ALLOWED_CHANNELS` restricted.
+   - Keep `OPENCLAW_CONNECTOR_SLACK_REQUIRE_MENTION=true` unless intentionally running command-style channels.
+   - Rotate Slack bot token/signing secret on incident response.
+   - Do not expose connector without HTTPS termination.
+
+Slack Socket Mode fallback is tracked separately and is not part of the current webhook setup.
 
 ## Commands
 
@@ -434,3 +468,11 @@ Slack Events API pushes JSON payloads to your connector. You must expose the end
 - **Kakao `/run` always goes to approval**:
   - Sender is not in `OPENCLAW_CONNECTOR_KAKAO_ALLOWED_USERS` (or allowlist is empty).
   - Fix: capture `userRequest.user.id` from logs, add it to `OPENCLAW_CONNECTOR_KAKAO_ALLOWED_USERS`, restart connector.
+
+- **Slack Event Subscriptions verification fails**:
+  - Request URL/path mismatch, connector not reachable, or `OPENCLAW_CONNECTOR_SLACK_SIGNING_SECRET` is wrong.
+  - Fix: confirm public URL points to `/slack/events`, verify tunnel/proxy routes to `127.0.0.1:8095`, and re-check Signing Secret.
+
+- **Slack commands ignored in channels**:
+  - `OPENCLAW_CONNECTOR_SLACK_REQUIRE_MENTION=true` and message does not mention the bot.
+  - Fix: mention bot explicitly (`@Bot /status`) or set `OPENCLAW_CONNECTOR_SLACK_REQUIRE_MENTION=false` if policy allows.

@@ -90,6 +90,17 @@ class ConnectorConfig:
     kakao_webhook_path: str = "/kakao/webhook"
     kakao_allowed_users: List[str] = field(default_factory=list)
 
+    # Slack (F56 / S67)
+    slack_bot_token: Optional[str] = None
+    slack_signing_secret: Optional[str] = None
+    slack_allowed_users: List[str] = field(default_factory=list)
+    slack_allowed_channels: List[str] = field(default_factory=list)
+    slack_bind_host: str = "127.0.0.1"
+    slack_bind_port: int = 8095
+    slack_webhook_path: str = "/slack/events"
+    slack_require_mention: bool = True
+    slack_reply_in_thread: bool = True
+
     # Privileged Access (ID match across platforms; Telegram Int vs Discord Str handled by router)
     admin_users: List[str] = field(default_factory=list)
 
@@ -230,6 +241,31 @@ def load_config() -> ConnectorConfig:
     )
     if ku := os.environ.get("OPENCLAW_CONNECTOR_KAKAO_ALLOWED_USERS"):
         cfg.kakao_allowed_users = [u.strip() for u in ku.split(",") if u.strip()]
+
+    # Slack (F56 / S67)
+    cfg.slack_bot_token = os.environ.get("OPENCLAW_CONNECTOR_SLACK_BOT_TOKEN")
+    cfg.slack_signing_secret = os.environ.get("OPENCLAW_CONNECTOR_SLACK_SIGNING_SECRET")
+    if su := os.environ.get("OPENCLAW_CONNECTOR_SLACK_ALLOWED_USERS"):
+        cfg.slack_allowed_users = [u.strip() for u in su.split(",") if u.strip()]
+    if sc := os.environ.get("OPENCLAW_CONNECTOR_SLACK_ALLOWED_CHANNELS"):
+        cfg.slack_allowed_channels = [u.strip() for u in sc.split(",") if u.strip()]
+    cfg.slack_bind_host = os.environ.get("OPENCLAW_CONNECTOR_SLACK_BIND", "127.0.0.1")
+    if sp := os.environ.get("OPENCLAW_CONNECTOR_SLACK_PORT"):
+        if sp.isdigit():
+            cfg.slack_bind_port = int(sp)
+    cfg.slack_webhook_path = os.environ.get(
+        "OPENCLAW_CONNECTOR_SLACK_PATH", "/slack/events"
+    )
+    if (
+        os.environ.get("OPENCLAW_CONNECTOR_SLACK_REQUIRE_MENTION", "").lower()
+        == "false"
+    ):
+        cfg.slack_require_mention = False
+    if (
+        os.environ.get("OPENCLAW_CONNECTOR_SLACK_REPLY_IN_THREAD", "").lower()
+        == "false"
+    ):
+        cfg.slack_reply_in_thread = False
 
     # Admin
     if admins := os.environ.get("OPENCLAW_CONNECTOR_ADMIN_USERS"):

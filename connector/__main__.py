@@ -12,6 +12,7 @@ from .openclaw_client import OpenClawClient
 from .platforms.discord_gateway import DiscordGateway
 from .platforms.kakao_webhook import KakaoWebhookServer
 from .platforms.line_webhook import LINEWebhookServer
+from .platforms.slack_webhook import SlackWebhookServer
 from .platforms.telegram_polling import TelegramPolling
 from .platforms.wechat_webhook import WeChatWebhookServer
 from .platforms.whatsapp_webhook import WhatsAppWebhookServer
@@ -42,6 +43,7 @@ def _print_security_banner(config):
         or config.whatsapp_allowed_users
         or config.wechat_allowed_users
         or config.kakao_allowed_users
+        or config.slack_allowed_users
     )
     has_admins = bool(config.admin_users)
 
@@ -104,6 +106,7 @@ async def main():
     whatsapp_server = None
     wechat_server = None
     kakao_server = None
+    slack_server = None
 
     # 3. Platforms
     if config.telegram_bot_token:
@@ -171,15 +174,29 @@ async def main():
     else:
         logger.info("Kakao adapter disabled.")
 
+    if config.slack_bot_token and config.slack_signing_secret:
+        slack_server = SlackWebhookServer(config, router)
+        platforms["slack"] = slack_server
+        await slack_server.start()
+        if not tasks:
+            tasks.append(asyncio.create_task(asyncio.sleep(3600 * 24 * 365)))
+    elif config.slack_bot_token:
+        logger.warning("Slack configured but Signing Secret missing. Skipping.")
+    else:
+        logger.info("Slack not configured (OPENCLAW_CONNECTOR_SLACK_BOT_TOKEN missing)")
+
     if (
         not tasks
         and not line_server
         and not whatsapp_server
         and not wechat_server
         and not kakao_server
+        and not slack_server
     ):
         logger.error(
-            "No platforms configured! Set TELEGRAM_TOKEN, DISCORD_TOKEN, LINE_SECRET, WHATSAPP_ACCESS_TOKEN, WECHAT_TOKEN or KAKAO_ENABLED."
+            "No platforms configured! Set TELEGRAM_TOKEN, DISCORD_TOKEN, "
+            "LINE_SECRET, WHATSAPP_ACCESS_TOKEN, WECHAT_TOKEN, "
+            "KAKAO_ENABLED or SLACK_BOT_TOKEN."
         )
         await client.close()
         return
@@ -206,6 +223,8 @@ async def main():
             await wechat_server.stop()
         if kakao_server:
             await kakao_server.stop()
+        if slack_server:
+            await slack_server.stop()
         if poller:
             await poller.stop()
         await client.close()
