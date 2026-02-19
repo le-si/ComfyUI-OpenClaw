@@ -6,6 +6,9 @@ on:
     branches:
       - main
       - master
+  workflow_dispatch:
+  schedule:
+    - cron: '0 3 * * *'  # nightly 03:00 UTC for adversarial-extended
 
 jobs:
 
@@ -184,3 +187,62 @@ jobs:
         run: pip install pip-audit
       - name: Backend Audit (pip)
         run: pip-audit
+
+  adversarial-smoke:
+    name: Adversarial Gate (smoke)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+      - name: Install test deps
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt
+          python -m pip install numpy pillow aiohttp
+      - name: R120 preflight
+        run: |
+          python scripts/preflight_check.py --strict
+      - name: R118 adversarial smoke
+        env:
+          MOLTBOT_STATE_DIR: ${{ github.workspace }}/moltbot_state/_ci_adversarial
+        run: |
+          python scripts/run_adversarial_gate.py --profile smoke --seed 42 --artifact-dir .tmp/adversarial
+      - name: Upload adversarial artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: adversarial-smoke-manifest
+          path: .tmp/adversarial/
+          retention-days: 30
+
+  adversarial-extended:
+    name: Adversarial Gate (extended, nightly/manual)
+    runs-on: ubuntu-latest
+    if: github.event_name == 'workflow_dispatch' || github.event_name == 'schedule'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+      - name: Install test deps
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt
+          python -m pip install numpy pillow aiohttp
+      - name: R120 preflight
+        run: |
+          python scripts/preflight_check.py --strict
+      - name: R118 adversarial extended
+        env:
+          MOLTBOT_STATE_DIR: ${{ github.workspace }}/moltbot_state/_ci_adversarial_ext
+        run: |
+          python scripts/run_adversarial_gate.py --profile extended --artifact-dir .tmp/adversarial-extended
+      - name: Upload adversarial artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: adversarial-extended-manifest
+          path: .tmp/adversarial-extended/
+          retention-days: 90

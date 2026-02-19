@@ -1,6 +1,6 @@
 # Test SOP
 
-This document defines the **mandatory test workflow** for this repo. Run it **before every push** (unless you explicitly document why you’re skipping).
+This document defines the **mandatory test workflow** for this repo. Run it **before every push** (unless you explicitly document why you are skipping).
 
 ## Acceptance Rule (SOP)
 
@@ -191,18 +191,21 @@ Then every `git push` will run:
 bash scripts/pre_push_checks.sh
 ```
 
-`scripts/pre_push_checks.sh` is the CI-parity guard and must include all 5 stages:
+`scripts/pre_push_checks.sh` is the CI-parity guard and must include all 7 stages:
 
 1) `detect-secrets`
 2) all `pre-commit` hooks
 3) backend unit tests (`scripts/run_unittests.py --pattern "test_*.py" --enforce-skip-policy tests/skip_policy.json`)
 4) backend real E2E lanes (`tests.test_r122_real_backend_lane` + `tests.test_r123_real_backend_model_list_lane`)
-5) frontend E2E (`npm test`)
+5) R121 retry partition contract (`tests.test_r121_retry_partition_contract`)
+6) R118 adversarial smoke gate (`scripts/run_adversarial_gate.py --profile smoke --seed 42`)
+7) frontend E2E (`npm test`)
 
 IMPORTANT:
 
 - Do not remove stage (3). If pre-push skips backend unit tests, local pushes can pass while GitHub CI fails later.
 - Do not remove stage (4). If pre-push skips real-backend lanes, model-list/webhook wiring regressions can bypass local checks and fail later in CI.
+- Do not remove stage (5) or stage (6). If pre-push skips retry partition or adversarial gates, verification hardening regressions can bypass local checks and fail later in CI.
 - Keep dependency bootstrap in this script aligned with `.github/workflows/ci.yml` unit-test dependencies.
 
 1) Detect Secrets (baseline-based)
@@ -217,7 +220,7 @@ pre-commit run detect-secrets --all-files
 pre-commit run --all-files --show-diff-on-failure
 ```
 
-**IMPORTANT (must read): pre-commit “modified files” is a failure until committed**
+**IMPORTANT (must read): pre-commit "modified files" is a failure until committed**
 
 - Some hooks (e.g. `end-of-file-fixer`, `trailing-whitespace`) intentionally **exit non-zero** when they auto-fix files.
 - CI will fail if those fixes are not committed.
@@ -270,7 +273,7 @@ npm test
 
 For OS-specific E2E setup (Windows/WSL temp-dir shims), see `tests/E2E_TESTING_SOP.md`.
 
-## Chat Connector (Telegram / Discord / LINE) — Manual Test SOP
+## Chat Connector (Telegram / Discord / LINE) - Manual Test SOP
 
 The chat connector runs as a **separate process** and talks to your local ComfyUI/OpenClaw via HTTP.
 
@@ -322,7 +325,7 @@ Test commands (in Telegram chat with the bot):
 
 ### 2) Discord (no webhook/HTTPS required; requires Message Content Intent)
 
-In Discord Developer Portal, enable **Message Content Intent** for your bot, otherwise the connector can connect but won’t receive message text.
+In Discord Developer Portal, enable **Message Content Intent** for your bot, otherwise the connector can connect but will not receive message text.
 
 Minimum:
 
@@ -368,7 +371,7 @@ After starting the connector, expose it via tunnel and set the LINE webhook URL 
 
 If messages are ignored, enable debug and check allowlist logs (user/group/room IDs).
 
-#### LINE Image Delivery (F33) — Quick Test
+#### LINE Image Delivery (F33) - Quick Test
 
 1) Ensure `OPENCLAW_CONNECTOR_PUBLIC_BASE_URL` is set to a **public HTTPS** URL.
 2) Send `/run <template_id> <prompt> --approval` and approve if required.
@@ -376,9 +379,9 @@ If messages are ignored, enable debug and check allowlist logs (user/group/room 
 
 If you receive a text fallback warning, the public URL is missing, not HTTPS, or unreachable from LINE.
 
-## Templates + `/run` — Authoring & Validation SOP
+## Templates + `/run` - Authoring & Validation SOP
 
-`/run` does **not** take a ComfyUI “workflow id”. It takes a **`template_id`** that maps to a JSON workflow file.
+`/run` does **not** take a ComfyUI workflow id. It takes a **`template_id`** that maps to a JSON workflow file.
 
 ### Where templates live
 
@@ -402,9 +405,9 @@ In this repo (and in your ComfyUI install), templates are loaded from:
 
 The renderer performs **strict placeholder substitution**:
 
-- ✅ supported: a JSON string value exactly equal to `{{key}}`
+- supported: a JSON string value exactly equal to `{{key}}`
   - Example: `"text": "{{positive_prompt}}"`
-- ❌ not supported: partial substitutions
+- not supported: partial substitutions
   - Example: `"text": "Prompt: {{positive_prompt}}"` (will not be replaced)
 
 So for each field you want to make configurable via chat/webhook, replace the value with a placeholder:
@@ -457,8 +460,8 @@ Expected response:
 
 - `/run <template_id> <free text> seed=-1`
 - Connector maps free-text to a prompt key:
-  - If `manifest.json` `allowed_inputs` has exactly one key → it uses that.
-  - Otherwise prefers: `positive_prompt` → `prompt` → `text` → `positive` → `caption`.
+  - If `manifest.json` `allowed_inputs` has exactly one key -> it uses that.
+  - Otherwise prefers: `positive_prompt` -> `prompt` -> `text` -> `positive` -> `caption`.
   - If none match, defaults to `positive_prompt`.
 - Ensure the template uses the same placeholder (e.g., `"text": "{{positive_prompt}}"`).
 
@@ -529,7 +532,7 @@ PRE_COMMIT_HOME=/tmp/pre-commit-cache pre-commit run --all-files --show-diff-on-
 
 - Install browsers: `npx playwright install chromium`
 
-**E2E fails with “test harness failed to load”**
+**E2E fails with "test harness failed to load"**
 
 - Check the console error (module import/exports mismatch is the most common cause).
 - Verify all referenced JS modules exist and export expected names.

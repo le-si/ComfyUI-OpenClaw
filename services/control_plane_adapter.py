@@ -6,7 +6,7 @@ control plane when running in split mode.
 
 Features:
 - Versioned contract envelope (v1)
-- Timeout + retry/backoff with jitter
+- R121: Dual-lane retry partition (rate_limit + transport)
 - Idempotency-key propagation
 - Bounded circuit-breaker behavior
 - Deterministic degrade modes
@@ -20,6 +20,8 @@ import uuid
 from dataclasses import dataclass, field
 from typing import Any, Dict, Optional
 from urllib.parse import urlparse
+
+from .retry_partition import RetryDecision, RetryPartition
 
 logger = logging.getLogger(__name__)
 
@@ -172,6 +174,12 @@ class ControlPlaneAdapter:
         self.auth_token = auth_token
         self.timeout = timeout
         self._circuit_breaker = CircuitBreakerState()
+        # R121: Dual-lane retry budget
+        self._retry_partition = RetryPartition(
+            rate_limit_retries=2,
+            transport_retries=self.MAX_RETRIES,
+            backoff_base=self.BACKOFF_FACTOR,
+        )
 
     @classmethod
     def from_env(cls) -> "ControlPlaneAdapter":
@@ -224,10 +232,11 @@ class ControlPlaneAdapter:
         )
 
     def get_health(self) -> Dict:
-        """Return adapter health including circuit breaker state."""
+        """Return adapter health including circuit breaker and retry lane state."""
         return {
             "base_url": self.base_url,
             "circuit_breaker": self._circuit_breaker.to_dict(),
+            "retry_lanes": self._retry_partition.diagnostics(),
             "contract_version": ADAPTER_CONTRACT_VERSION,
             "configured": bool(self.base_url),
         }
@@ -236,8 +245,11 @@ class ControlPlaneAdapter:
 
     def _dispatch(self, request: ControlPlaneRequest) -> ControlPlaneResponse:
         """
-        Dispatch request to external CP with retry/backoff and circuit breaker.
+        Dispatch request to external CP with dual-lane retry partition and circuit breaker.
         Uses safe_io.safe_request_json for SSRF-safe outbound transport.
+
+        R121: Rate-limit (429) and transport (timeout/DNS/connect) failures consume
+        separate lane budgets.  Non-retryable failures fail closed immediately.
         """
         if not self.base_url:
             return ControlPlaneResponse(
@@ -255,8 +267,6 @@ class ControlPlaneAdapter:
                 degrade_mode=DegradeMode.RETRYABLE_UNAVAILABLE,
             )
 
-        import random
-
         from .safe_io import STANDARD_OUTBOUND_POLICY, SSRFError, safe_request_json
 
         url = f"{self.base_url}/v1/{request.action}"
@@ -270,9 +280,19 @@ class ControlPlaneAdapter:
         if self.auth_token:
             headers["Authorization"] = f"Bearer {self.auth_token}"
 
+        # R121: fresh partition per dispatch
+        partition = RetryPartition(
+            rate_limit_retries=2,
+            transport_retries=self.MAX_RETRIES,
+            backoff_base=self.BACKOFF_FACTOR,
+        )
+        max_total_attempts = (
+            self.MAX_RETRIES + 2
+        )  # Transport budget + rate-limit budget
+
         last_error = ""
 
-        for attempt in range(self.MAX_RETRIES):
+        for attempt in range(max_total_attempts):
             try:
                 resp_data = safe_request_json(
                     "POST",
@@ -304,71 +324,69 @@ class ControlPlaneAdapter:
                 return ControlPlaneResponse(
                     ok=resp_data.get("ok", True),
                     action=request.action,
-                    data=resp_data.get("data", resp_data),
+                    data={
+                        **resp_data.get("data", resp_data),
+                        "_r121_lanes": partition.diagnostics(),
+                    },
                     error=resp_data.get("error", ""),
                     degrade_mode=degrade,
                 )
 
-            except RuntimeError as e:
-                last_error = str(e)
-                if "HTTP error 401" in last_error or "HTTP error 403" in last_error:
-                    # Auth errors are not retryable
-                    self._circuit_breaker.record_failure()
+            except (RuntimeError, SSRFError, OSError, TimeoutError, Exception) as exc:
+                last_error = str(exc)
+                self._circuit_breaker.record_failure()
+
+                evidence = partition.record_failure(exc)
+
+                logger.warning(
+                    f"R106/R121: attempt={attempt + 1} "
+                    f"decision={evidence.decision.value} "
+                    f"lane={evidence.lane} error={last_error}"
+                )
+
+                # Emit audit event for terminal decisions
+                if not partition.should_retry(evidence):
+                    self._emit_lane_audit(evidence, request.action)
+                    degrade = (
+                        DegradeMode.HARD_FAIL
+                        if evidence.decision == RetryDecision.NON_RETRYABLE_REJECTED
+                        else DegradeMode.RETRYABLE_UNAVAILABLE
+                    )
                     return ControlPlaneResponse(
                         ok=False,
                         action=request.action,
-                        error=f"External CP auth error: {last_error}",
-                        degrade_mode=DegradeMode.HARD_FAIL,
-                    )
-                # Runtime transport errors are retryable.
-                self._circuit_breaker.record_failure()
-                logger.warning(
-                    f"R106: Attempt {attempt + 1}/{self.MAX_RETRIES} failed: {last_error}"
-                )
-
-            except SSRFError as e:
-                last_error = str(e)
-                self._circuit_breaker.record_failure()
-                # DNS/transient resolution issues are retryable transport failures.
-                if (
-                    "DNS resolution failed" in last_error
-                    or "No IP resolved" in last_error
-                ):
-                    logger.warning(
-                        f"R106: Attempt {attempt + 1}/{self.MAX_RETRIES} DNS error: {last_error}"
-                    )
-                else:
-                    # Policy/SSRF violations are deterministic and not retryable.
-                    return ControlPlaneResponse(
-                        ok=False,
-                        action=request.action,
-                        error=f"External CP URL rejected by policy: {last_error}",
-                        degrade_mode=DegradeMode.HARD_FAIL,
+                        error=f"R121 {evidence.decision.value}: {last_error}",
+                        degrade_mode=degrade,
+                        data={"_r121_lanes": partition.diagnostics()},
                     )
 
-            except (OSError, TimeoutError) as e:
-                last_error = str(e)
-                self._circuit_breaker.record_failure()
-                logger.warning(
-                    f"R106: Attempt {attempt + 1}/{self.MAX_RETRIES} connection error: {last_error}"
-                )
-
-            except Exception as e:
-                last_error = str(e)
-                self._circuit_breaker.record_failure()
-                logger.error(
-                    f"R106: Unexpected error on attempt {attempt + 1}: {last_error}"
-                )
-
-            # Exponential backoff with jitter before retry
-            if attempt < self.MAX_RETRIES - 1:
-                wait = (self.BACKOFF_FACTOR**attempt) + random.uniform(0, 1)
+                # Backoff before retry
+                wait = partition.backoff_for(evidence)
                 time.sleep(wait)
 
-        # All retries exhausted
+        # Safety fallback (should not reach here under normal partition logic)
         return ControlPlaneResponse(
             ok=False,
             action=request.action,
-            error=f"External CP unavailable after {self.MAX_RETRIES} attempts: {last_error}",
+            error=f"R121 retry loop exhausted after {max_total_attempts} attempts: {last_error}",
             degrade_mode=DegradeMode.RETRYABLE_UNAVAILABLE,
+            data={"_r121_lanes": partition.diagnostics()},
         )
+
+    def _emit_lane_audit(self, evidence, action: str) -> None:
+        """Emit audit event for lane exhaustion / non-retryable reject."""
+        try:
+            from .audit_events import build_audit_event, emit_audit_event
+
+            event = build_audit_event(
+                f"r121.{evidence.decision.value.lower()}",
+                payload={
+                    "action": action,
+                    "lane": evidence.lane,
+                    "attempt": evidence.attempt,
+                    "error": evidence.error[:500],
+                },
+            )
+            emit_audit_event(event)
+        except Exception:
+            logger.debug("R121: audit emit failed (non-fatal)", exc_info=True)

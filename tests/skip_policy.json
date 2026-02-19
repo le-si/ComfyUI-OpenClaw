@@ -8,6 +8,7 @@
     "tests.test_s61_registry_signature",
     "tests.security.test_endpoint_drift",
     "tests.test_r122_real_backend_lane",
-    "tests.test_r123_real_backend_model_list_lane"
+    "tests.test_r123_real_backend_model_list_lane",
+    "tests.test_r121_retry_partition_contract"
   ]
 }

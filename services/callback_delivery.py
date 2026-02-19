@@ -138,8 +138,18 @@ async def _watch_and_deliver(
         "outputs": images,
     }
 
-    # Deliver with retries
-    for attempt in range(CALLBACK_MAX_RETRIES):
+    # R121: Dual-lane delivery retries
+    from .retry_partition import RetryDecision, RetryPartition
+
+    partition = RetryPartition(
+        rate_limit_retries=2,
+        transport_retries=CALLBACK_MAX_RETRIES,
+        backoff_base=1.0,
+    )
+
+    max_total_attempts = CALLBACK_MAX_RETRIES + 2  # transport + rate-limit budgets
+
+    for attempt in range(max_total_attempts):
         try:
             await run_in_thread(
                 safe_request_json,
@@ -172,11 +182,36 @@ async def _watch_and_deliver(
         except SSRFError as e:
             logger.warning(f"[Callback] SSRF blocked for {url}: {e}")
             metrics.inc("callback_blocked")
-            return  # Don't retry SSRF blocks
+            return  # Don't retry SSRF policy blocks
         except Exception as e:
-            logger.warning(f"[Callback] Attempt {attempt + 1} failed for {url}: {e}")
-            if attempt < CALLBACK_MAX_RETRIES - 1:
-                await asyncio.sleep(2**attempt)  # Backoff
+            evidence = partition.record_failure(e)
+            logger.warning(
+                f"[Callback] R121 attempt={attempt + 1} "
+                f"decision={evidence.decision.value} "
+                f"lane={evidence.lane} error={e}"
+            )
+
+            if not partition.should_retry(evidence):
+                # Emit audit event for lane exhaustion
+                try:
+                    from .audit_events import build_audit_event, emit_audit_event
+
+                    event = build_audit_event(
+                        f"r121.callback.{evidence.decision.value.lower()}",
+                        payload={
+                            "prompt_id": prompt_id,
+                            "url": url,
+                            "lane": evidence.lane,
+                            "attempt": evidence.attempt,
+                            "error": str(e)[:500],
+                        },
+                    )
+                    emit_audit_event(event)
+                except Exception:
+                    pass
+                break
+
+            await asyncio.sleep(partition.backoff_for(evidence))
 
     logger.error(f"[Callback] All retries failed for {prompt_id}")
     metrics.inc("callback_failed")
@@ -185,7 +220,11 @@ async def _watch_and_deliver(
             JobEventType.CALLBACK_FAILED,
             prompt_id=prompt_id,
             trace_id=trace_id or "",
-            data={"target": url, "reason": "max_retries_exceeded"},
+            data={
+                "target": url,
+                "reason": "r121_budget_exhausted",
+                "lanes": partition.diagnostics(),
+            },
         )
     except Exception:
         pass

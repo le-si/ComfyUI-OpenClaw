@@ -2,11 +2,13 @@
 
 ![OpenClaw /run command example](assets/run.png)
 
-ComfyUI-OpenClaw is a **security-first** ComfyUI custom node pack that adds:
+ComfyUI-OpenClaw is a **security-first orchestration layer** for ComfyUI that combines hardened automation APIs, embedded operator UX, and production deployment controls:
 
 - **LLM-assisted nodes** (planner/refiner/vision/batch variants)
 - **A built-in extension UI** (`OpenClaw` panel)
 - **A secure-by-default HTTP API** for automation (webhooks, triggers, schedules, approvals, presets)
+- **Public-ready control-plane split architecture** (embedded UX + externalized high-risk control surfaces)
+- **Verification-first hardening lanes** (route drift, real-backend E2E, adversarial fuzz/mutation gates)
 - **Now supports major messaging platforms, including Discord, Telegram, WhatsApp, LINE, WeChat and KakaoTalk.**
 - **And more exciting features being added continuously**
 
@@ -16,31 +18,45 @@ This project is intentionally **not** a general-purpose assistant platform with 
 
 **Security stance (how this project differs from convenience-first automation packs):**
 
+- Public MAE route-plane posture is a hard guarantee: startup gate + CI no-skip drift suites must both pass
 - Control Plane Split is enforced for public posture: high-risk control surfaces are externalized while embedded UI stays on safe UX/read paths
 - Profile-driven startup hardening with fail-closed enforcement in hardened mode
-- Localhost-first defaults; remote access is opt-in
 - Explicit **Admin Token** boundary for write actions
+- Startup module capability gates (disabled modules do not register routes/workers)
+- Localhost-first defaults; remote access is opt-in
+- Strict outbound SSRF policy (callbacks + custom LLM base URLs)
 - Webhooks are **deny-by-default** until auth is configured
 - Encrypted webhook mode is **fail-closed** (invalid signature/decrypt/app-id checks are rejected)
-- Strict outbound SSRF policy (callbacks + custom LLM base URLs)
 - Bridge worker endpoints enforce device-token auth, scope checks, and idempotency handling
-- Startup module capability gates (disabled modules do not register routes/workers)
-- Endpoint inventory metadata and route drift tests to catch unclassified API exposure regressions
-- Public MAE route-plane posture is a hard guarantee: startup gate + CI no-skip drift suites must both pass
+- Secrets are never stored in browser storage (optional server-side key store is local-only convenience)
+- Cryptography dependency is required for secrets-at-rest encryption paths; WeChat AES ingress remains optional via `pycryptodomex`
 - Tamper-evident, append-only audit trails for sensitive write/admin paths
 - Hardened external tool sandbox posture with fail-closed checks and filesystem path guards
 - Pack lifecycle file paths and pack API inputs are validated and root-bounded to prevent path traversal
 - Replay risk is reduced with deterministic dedupe keys for event payloads without message IDs
+- Endpoint inventory metadata and route drift tests to catch unclassified API exposure regressions
+- Retry partition hardening now separates rate-limit and transport retry budgets with deterministic degrade decisions and lane-level diagnostics/audit evidence
+- Adversarial verification is execution-gated (bounded fuzz + mutation smoke) in CI and local full-test/pre-push workflows with replayable artifacts
 - Wave E closeout hardening: deployment profile gates and critical flow parity are now enforced together with signed policy posture control, bounded anomaly telemetry, adversarial fuzz validation, and mutation-baseline regression sensitivity checks
 - Wave A/B/C closeout hardening: runtime/config/session stability contracts, strict outbound and supply-chain controls, and capability-aware operator guidance with bounded Parameter Lab/compare workflows
-- Secrets are never stored in browser storage (optional server-side key store is local-only convenience)
-- Cryptography dependency is required for secrets-at-rest encryption paths; WeChat AES ingress remains optional via `pycryptodomex`
 
 Deployment profiles and hardening checklists:
 - [Security Deployment Guide](docs/security_deployment_guide.md) (local / LAN / public templates + self-check command)
 - [Security Key/Token Lifecycle SOP](docs/security_key_lifecycle_sop.md) (trust-root, secrets key, and bridge token rotation/revocation/disaster recovery)
 
 ## Latest Updates - Click to expand
+
+<details>
+
+<summary><strong>Post-Wave E closeout: Hardening chain completed</strong></summary>
+
+- Completed on 2026-02-19 with full SOP validation:
+  - Bundle A: established security invariants registry and startup/CI invariant gates, plus route-plane explicit-classification governance to prevent unmanaged endpoint exposure drift
+  - Bundle B: converged outbound egress to a single safe path and added CI/local dependency parity preflight to prevent local-pass/CI-fail runtime drift
+  - Bundle C: added adversarial verification execution gates (bounded fuzz + mutation smoke with artifacts) and dual-lane retry partition hardening for deterministic degrade/audit behavior
+  - end-to-end verification evidence was synchronized across CI, local full-test scripts, and implementation records
+
+</details>
 
 <details>
 
