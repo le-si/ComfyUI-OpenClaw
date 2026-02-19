@@ -1,8 +1,8 @@
 /**
  * S26: Settings Tab (simplified, collapsible secrets)
  */
-import { moltbotApi } from "../openclaw_api.js";
-import { MoltbotSession } from "../openclaw_session.js";
+import { openclawApi } from "../openclaw_api.js";
+import { OpenClawSession } from "../openclaw_session.js";
 import { getAdminErrorMessage } from "../admin_errors.js";
 
 export const settingsTab = {
@@ -25,16 +25,16 @@ export const settingsTab = {
         // F39: Capability probe FIRST — gate optional features before any rendering.
         let capabilities = {};
         try {
-            const capRes = await moltbotApi.getCapabilities();
+            const capRes = await openclawApi.getCapabilities();
             if (capRes.ok && capRes.data?.features) {
                 capabilities = capRes.data.features;
             }
         } catch { /* non-fatal */ }
 
         const [healthRes, logRes, configRes] = await Promise.all([
-            moltbotApi.getHealth(),
-            moltbotApi.getLogs(50),
-            moltbotApi.getConfig(),
+            openclawApi.getHealth(),
+            openclawApi.getLogs(50),
+            openclawApi.getConfig(),
         ]);
 
         // F39: Remove loading gate (readiness gating prevents first-render flicker)
@@ -97,11 +97,11 @@ export const settingsTab = {
         // Detect Shim
         const hasShim = typeof window.comfyAPI?.fetchApi === "function" || typeof window.fetchApi === "function" || !!healthRes.ok;
         // Note: fetchApi is imported in module scope, not global. If request worked, shim worked.
-        // Actually best check is if healthRes.ok or we can inspect 'moltbotApi.prefix' implicitly.
+        // Actually best check is if healthRes.ok or we can inspect 'openclawApi.prefix' implicitly.
 
         const packVer = (healthRes.ok && healthRes.data?.pack?.version) || "Unknown";
         const basePath = (healthRes.ok && healthRes.data?.pack?.base_path) || "/openclaw (inferred)";
-        const comfyVersion = await detectComfyUiVersion(moltbotApi);
+        const comfyVersion = await detectComfyUiVersion(openclawApi);
 
         // Collapsed by default; auto-expand if errors
         diagDetails.open = all404 || !hasShim;
@@ -286,12 +286,12 @@ export const settingsTab = {
             let tokenInput; // Will be set below
 
             refreshModelsBtn.onclick = async () => {
-                const token = (tokenInput?.value || MoltbotSession.getAdminToken() || "").trim();
+                const token = (tokenInput?.value || OpenClawSession.getAdminToken() || "").trim();
                 refreshModelsBtn.disabled = true;
                 modelsStatus.textContent = "Loading...";
                 modelsStatus.className = "moltbot-status";
 
-                const res = await moltbotApi.getModelList(providerSelect.value, token);
+                const res = await openclawApi.getModelList(providerSelect.value, token);
                 if (res.ok) {
                     modelDatalist.innerHTML = "";
                     const models = Array.isArray(res.data?.models) ? res.data.models : [];
@@ -393,7 +393,7 @@ export const settingsTab = {
             tokenClearBtn.style.marginLeft = "4px";
             tokenClearBtn.onclick = () => {
                 tokenInput.value = "";
-                MoltbotSession.setAdminToken("");
+                OpenClawSession.setAdminToken("");
             };
 
             tokenRow.appendChild(tokenInput);
@@ -414,8 +414,8 @@ export const settingsTab = {
             saveBtn.className = "moltbot-btn";
             saveBtn.textContent = "Save";
             saveBtn.onclick = async () => {
-                const token = (tokenInput.value || MoltbotSession.getAdminToken() || "").trim();
-                if (token) MoltbotSession.setAdminToken(token);
+                const token = (tokenInput.value || OpenClawSession.getAdminToken() || "").trim();
+                if (token) OpenClawSession.setAdminToken(token);
 
                 saveBtn.disabled = true;
                 statusDiv.textContent = "Saving...";
@@ -440,7 +440,7 @@ export const settingsTab = {
                     }
                 }
 
-                const res = await moltbotApi.putConfig(updates, token);
+                const res = await openclawApi.putConfig(updates, token);
                 // R53: Hot-Reload Feedback
                 if (res.ok) {
                     const apply = res.data?.apply || {};
@@ -480,8 +480,8 @@ export const settingsTab = {
             testBtn.onclick = async () => {
                 if (testBtn.disabled) return;
 
-                const token = (tokenInput.value || MoltbotSession.getAdminToken() || "").trim();
-                if (token) MoltbotSession.setAdminToken(token);
+                const token = (tokenInput.value || OpenClawSession.getAdminToken() || "").trim();
+                if (token) OpenClawSession.setAdminToken(token);
 
                 testBtn.disabled = true;
                 statusDiv.textContent = "Testing...";
@@ -492,7 +492,7 @@ export const settingsTab = {
                 // falls back to the effective config (often "openai") and produces confusing errors like:
                 // "API key not configured for provider 'openai'" while the UI is set to Gemini.
                 try {
-                    const res = await moltbotApi.testLLM(token, {
+                    const res = await openclawApi.testLLM(token, {
                         provider: providerSelect.value,
                         model: modelInput.value,
                         base_url: baseUrlInput.value,
@@ -591,7 +591,7 @@ export const settingsTab = {
             secretsContent.appendChild(secretsStatus);
 
             const getAdminToken = () => {
-                const tok = (container.querySelector('input[type="password"][placeholder*="OPENCLAW_ADMIN_TOKEN"]')?.value || MoltbotSession.getAdminToken() || "").trim();
+                const tok = (container.querySelector('input[type="password"][placeholder*="OPENCLAW_ADMIN_TOKEN"]')?.value || OpenClawSession.getAdminToken() || "").trim();
                 return tok;
             };
 
@@ -600,7 +600,7 @@ export const settingsTab = {
 
                 secretsStatus.textContent = "Loading...";
                 secretsStatus.className = "moltbot-status";
-                const res = await moltbotApi.getSecretsStatus(token);
+                const res = await openclawApi.getSecretsStatus(token);
                 if (res.ok) {
                     const secrets = res.data?.secrets || {};
                     const keys = Object.keys(secrets);
@@ -645,13 +645,13 @@ export const settingsTab = {
                     secretsStatus.className = "moltbot-status error";
                     return;
                 }
-                if (token) MoltbotSession.setAdminToken(token);
+                if (token) OpenClawSession.setAdminToken(token);
 
                 secretsSaveBtn.disabled = true;
                 secretsStatus.textContent = "Saving...";
                 secretsStatus.className = "moltbot-status";
 
-                const res = await moltbotApi.saveSecret(secretProviderSelect.value, apiKey, token);
+                const res = await openclawApi.saveSecret(secretProviderSelect.value, apiKey, token);
                 if (res.ok) {
                     secretKeyInput.value = "";
                     secretsStatus.textContent = "✓ Saved to server store. Restart ComfyUI if needed.";
@@ -674,13 +674,13 @@ export const settingsTab = {
             secretsClearBtn.textContent = "Clear Stored Key";
             secretsClearBtn.onclick = async () => {
                 const token = getAdminToken();
-                if (token) MoltbotSession.setAdminToken(token);
+                if (token) OpenClawSession.setAdminToken(token);
 
                 secretsClearBtn.disabled = true;
                 secretsStatus.textContent = "Clearing...";
                 secretsStatus.className = "moltbot-status";
 
-                const res = await moltbotApi.clearSecret(secretProviderSelect.value, token);
+                const res = await openclawApi.clearSecret(secretProviderSelect.value, token);
                 if (res.ok) {
                     secretsStatus.textContent = "✓ Cleared.";
                     secretsStatus.className = "moltbot-status ok";

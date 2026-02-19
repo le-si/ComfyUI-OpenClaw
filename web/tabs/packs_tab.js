@@ -1,4 +1,4 @@
-import { moltbotApi } from "../openclaw_api.js";
+import { openclawApi } from "../openclaw_api.js";
 import { showError, clearError } from "../openclaw_utils.js";
 
 // Helper for safe HTML escaping
@@ -86,7 +86,7 @@ export const PacksTab = {
             ui.list.innerHTML = '<div style="padding: 10px; text-align: center;">Loading...</div>';
 
             try {
-                const res = await moltbotApi.getPacks();
+                const res = await openclawApi.getPacks();
                 if (res.ok) {
                     renderList(res.data.packs || []);
                 } else {
@@ -107,7 +107,7 @@ export const PacksTab = {
             ui.importBtn.textContent = "Importing...";
 
             try {
-                const res = await moltbotApi.importPack(file, confirmOverwrite);
+                const res = await openclawApi.importPack(file, confirmOverwrite);
                 if (res.ok) {
                     alert(`Pack ${res.data.pack.name} v${res.data.pack.version} installed successfully.`);
                     loadPacks();
@@ -127,7 +127,7 @@ export const PacksTab = {
             // Trigger download via API client helper (which handles headers/blob)
             // Or use createObjectURL
             try {
-                const res = await moltbotApi.exportPack(name, version);
+                const res = await openclawApi.exportPack(name, version);
                 if (res.ok) {
                     // Create object URL and click
                     const url = window.URL.createObjectURL(res.data);
@@ -152,7 +152,7 @@ export const PacksTab = {
             if (!confirm(`Uninstall pack ${name} v${version}? This cannot be undone.`)) return;
 
             try {
-                const res = await moltbotApi.deletePack(name, version);
+                const res = await openclawApi.deletePack(name, version);
                 if (res.ok) {
                     loadPacks();
                 } else {

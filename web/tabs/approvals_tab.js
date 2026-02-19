@@ -1,4 +1,4 @@
-import { moltbotApi } from "../openclaw_api.js";
+import { openclawApi } from "../openclaw_api.js";
 import { showError, clearError } from "../openclaw_utils.js";
 
 // Helper for safe HTML escaping
@@ -154,7 +154,7 @@ export const ApprovalsTab = {
             const params = { limit: 100 };
             if (currentState.status) params.status = currentState.status;
 
-            const res = await moltbotApi.getApprovals(params);
+            const res = await openclawApi.getApprovals(params);
             if (res.ok) {
                 currentState.approvals = res.data.approvals || [];
                 renderList();
@@ -167,7 +167,7 @@ export const ApprovalsTab = {
         const handleApprove = async (id) => {
             if (!confirm("Approve this request? It will be executed immediately.")) return;
 
-            const res = await moltbotApi.approveRequest(id, { autoExecute: true });
+            const res = await openclawApi.approveRequest(id, { autoExecute: true });
             if (res.ok) {
                 alert(`Approved! ` + (res.data.executed ? `Executed as prompt ${res.data.prompt_id}` : `Marked approved.`));
                 loadApprovals();
@@ -179,7 +179,7 @@ export const ApprovalsTab = {
         const handleReject = async (id) => {
             if (!confirm("Reject this request?")) return;
 
-            const res = await moltbotApi.rejectRequest(id);
+            const res = await openclawApi.rejectRequest(id);
             if (res.ok) {
                 loadApprovals();
             } else {
@@ -192,7 +192,7 @@ export const ApprovalsTab = {
             let req = currentState.approvals.find(a => a.approval_id === id);
 
             if (!req) {
-                const res = await moltbotApi.getApproval(id);
+                const res = await openclawApi.getApproval(id);
                 if (res.ok) req = res.data.approval;
             }
 

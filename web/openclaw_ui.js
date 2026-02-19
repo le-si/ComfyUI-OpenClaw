@@ -1,15 +1,15 @@
 /**
- * F7: Moltbot UI Shell
+ * F7: OpenClaw UI Shell
  * Manages the main sidebar layout: Header, Tabs, Content.
  */
 import { tabManager } from "./openclaw_tabs.js";
 import { ErrorBoundary } from "./ErrorBoundary.js";
-import { moltbotApi } from "./openclaw_api.js";
+import { openclawApi } from "./openclaw_api.js";
 
-export class MoltbotUI {
+export class OpenClawUI {
     constructor() {
         this.container = null;
-        this.boundary = new ErrorBoundary("MoltbotUI");
+        this.boundary = new ErrorBoundary("OpenClawUI");
         this.floating = {
             panel: null,
             content: null,
@@ -129,7 +129,7 @@ export class MoltbotUI {
         badges.appendChild(repoLink);
 
         // Fetch version from health endpoint
-        moltbotApi.getHealth().then(res => {
+        openclawApi.getHealth().then(res => {
             if (res.ok && res.data) {
                 const data = res.data;
                 if (data.pack) {
@@ -319,9 +319,9 @@ export class MoltbotUI {
                     tabManager.activateTab(action.payload);
                     break;
                 case "action":
-                    // F51: Route through MoltbotActions
-                    if (moltbotActions && moltbotActions.dispatch) {
-                        moltbotActions.dispatch(action.payload);
+                    // F51: Route through OpenClaw actions singleton.
+                    if (openclawActions && openclawActions.dispatch) {
+                        openclawActions.dispatch(action.payload);
                     } else {
                         console.log("Action triggered:", action.payload);
                     }
@@ -412,7 +412,7 @@ class QueueMonitor {
             this.es.close();
         }
 
-        this.es = moltbotApi.subscribeEvents(
+        this.es = openclawApi.subscribeEvents(
             (data) => this.handleEvent(data),
             (err) => this.handleConnectionError(err)
         );
@@ -457,7 +457,7 @@ class QueueMonitor {
 
     async checkHealth() {
         try {
-            const res = await moltbotApi.getHealth();
+            const res = await openclawApi.getHealth();
             if (res.ok && res.data) {
                 if (!this.isConnected) {
                     this.isConnected = true;
@@ -523,7 +523,7 @@ class QueueMonitor {
  * F51: Unified Action Router.
  * Centralizes navigation and command logic for key operator tasks.
  */
-export class MoltbotActions {
+export class OpenClawActions {
     constructor(ui) {
         this.ui = ui;
         this.capabilities = null;
@@ -532,12 +532,12 @@ export class MoltbotActions {
 
     async _fetchCapabilities() {
         try {
-            const res = await moltbotApi.getCapabilities();
+            const res = await openclawApi.getCapabilities();
             if (res.ok) {
                 this.capabilities = res.data;
             }
         } catch (e) {
-            console.warn("MoltbotActions: Failed to fetch capabilities", e);
+            console.warn("OpenClawActions: Failed to fetch capabilities", e);
         }
     }
 
@@ -585,7 +585,7 @@ export class MoltbotActions {
         `;
         toast.innerHTML = `
             <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;">
-                <span style="font-size:16px;">?›¡ï¸?/span>
+                <span style="font-size:16px;">!</span>
                 <strong style="color:#f59e0b;">Action Blocked - Split Mode</strong>
             </div>
             <div style="margin-bottom:4px;"><code>${actionName}</code> is not available in the current deployment mode.</div>
@@ -650,7 +650,7 @@ export class MoltbotActions {
     async _openDoctorImpl() {
         tabManager.activateTab("settings");
         try {
-            const res = await moltbotApi.fetch(moltbotApi._path("/security/doctor"));
+            const res = await openclawApi.fetch(openclawApi._path("/security/doctor"));
             if (res.ok && res.data) {
                 const issueCount = Array.isArray(res.data.issues)
                     ? res.data.issues.length
@@ -694,6 +694,10 @@ export class MoltbotActions {
             // Dispatch after tab activation tick so listeners are ready.
             setTimeout(() => {
                 window.dispatchEvent(
+                    new CustomEvent("openclaw:lab:compare", { detail: { node } })
+                );
+                // Legacy event name for compatibility with older listeners.
+                window.dispatchEvent(
                     new CustomEvent("moltbot:lab:compare", { detail: { node } })
                 );
             }, 0);
@@ -701,8 +705,14 @@ export class MoltbotActions {
     }
 }
 
-export const moltbotUI = new MoltbotUI();
-export const moltbotActions = new MoltbotActions(moltbotUI);
+export const openclawUI = new OpenClawUI();
+export const openclawActions = new OpenClawActions(openclawUI);
 
-const monitor = new QueueMonitor(moltbotUI);
+const monitor = new QueueMonitor(openclawUI);
 monitor.start();
+
+// Legacy compatibility aliases (Moltbot -> OpenClaw)
+export const MoltbotUI = OpenClawUI;
+export const moltbotUI = openclawUI;
+export const MoltbotActions = OpenClawActions;
+export const moltbotActions = openclawActions;

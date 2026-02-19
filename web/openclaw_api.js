@@ -1,11 +1,11 @@
 /**
- * Moltbot API Wrapper (R7)
+ * OpenClaw API Wrapper (R7)
  * Provides consistent fetch usage, timeout handling, and type-safe response shapes.
  */
-import { MoltbotSession } from "./openclaw_session.js";
+import { OpenClawSession } from "./openclaw_session.js";
 import { fetchApi, apiURL, fileURL } from "./openclaw_comfy_api.js";
 
-export class MoltbotAPI {
+export class OpenClawAPI {
     constructor() {
         // baseUrl is handled by ComfyUI shim provided via fetchApi
         this.prefix = "/openclaw";
@@ -16,7 +16,7 @@ export class MoltbotAPI {
      * Gets the admin token from session storage (if available).
      */
     _getAdminToken() {
-        return MoltbotSession.getAdminToken() || "";
+        return OpenClawSession.getAdminToken() || "";
     }
 
     _path(suffix) {
@@ -634,5 +634,8 @@ export class MoltbotAPI {
     }
 }
 
-// Export singleton for backwards compatibility
-export const moltbotApi = new MoltbotAPI();
+export const openclawApi = new OpenClawAPI();
+
+// Legacy compatibility aliases (Moltbot -> OpenClaw)
+export const MoltbotAPI = OpenClawAPI;
+export const moltbotApi = openclawApi;

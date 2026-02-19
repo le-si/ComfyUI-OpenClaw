@@ -1,4 +1,4 @@
-import { moltbotApi } from "../openclaw_api.js";
+import { openclawApi } from "../openclaw_api.js";
 import { showError, clearError } from "../openclaw_utils.js";
 
 export const PlannerTab = {
@@ -131,7 +131,7 @@ export const PlannerTab = {
                 await new Promise(resolve => setTimeout(resolve, 50));
                 updateStage("Waiting for provider response...");
 
-                const res = await moltbotApi.runPlanner(
+                const res = await openclawApi.runPlanner(
                     {
                         profile,
                         requirements: reqs,

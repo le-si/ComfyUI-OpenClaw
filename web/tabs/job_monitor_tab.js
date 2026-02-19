@@ -2,7 +2,7 @@
  * F17: Job Monitor Tab
  * Tracks prompt execution and displays outputs.
  */
-import { moltbotApi } from "../openclaw_api.js";
+import { openclawApi } from "../openclaw_api.js";
 
 const POLL_INTERVAL_MS = 2000;
 const POLL_MAX_ATTEMPTS = 150;
@@ -211,7 +211,7 @@ async function startPolling(promptId, onUpdate) {
             return;
         }
 
-        const res = await moltbotApi.getHistory(promptId);
+        const res = await openclawApi.getHistory(promptId);
         if (!res.ok) return;
 
         const job = currentJobs.find((j) => j.promptId === promptId);
@@ -226,7 +226,7 @@ async function startPolling(promptId, onUpdate) {
 
         // R25: Best-effort trace lookup (optional endpoint; ignore 403/404)
         if (!job.traceId && (attempts === 1 || attempts % 5 === 0)) {
-            const t = await moltbotApi.getTrace(promptId);
+            const t = await openclawApi.getTrace(promptId);
             if (t.ok && t.data?.trace?.trace_id) {
                 job.traceId = t.data.trace.trace_id;
                 job.timeline = t.data.trace.events || [];
@@ -275,7 +275,7 @@ function extractImages(historyItem) {
                 filename: img.filename,
                 subfolder: img.subfolder || "",
                 type: img.type || "output",
-                view_url: moltbotApi.buildViewUrl(img.filename, img.subfolder || "", img.type || "output"),
+                view_url: openclawApi.buildViewUrl(img.filename, img.subfolder || "", img.type || "output"),
             });
         }
     }

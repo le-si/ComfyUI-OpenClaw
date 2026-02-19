@@ -1,4 +1,4 @@
-import { moltbotApi } from "../openclaw_api.js";
+import { openclawApi } from "../openclaw_api.js";
 import { showError, clearError } from "../openclaw_utils.js";
 
 export const RefinerTab = {
@@ -151,7 +151,7 @@ export const RefinerTab = {
                 await new Promise(resolve => setTimeout(resolve, 50));
                 updateStage("Waiting for provider response...");
 
-                const res = await moltbotApi.runRefiner(
+                const res = await openclawApi.runRefiner(
                     {
                         image_b64: currentImgB64,
                         orig_positive: container.querySelector("#refiner-orig-pos").value,

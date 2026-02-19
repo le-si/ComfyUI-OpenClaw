@@ -3,9 +3,9 @@
  * Registers the extension and mounts the UI.
  */
 import { app } from "../../../scripts/app.js";
-import { moltbotUI } from "./openclaw_ui.js";
+import { openclawUI } from "./openclaw_ui.js";
 import { installGlobalErrorHandlers } from "./global_error_handler.js";
-import { moltbotApi } from "./openclaw_api.js";
+import { openclawApi } from "./openclaw_api.js";
 // CRITICAL: registerContextToolbox transitively imports app.js from web/extensions/context_toolbox.js.
 // If that module uses a wrong relative path (e.g. ../../scripts/app.js), the import chain fails at module-load time
 // and this whole extension never reaches setup(), which makes the OpenClaw sidebar disappear.
@@ -68,7 +68,7 @@ function installLegacyMenuButton() {
         text-align: left;
     `;
 
-    btn.addEventListener("click", () => moltbotUI.toggleFloatingPanel());
+    btn.addEventListener("click", () => openclawUI.toggleFloatingPanel());
 
     if (menuStrip) {
         menuStrip.appendChild(btn);
@@ -86,7 +86,7 @@ async function registerSupportedTabs() {
     let features = {};
     let capabilitiesKnown = false;
     try {
-        const res = await moltbotApi.getCapabilities();
+        const res = await openclawApi.getCapabilities();
         if (res.ok && res.data && res.data.features) {
             features = res.data.features;
             capabilitiesKnown = true;
@@ -208,7 +208,7 @@ app.registerExtension({
                     type: "custom",
                     render: (container) => {
                         try {
-                            moltbotUI.mount(container);
+                            openclawUI.mount(container);
                         } catch (renderError) {
                             console.error("[OpenClaw] UI Mount Error:", renderError);
                             container.innerHTML = `<div style="padding:10px; color:red">UI Crash: ${renderError.message}</div>`;

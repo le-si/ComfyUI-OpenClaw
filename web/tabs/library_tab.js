@@ -1,4 +1,4 @@
-import { moltbotApi } from "../openclaw_api.js";
+import { openclawApi } from "../openclaw_api.js";
 import { tabManager } from "../openclaw_tabs.js";
 import { showError, clearError } from "../openclaw_utils.js";
 
@@ -176,11 +176,11 @@ export const LibraryTab = {
 
             let res;
             if (currentState.category === "packs") {
-                res = await moltbotApi.getPacks();
+                res = await openclawApi.getPacks();
             } else {
                 // If cat is 'all', allow backend/logic to handle null
                 const cat = currentState.category === "all" ? null : currentState.category;
-                res = await moltbotApi.listPresets(cat);
+                res = await openclawApi.listPresets(cat);
             }
 
             if (res.ok) {
@@ -226,8 +226,8 @@ export const LibraryTab = {
             ui.modal.save.disabled = true;
 
             let res;
-            if (id) res = await moltbotApi.updatePreset(id, { name, category: cat, content });
-            else res = await moltbotApi.createPreset({ name, category: cat, content });
+            if (id) res = await openclawApi.updatePreset(id, { name, category: cat, content });
+            else res = await openclawApi.createPreset({ name, category: cat, content });
 
             ui.modal.save.textContent = "Save";
             ui.modal.save.disabled = false;
@@ -245,9 +245,9 @@ export const LibraryTab = {
 
             let res;
             if (currentState.category === "packs") {
-                res = await moltbotApi.deletePack(idOrName, version);
+                res = await openclawApi.deletePack(idOrName, version);
             } else {
-                res = await moltbotApi.deletePreset(idOrName);
+                res = await openclawApi.deletePreset(idOrName);
             }
 
             if (res.ok) loadContent();
@@ -261,7 +261,7 @@ export const LibraryTab = {
 
             ui.list.innerHTML = '<div style="padding: 20px; text-align: center;">Importing Pack...</div>';
 
-            const res = await moltbotApi.importPack(file, false); // No overwrite by default for now
+            const res = await openclawApi.importPack(file, false); // No overwrite by default for now
             if (res.ok) {
                 alert(`Imported ${res.data.pack.name} v${res.data.pack.version}`);
                 loadContent();
@@ -310,7 +310,7 @@ export const LibraryTab = {
             const action = btn.dataset.action;
 
             if (action === "edit") {
-                const res = await moltbotApi.getPreset(btn.dataset.id);
+                const res = await openclawApi.getPreset(btn.dataset.id);
                 if (res.ok) openModal(res.data);
                 else showError(container, "Failed to load preset details");
             } else if (action === "delete") {
@@ -318,7 +318,7 @@ export const LibraryTab = {
             } else if (action === "delete-pack") {
                 await deleteItem(btn.dataset.name, btn.dataset.ver);
             } else if (action === "export-pack") {
-                const res = await moltbotApi.exportPack(btn.dataset.name, btn.dataset.ver);
+                const res = await openclawApi.exportPack(btn.dataset.name, btn.dataset.ver);
                 if (res.ok) {
                     // Create blob link and click it
                     const url = window.URL.createObjectURL(res.data);
@@ -333,11 +333,11 @@ export const LibraryTab = {
                     showError(container, res.error);
                 }
             } else if (action === "apply") {
-                const res = await moltbotApi.getPreset(btn.dataset.id);
+                const res = await openclawApi.getPreset(btn.dataset.id);
                 if (res.ok) applyPreset(res.data, "planner");
                 else showError(container, "Failed to load preset for apply");
             } else if (action === "apply-refiner") {
-                const res = await moltbotApi.getPreset(btn.dataset.id);
+                const res = await openclawApi.getPreset(btn.dataset.id);
                 if (res.ok) applyPreset(res.data, "refiner");
                 else showError(container, "Failed to load preset for apply");
             }

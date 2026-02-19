@@ -1,5 +1,5 @@
 
-import { moltbotApi } from "../openclaw_api.js";
+import { openclawApi } from "../openclaw_api.js";
 import { makeEl, showToast } from "../openclaw_utils.js";
 
 /**
@@ -153,7 +153,7 @@ export const ExplorerTab = {
         // Fetch Inventory
         async function loadInventory() {
             invList.innerHTML = "Loading...";
-            const res = await moltbotApi.getInventory();
+            const res = await openclawApi.getInventory();
             if (res.ok) {
                 inventoryData = res.data;
                 renderInventoryList(res.data, searchInput.value);
@@ -164,7 +164,7 @@ export const ExplorerTab = {
 
         async function loadSnapshots() {
             snapList.innerHTML = "Loading...";
-            const res = await moltbotApi.listCheckpoints();
+            const res = await openclawApi.listCheckpoints();
             if (res.ok) {
                 renderSnapshots(res.data.checkpoints || []);
             } else {
@@ -253,7 +253,7 @@ export const ExplorerTab = {
                 return;
             }
 
-            const res = await moltbotApi.runPreflight(workflow);
+            const res = await openclawApi.runPreflight(workflow);
             if (res.ok) {
                 renderResults(res.data, workflow);
             } else {
@@ -285,7 +285,7 @@ export const ExplorerTab = {
             saveBtn.onclick = async () => {
                 const name = prompt("Snapshot Name:", "New Snapshot");
                 if (name) {
-                    const res = await moltbotApi.createCheckpoint(name, workflow);
+                    const res = await openclawApi.createCheckpoint(name, workflow);
                     if (res.ok) {
                         showToast("Snapshot saved");
                         if (tabSnaps.classList.contains("active")) loadSnapshots();

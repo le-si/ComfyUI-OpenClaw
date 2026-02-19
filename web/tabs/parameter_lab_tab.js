@@ -1,8 +1,8 @@
 // CRITICAL: this tab module is loaded under /extensions/<pack>/web/tabs/*.js.
 // Must resolve ComfyUI core app from /scripts/app.js via ../../../ prefix.
 import { app } from "../../../scripts/app.js";
-import { moltbotApi } from "../openclaw_api.js";
-import { moltbotUI } from "../openclaw_ui.js";
+import { openclawApi } from "../openclaw_api.js";
+import { openclawUI } from "../openclaw_ui.js";
 
 /**
  * F52: Parameter Lab Tab
@@ -119,12 +119,13 @@ export const ParameterLabTab = {
 
         // F50: Listen for Compare Request (once)
         if (!this._listeningForCompare) {
-            window.addEventListener("moltbot:lab:compare", (e) => {
+            const onCompare = (e) => {
                 const node = e.detail.node;
-                if (node) {
-                    this.showCompareWizard(node);
-                }
-            });
+                if (node) this.showCompareWizard(node);
+            };
+            window.addEventListener("openclaw:lab:compare", onCompare);
+            // Legacy event name for compatibility.
+            window.addEventListener("moltbot:lab:compare", onCompare);
             this._listeningForCompare = true;
         }
     },
@@ -132,7 +133,7 @@ export const ParameterLabTab = {
     async showHistory() {
         this.resultsContainer.innerHTML = "<div class='moltbot-loading'>Loading history...</div>";
         try {
-            const res = await moltbotApi.fetch(moltbotApi._path("/lab/experiments"));
+            const res = await openclawApi.fetch(openclawApi._path("/lab/experiments"));
             if (res.ok && res.data) {
                 this.renderHistoryList(res.data.experiments);
             } else {
@@ -183,7 +184,7 @@ export const ParameterLabTab = {
     async loadExperiment(expId) {
         this.resultsContainer.innerHTML = "<div class='moltbot-loading'>Loading details...</div>";
         try {
-            const res = await moltbotApi.fetch(moltbotApi._path(`/lab/experiments/${expId}`));
+            const res = await openclawApi.fetch(openclawApi._path(`/lab/experiments/${expId}`));
             if (res.ok && res.data) {
                 this.plan = res.data.experiment;
                 this.experimentId = this.plan.experiment_id;
@@ -488,7 +489,7 @@ export const ParameterLabTab = {
         if (!node) {
             const nodes = app.graph._nodes.filter(n => n.type === "CheckpointLoaderSimple" || n.type === "LORALoader" || n.type === "UNETLoader");
             if (nodes.length === 0) {
-                moltbotUI.showBanner("warning", "No Checkpoint/LoRA loaders found in workflow.");
+                openclawUI.showBanner("warning", "No Checkpoint/LoRA loaders found in workflow.");
                 return;
             }
             node = nodes[0];
@@ -503,7 +504,7 @@ export const ParameterLabTab = {
         );
 
         if (!widget) {
-            moltbotUI.showBanner("error", "Could not find model widget on node " + node.id);
+            openclawUI.showBanner("error", "Could not find model widget on node " + node.id);
             return;
         }
 
@@ -529,7 +530,7 @@ export const ParameterLabTab = {
             strategy: "compare"
         });
 
-        moltbotUI.showBanner("info", `Setup comparison for Node ${node.id} (${node.title}). Edit values to select models.`);
+        openclawUI.showBanner("info", `Setup comparison for Node ${node.id} (${node.title}). Edit values to select models.`);
     },
 
     async generatePlan() {
@@ -537,7 +538,7 @@ export const ParameterLabTab = {
         const validDims = this.dimensions.filter(d => d.node_id && d.widget_name && d.values && d.values.length > 0);
 
         if (validDims.length === 0) {
-            moltbotUI.showBanner("error", "Please configure at least one valid dimension with values.");
+            openclawUI.showBanner("error", "Please configure at least one valid dimension with values.");
             return;
         }
 
@@ -554,7 +555,7 @@ export const ParameterLabTab = {
 
         const hasCompare = params.some(p => p.strategy === "compare");
         if (hasCompare && params.length !== 1) {
-            moltbotUI.showBanner(
+            openclawUI.showBanner(
                 "error",
                 "Compare mode supports exactly one comparison dimension."
             );
@@ -569,8 +570,8 @@ export const ParameterLabTab = {
             let res;
             if (hasCompare) {
                 const compare = params[0];
-                moltbotUI.showBanner("info", "Generating compare plan...");
-                res = await moltbotApi.fetch(moltbotApi._path("/lab/compare"), {
+                openclawUI.showBanner("info", "Generating compare plan...");
+                res = await openclawApi.fetch(openclawApi._path("/lab/compare"), {
                     method: "POST",
                     body: JSON.stringify({
                         workflow_json: graphJson,
@@ -580,8 +581,8 @@ export const ParameterLabTab = {
                     })
                 });
             } else {
-                moltbotUI.showBanner("info", "Generating sweep plan...");
-                res = await moltbotApi.fetch(moltbotApi._path("/lab/sweep"), {
+                openclawUI.showBanner("info", "Generating sweep plan...");
+                res = await openclawApi.fetch(openclawApi._path("/lab/sweep"), {
                     method: "POST",
                     body: JSON.stringify({
                         workflow_json: graphJson,
@@ -594,12 +595,12 @@ export const ParameterLabTab = {
                 this.plan = res.data.plan;
                 this.experimentId = this.plan.experiment_id;
                 this.renderPlan();
-                moltbotUI.showBanner("success", `Plan generated: ${this.plan.runs.length} runs.`);
+                openclawUI.showBanner("success", `Plan generated: ${this.plan.runs.length} runs.`);
             } else {
-                moltbotUI.showBanner("error", "Failed to generate plan: " + (res.error || "Unknown"));
+                openclawUI.showBanner("error", "Failed to generate plan: " + (res.error || "Unknown"));
             }
         } catch (e) {
-            moltbotUI.showBanner("error", "Plan generation error: " + e.message);
+            openclawUI.showBanner("error", "Plan generation error: " + e.message);
         }
     },
 
@@ -651,12 +652,12 @@ export const ParameterLabTab = {
     async runExperiment() {
         if (this.isRunning) return;
         this.isRunning = true;
-        moltbotUI.showBanner("info", "Starting experiment...");
+        openclawUI.showBanner("info", "Starting experiment...");
 
         const items = this.resultsContainer.querySelectorAll(".moltbot-lab-run-item");
 
         // Subscribe to events for status updates
-        const es = moltbotApi.subscribeEvents((data) => {
+        const es = openclawApi.subscribeEvents((data) => {
             if (!this.isRunning) return; // Note: we might want to keep listening even after queuing finishes
             const pid = data.prompt_id;
             if (!pid) return;
@@ -671,13 +672,13 @@ export const ParameterLabTab = {
                     statusSpan.className = "run-status success";
                     statusSpan.textContent = "Completed";
                     // Update backend
-                    moltbotApi.fetch(moltbotApi._path(`/lab/experiments/${this.experimentId}/runs/${runIdx}`), {
+                    openclawApi.fetch(openclawApi._path(`/lab/experiments/${this.experimentId}/runs/${runIdx}`), {
                         method: "POST", body: JSON.stringify({ status: "completed" })
                     });
                 } else if (data.event_type === "execution_error" || data.event_type === "failed") {
                     statusSpan.className = "run-status error";
                     statusSpan.textContent = "Failed";
-                    moltbotApi.fetch(moltbotApi._path(`/lab/experiments/${this.experimentId}/runs/${runIdx}`), {
+                    openclawApi.fetch(openclawApi._path(`/lab/experiments/${this.experimentId}/runs/${runIdx}`), {
                         method: "POST", body: JSON.stringify({ status: "failed" })
                     });
                 } else if (data.event_type === "executing") {
@@ -712,7 +713,7 @@ export const ParameterLabTab = {
                         statusSpan.textContent = "Queued (" + res.prompt_id.slice(0, 4) + ")";
 
                         // Register with backend
-                        moltbotApi.fetch(moltbotApi._path(`/lab/experiments/${this.experimentId}/runs/${i}`), {
+                        openclawApi.fetch(openclawApi._path(`/lab/experiments/${this.experimentId}/runs/${i}`), {
                             method: "POST",
                             body: JSON.stringify({ status: "queued", output: { prompt_id: res.prompt_id } })
                         });
@@ -730,14 +731,14 @@ export const ParameterLabTab = {
             }
         } finally {
             // Keep monitoring
-            moltbotUI.showBanner("success", "All runs queued. Monitoring progress...");
+            openclawUI.showBanner("success", "All runs queued. Monitoring progress...");
         }
     },
 
     replayRun(run) {
         if (confirm("Apply these parameter values to the current workflow?")) {
             this.applyOverrides(run);
-            moltbotUI.showBanner("success", "Values applied to nodes.");
+            openclawUI.showBanner("success", "Values applied to nodes.");
         }
     },
 
