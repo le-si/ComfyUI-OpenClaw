@@ -44,9 +44,9 @@ class TestAccessControl(unittest.TestCase):
     def test_require_observability_remote_token_success(self):
         req = Mock()
         req.remote = "192.168.1.100"
-        req.headers = {"X-Moltbot-Obs-Token": "secret123"}
+        req.headers = {"X-OpenClaw-Obs-Token": "secret123"}
 
-        with patch.dict(os.environ, {"MOLTBOT_OBSERVABILITY_TOKEN": "secret123"}):
+        with patch.dict(os.environ, {"OPENCLAW_OBSERVABILITY_TOKEN": "secret123"}):
             allowed, error = require_observability_access(req)
             self.assertTrue(allowed)
             self.assertIsNone(error)
@@ -55,9 +55,9 @@ class TestAccessControl(unittest.TestCase):
         req = Mock()
         req.remote = "192.168.1.100"
 
-        with patch.dict(os.environ, {"MOLTBOT_OBSERVABILITY_TOKEN": "secret123"}):
+        with patch.dict(os.environ, {"OPENCLAW_OBSERVABILITY_TOKEN": "secret123"}):
             # Wrong token
-            req.headers = {"X-Moltbot-Obs-Token": "wrong"}
+            req.headers = {"X-OpenClaw-Obs-Token": "wrong"}
             allowed, error = require_observability_access(req)
             self.assertFalse(allowed)
 

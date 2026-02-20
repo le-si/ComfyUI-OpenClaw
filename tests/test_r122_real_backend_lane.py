@@ -72,7 +72,7 @@ class TestR122RealBackendLane(AioHTTPTestCase):
                 "OPENCLAW_WEBHOOK_HMAC_SECRET": "r122-secret",
                 "OPENCLAW_WEBHOOK_REQUIRE_REPLAY_PROTECTION": "0",
                 "OPENCLAW_DEPLOYMENT_PROFILE": "local",
-                "MOLTBOT_STATE_DIR": os.path.join(self._fixtures_dir, "state"),
+                "OPENCLAW_STATE_DIR": os.path.join(self._fixtures_dir, "state"),
             },
         )
         env_patch.start()
@@ -146,7 +146,7 @@ class TestR122RealBackendLane(AioHTTPTestCase):
             data=body,
             headers={
                 "Content-Type": "application/json",
-                "X-Moltbot-Signature": f"sha256={signature}",
+                "X-OpenClaw-Signature": f"sha256={signature}",
             },
         )
         self.assertEqual(resp.status, 200)

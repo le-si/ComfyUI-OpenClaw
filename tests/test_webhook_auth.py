@@ -54,7 +54,7 @@ class TestVerifyBearer(unittest.TestCase):
 
     def test_valid_bearer(self):
         """Test valid bearer token."""
-        with patch.dict(os.environ, {"MOLTBOT_WEBHOOK_BEARER_TOKEN": "secret123"}):
+        with patch.dict(os.environ, {"OPENCLAW_WEBHOOK_BEARER_TOKEN": "secret123"}):
             request = MockRequest(headers={"Authorization": "Bearer secret123"})
             valid, error = verify_bearer(request)
             self.assertTrue(valid)
@@ -62,7 +62,7 @@ class TestVerifyBearer(unittest.TestCase):
 
     def test_invalid_bearer(self):
         """Test invalid bearer token."""
-        with patch.dict(os.environ, {"MOLTBOT_WEBHOOK_BEARER_TOKEN": "secret123"}):
+        with patch.dict(os.environ, {"OPENCLAW_WEBHOOK_BEARER_TOKEN": "secret123"}):
             request = MockRequest(headers={"Authorization": "Bearer wrong"})
             valid, error = verify_bearer(request)
             self.assertFalse(valid)
@@ -70,7 +70,7 @@ class TestVerifyBearer(unittest.TestCase):
 
     def test_missing_header(self):
         """Test missing Authorization header."""
-        with patch.dict(os.environ, {"MOLTBOT_WEBHOOK_BEARER_TOKEN": "secret123"}):
+        with patch.dict(os.environ, {"OPENCLAW_WEBHOOK_BEARER_TOKEN": "secret123"}):
             request = MockRequest(headers={})
             valid, error = verify_bearer(request)
             self.assertFalse(valid)
@@ -78,7 +78,7 @@ class TestVerifyBearer(unittest.TestCase):
 
     def test_wrong_scheme(self):
         """Test wrong auth scheme."""
-        with patch.dict(os.environ, {"MOLTBOT_WEBHOOK_BEARER_TOKEN": "secret123"}):
+        with patch.dict(os.environ, {"OPENCLAW_WEBHOOK_BEARER_TOKEN": "secret123"}):
             request = MockRequest(headers={"Authorization": "Basic abc"})
             valid, error = verify_bearer(request)
             self.assertFalse(valid)
@@ -104,27 +104,27 @@ class TestVerifyHmac(unittest.TestCase):
         with patch.dict(
             os.environ,
             {
-                "MOLTBOT_WEBHOOK_HMAC_SECRET": secret,
-                "MOLTBOT_WEBHOOK_REQUIRE_REPLAY_PROTECTION": "0",  # Disable S36 strict default
+                "OPENCLAW_WEBHOOK_HMAC_SECRET": secret,
+                "OPENCLAW_WEBHOOK_REQUIRE_REPLAY_PROTECTION": "0",  # Disable S36 strict default
             },
         ):
             request = MockRequest(
-                headers={"X-Moltbot-Signature": f"sha256={expected_sig}"}
+                headers={"X-OpenClaw-Signature": f"sha256={expected_sig}"}
             )
             valid, error = verify_hmac(request, body)
             self.assertTrue(valid)
 
     def test_invalid_hmac(self):
         """Test invalid HMAC signature."""
-        with patch.dict(os.environ, {"MOLTBOT_WEBHOOK_HMAC_SECRET": "secret"}):
-            request = MockRequest(headers={"X-Moltbot-Signature": "sha256=invalid"})
+        with patch.dict(os.environ, {"OPENCLAW_WEBHOOK_HMAC_SECRET": "secret"}):
+            request = MockRequest(headers={"X-OpenClaw-Signature": "sha256=invalid"})
             valid, error = verify_hmac(request, b'{"test": "data"}')
             self.assertFalse(valid)
             self.assertEqual(error, "invalid_signature")
 
     def test_missing_signature(self):
         """Test missing signature header."""
-        with patch.dict(os.environ, {"MOLTBOT_WEBHOOK_HMAC_SECRET": "secret"}):
+        with patch.dict(os.environ, {"OPENCLAW_WEBHOOK_HMAC_SECRET": "secret"}):
             request = MockRequest(headers={})
             valid, error = verify_hmac(request, b"test")
             self.assertFalse(valid)
@@ -133,7 +133,7 @@ class TestVerifyHmac(unittest.TestCase):
     def test_not_configured(self):
         """Test when HMAC secret is not configured."""
         with patch.dict(os.environ, {}, clear=True):
-            request = MockRequest(headers={"X-Moltbot-Signature": "sha256=abc"})
+            request = MockRequest(headers={"X-OpenClaw-Signature": "sha256=abc"})
             valid, error = verify_hmac(request, b"test")
             self.assertFalse(valid)
             self.assertEqual(error, "hmac_not_configured")
@@ -146,8 +146,8 @@ class TestRequireAuth(unittest.TestCase):
         with patch.dict(
             os.environ,
             {
-                "MOLTBOT_WEBHOOK_AUTH_MODE": "bearer",
-                "MOLTBOT_WEBHOOK_BEARER_TOKEN": "token123",
+                "OPENCLAW_WEBHOOK_AUTH_MODE": "bearer",
+                "OPENCLAW_WEBHOOK_BEARER_TOKEN": "token123",
             },
         ):
             request = MockRequest(headers={"Authorization": "Bearer token123"})
@@ -163,19 +163,19 @@ class TestRequireAuth(unittest.TestCase):
         with patch.dict(
             os.environ,
             {
-                "MOLTBOT_WEBHOOK_AUTH_MODE": "hmac",
-                "MOLTBOT_WEBHOOK_HMAC_SECRET": secret,
-                "MOLTBOT_WEBHOOK_REQUIRE_REPLAY_PROTECTION": "0",  # Disable S36 strict default
+                "OPENCLAW_WEBHOOK_AUTH_MODE": "hmac",
+                "OPENCLAW_WEBHOOK_HMAC_SECRET": secret,
+                "OPENCLAW_WEBHOOK_REQUIRE_REPLAY_PROTECTION": "0",  # Disable S36 strict default
             },
         ):
-            request = MockRequest(headers={"X-Moltbot-Signature": f"sha256={sig}"})
+            request = MockRequest(headers={"X-OpenClaw-Signature": f"sha256={sig}"})
             valid, error = require_auth(request, body)
             self.assertTrue(valid)
 
     def test_not_configured(self):
         """Test when auth is not configured."""
         with patch.dict(
-            os.environ, {"MOLTBOT_WEBHOOK_AUTH_MODE": "bearer"}, clear=True
+            os.environ, {"OPENCLAW_WEBHOOK_AUTH_MODE": "bearer"}, clear=True
         ):
             request = MockRequest(headers={})
             valid, error = require_auth(request, b"")
@@ -190,8 +190,8 @@ class TestAuthSummary(unittest.TestCase):
         with patch.dict(
             os.environ,
             {
-                "MOLTBOT_WEBHOOK_AUTH_MODE": "bearer",
-                "MOLTBOT_WEBHOOK_BEARER_TOKEN": "super_secret_token",
+                "OPENCLAW_WEBHOOK_AUTH_MODE": "bearer",
+                "OPENCLAW_WEBHOOK_BEARER_TOKEN": "super_secret_token",
             },
         ):
             summary = get_auth_summary()
@@ -204,7 +204,7 @@ class TestAuthSummary(unittest.TestCase):
     @patch("time.time")
     def test_replay_protection_valid(self, mock_time, mock_store_cls):
         """Test valid replay protection headers."""
-        with patch.dict(os.environ, {"MOLTBOT_WEBHOOK_HMAC_SECRET": "secret"}):
+        with patch.dict(os.environ, {"OPENCLAW_WEBHOOK_HMAC_SECRET": "secret"}):
             # Setup time
             mock_time.return_value = 1000.0
 
@@ -215,9 +215,9 @@ class TestAuthSummary(unittest.TestCase):
 
             request = MagicMock()
             request.headers = {
-                "X-Moltbot-Signature": "sha256=VALID_SIG",  # Will be mocked
-                "X-Moltbot-Timestamp": "1000",
-                "X-Moltbot-Nonce": "nonce123",
+                "X-OpenClaw-Signature": "sha256=VALID_SIG",  # Will be mocked
+                "X-OpenClaw-Timestamp": "1000",
+                "X-OpenClaw-Nonce": "nonce123",
             }
 
             # We need to mock signature verification to pass first
@@ -237,14 +237,14 @@ class TestAuthSummary(unittest.TestCase):
     @patch("time.time")
     def test_replay_protection_drift(self, mock_time, mock_store_cls):
         """Test timestamp drift."""
-        with patch.dict(os.environ, {"MOLTBOT_WEBHOOK_HMAC_SECRET": "secret"}):
+        with patch.dict(os.environ, {"OPENCLAW_WEBHOOK_HMAC_SECRET": "secret"}):
             mock_time.return_value = 1000.0
 
             request = MagicMock()
             request.headers = {
-                "X-Moltbot-Signature": "sha256=VALID_SIG",
-                "X-Moltbot-Timestamp": "500",  # Too old (diff 500 > 300)
-                "X-Moltbot-Nonce": "nonce123",
+                "X-OpenClaw-Signature": "sha256=VALID_SIG",
+                "X-OpenClaw-Timestamp": "500",  # Too old (diff 500 > 300)
+                "X-OpenClaw-Nonce": "nonce123",
             }
 
             with patch("hmac.new") as mock_hmac:
@@ -258,7 +258,7 @@ class TestAuthSummary(unittest.TestCase):
     @patch("time.time")
     def test_replay_protection_nonce_used(self, mock_time, mock_store_cls):
         """Test nonce reuse."""
-        with patch.dict(os.environ, {"MOLTBOT_WEBHOOK_HMAC_SECRET": "secret"}):
+        with patch.dict(os.environ, {"OPENCLAW_WEBHOOK_HMAC_SECRET": "secret"}):
             mock_time.return_value = 1000.0
 
             mock_store = MagicMock()
@@ -267,9 +267,9 @@ class TestAuthSummary(unittest.TestCase):
 
             request = MagicMock()
             request.headers = {
-                "X-Moltbot-Signature": "sha256=VALID_SIG",
-                "X-Moltbot-Timestamp": "1000",
-                "X-Moltbot-Nonce": "nonce123",
+                "X-OpenClaw-Signature": "sha256=VALID_SIG",
+                "X-OpenClaw-Timestamp": "1000",
+                "X-OpenClaw-Nonce": "nonce123",
             }
 
             with patch("hmac.new") as mock_hmac:
@@ -286,8 +286,8 @@ class TestAuthSummary(unittest.TestCase):
         with patch.dict(
             os.environ,
             {
-                "MOLTBOT_WEBHOOK_HMAC_SECRET": "secret",
-                "MOLTBOT_WEBHOOK_REQUIRE_REPLAY_PROTECTION": "true",
+                "OPENCLAW_WEBHOOK_HMAC_SECRET": "secret",
+                "OPENCLAW_WEBHOOK_REQUIRE_REPLAY_PROTECTION": "true",
             },
         ):
             mock_time.return_value = 1000.0
@@ -295,7 +295,7 @@ class TestAuthSummary(unittest.TestCase):
             # Missing headers
             request = MagicMock()
             request.headers = {
-                "X-Moltbot-Signature": "sha256=VALID_SIG",
+                "X-OpenClaw-Signature": "sha256=VALID_SIG",
             }
             # No Timestamp/Nonce headers provided
 

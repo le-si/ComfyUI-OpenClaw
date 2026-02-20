@@ -231,7 +231,7 @@ def validate_device_token(
                 logger.warning(
                     f"Device {device_id[:8]} missing required scopes header."
                 )
-                return False, "Missing X-Moltbot-Scopes header", None
+                return False, "Missing X-OpenClaw-Scopes header", None
 
             granted_scopes = set(
                 s.strip() for s in scopes_header.split(",") if s.strip()

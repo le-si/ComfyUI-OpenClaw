@@ -112,7 +112,6 @@ class TestR123RealBackendModelListLane(AioHTTPTestCase):
     async def get_application(self):
         app = web.Application()
         app.router.add_get("/openclaw/llm/models", llm_models_handler)
-        app.router.add_get("/moltbot/llm/models", llm_models_handler)
         return app
 
     def _admin_headers(self):
@@ -151,7 +150,7 @@ class TestR123RealBackendModelListLane(AioHTTPTestCase):
         ):
             _MODEL_LIST_CACHE.clear()
             resp = await self.client.get(
-                "/moltbot/llm/models",
+                "/openclaw/llm/models",
                 headers=self._admin_headers(),
             )
 

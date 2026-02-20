@@ -11,15 +11,20 @@ from typing import Any, Dict, List, Optional, Tuple, Union
 
 # Config
 TARGET_FILES = ["services/access_control.py"]
-# IMPORTANT: keep this on the repo unittest runner for .venv/CI parity.
+# IMPORTANT: mutation gate must exercise all access-control invariants.
+# Running only tests.test_access_control misses RBAC/CSRF/tier contracts and
+# lets critical mutants survive.
+# CRITICAL: do not reduce this suite to a single module.
+# Regressing to tests.test_access_control alone reproduces R113 false-pass risk:
+# mutation score collapses (~27%) and CI adversarial extended gate fails.
 TEST_COMMAND = [
     sys.executable,
-    "scripts/run_unittests.py",
-    # CRITICAL: use explicit module loading instead of discovery+pattern.
-    # Discovery can silently run 0 tests in some CI layouts, which makes every
-    # mutant look "survived" and collapses score to 0%.
-    "--module",
+    "-m",
+    "unittest",
     "tests.test_access_control",
+    "tests.security.test_rbac",
+    "tests.test_csrf_loopback",
+    "tests.test_s34_observability_tiers",
 ]
 
 logging.basicConfig(

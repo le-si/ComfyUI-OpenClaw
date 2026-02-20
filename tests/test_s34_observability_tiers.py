@@ -46,7 +46,7 @@ class TestS34ObservabilityTiers(unittest.TestCase):
 
     def test_high_sensitivity_allow(self):
         """Trace/Log should ALLOW Admin Token."""
-        req = MockRequest(headers={"X-Moltbot-Admin-Token": self.admin_token})
+        req = MockRequest(headers={"X-OpenClaw-Admin-Token": self.admin_token})
         allowed, _ = require_admin_token(req)
         self.assertTrue(allowed, "Admin token should pass Admin check")
 

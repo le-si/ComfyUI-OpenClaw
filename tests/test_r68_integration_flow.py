@@ -42,7 +42,7 @@ class TestR68IntegrationFlow(AioHTTPTestCase):
         """Build the real application with the webhook route."""
         app = web.Application()
         # Register the handler directly
-        app.router.add_post("/moltbot/webhook/submit", webhook_submit_handler)
+        app.router.add_post("/openclaw/webhook/submit", webhook_submit_handler)
         return app
 
     def setUp(self):
@@ -156,7 +156,7 @@ class TestR68IntegrationFlow(AioHTTPTestCase):
         signature = hmac.new(b"r68-secret", body, hashlib.sha256).hexdigest()
         headers = {
             "Content-Type": "application/json",
-            "X-Moltbot-Signature": f"sha256={signature}",
+            "X-OpenClaw-Signature": f"sha256={signature}",
         }
 
         # 3. Mock Upstream ComfyUI Response (F5/R33)
@@ -176,7 +176,7 @@ class TestR68IntegrationFlow(AioHTTPTestCase):
         with patch("aiohttp.ClientSession", return_value=mock_session):
             # 4. Execute Request
             resp = await self.client.post(
-                "/moltbot/webhook/submit", data=body, headers=headers
+                "/openclaw/webhook/submit", data=body, headers=headers
             )
 
             # 5. Assertions
@@ -213,7 +213,7 @@ class TestR68IntegrationFlow(AioHTTPTestCase):
     async def test_webhook_auth_rejection(self):
         """Verify Auth S2 rejection stops the flow."""
         resp = await self.client.post(
-            "/moltbot/webhook/submit",
+            "/openclaw/webhook/submit",
             data=json.dumps({"template_id": "r68-test"}),
             headers={"Content-Type": "application/json"},
         )
@@ -240,7 +240,7 @@ class TestR68IntegrationFlow(AioHTTPTestCase):
         signature = hmac.new(b"r68-secret", body, hashlib.sha256).hexdigest()
         headers = {
             "Content-Type": "application/json",
-            "X-Moltbot-Signature": f"sha256={signature}",
+            "X-OpenClaw-Signature": f"sha256={signature}",
         }
 
         # Mock upstream
@@ -254,7 +254,7 @@ class TestR68IntegrationFlow(AioHTTPTestCase):
         with patch("aiohttp.ClientSession", return_value=mock_session):
             # First Call
             resp1 = await self.client.post(
-                "/moltbot/webhook/submit", data=body, headers=headers
+                "/openclaw/webhook/submit", data=body, headers=headers
             )
             self.assertEqual(resp1.status, 200)
             data1 = await resp1.json()
@@ -263,7 +263,7 @@ class TestR68IntegrationFlow(AioHTTPTestCase):
 
             # Second Call (Same body -> same signature)
             resp2 = await self.client.post(
-                "/moltbot/webhook/submit", data=body, headers=headers
+                "/openclaw/webhook/submit", data=body, headers=headers
             )
             self.assertEqual(resp2.status, 200)
             data2 = await resp2.json()

@@ -14,7 +14,8 @@ logger = logging.getLogger("ComfyUI-OpenClaw.services.trace")
 TRACE_ID_PATTERN = re.compile(r"^[a-zA-Z0-9_-]{1,64}$")
 
 # Header name constant
-TRACE_HEADER = "X-Moltbot-Trace-Id"
+TRACE_HEADER = "X-OpenClaw-Trace-Id"
+LEGACY_TRACE_HEADER = "X-Moltbot-Trace-Id"
 
 
 def generate_trace_id() -> str:
@@ -69,12 +70,12 @@ def get_effective_trace_id(headers: dict, body_data: dict) -> str:
     """
     Extract trace ID from headers or body, or generate a new one.
     Priority:
-    1. Header: X-Moltbot-Trace-Id
+    1. Header: X-OpenClaw-Trace-Id (or legacy X-Moltbot-Trace-Id)
     2. Body: trace_id (snake_case)
     3. Body: traceId (camelCase, for JS clients)
     4. Generated
     """
-    header_trace = headers.get("X-Moltbot-Trace-Id")
+    header_trace = headers.get(TRACE_HEADER) or headers.get(LEGACY_TRACE_HEADER)
     body_trace = body_data.get("trace_id") or body_data.get("traceId")
     # Priority: Header > Body > Generated
     return get_or_create_trace_id(header_trace or body_trace)
