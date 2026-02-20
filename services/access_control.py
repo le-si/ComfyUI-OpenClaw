@@ -160,13 +160,35 @@ def resolve_token_info(request) -> Optional[TokenInfo]:
     2. Check Environment Variables (Static)
     """
     # Extract token from headers
-    client_token = (
-        request.headers.get("X-OpenClaw-Admin-Token")
-        or request.headers.get("X-Moltbot-Admin-Token")
-        or request.headers.get("X-OpenClaw-Obs-Token")
-        or request.headers.get("X-Moltbot-Obs-Token")
-        or ""
-    )
+    client_token = ""
+    if request.headers.get("X-OpenClaw-Admin-Token"):
+        client_token = request.headers.get("X-OpenClaw-Admin-Token")
+    elif request.headers.get("X-Moltbot-Admin-Token"):
+        client_token = request.headers.get("X-Moltbot-Admin-Token")
+        try:
+            from .metrics import metrics
+
+            if metrics:
+                metrics.inc("legacy_api_hits")
+        except ImportError:
+            pass
+        logger.warning(
+            "DEPRECATION WARNING: Legacy header X-Moltbot-Admin-Token used. Please migrate to X-OpenClaw-Admin-Token."
+        )
+    elif request.headers.get("X-OpenClaw-Obs-Token"):
+        client_token = request.headers.get("X-OpenClaw-Obs-Token")
+    elif request.headers.get("X-Moltbot-Obs-Token"):
+        client_token = request.headers.get("X-Moltbot-Obs-Token")
+        try:
+            from .metrics import metrics
+
+            if metrics:
+                metrics.inc("legacy_api_hits")
+        except ImportError:
+            pass
+        logger.warning(
+            "DEPRECATION WARNING: Legacy header X-Moltbot-Obs-Token used. Please migrate to X-OpenClaw-Obs-Token."
+        )
 
     # 1. Registry Check
     if client_token:

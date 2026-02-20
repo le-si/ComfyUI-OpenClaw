@@ -20,41 +20,41 @@ export const ApprovalsTab = {
     render(container) {
         // --- 1. Static Layout ---
         container.innerHTML = `
-            <div class="moltbot-panel">
-                <div class="moltbot-card" style="border-radius:0; border:none; border-bottom:1px solid var(--moltbot-color-border);">
-                     <div class="moltbot-section-header">Approval Requests</div>
-                     <div class="moltbot-error-box" style="display:none"></div>
-                     <div class="moltbot-toolbar" style="margin-top:5px; display:flex; gap:5px; align-items:center;" id="apr-toolbar">
+            <div class="openclaw-panel openclaw-panel moltbot-panel">
+                <div class="openclaw-card openclaw-card moltbot-card" style="border-radius:0; border:none; border-bottom:1px solid var(--moltbot-color-border);">
+                     <div class="openclaw-section-header openclaw-section-header moltbot-section-header">Approval Requests</div>
+                     <div class="openclaw-error-box openclaw-error-box moltbot-error-box" style="display:none"></div>
+                     <div class="openclaw-toolbar openclaw-toolbar moltbot-toolbar" style="margin-top:5px; display:flex; gap:5px; align-items:center;" id="apr-toolbar">
                         <div id="apr-filter-btns" style="display: flex; gap: 5px;">
-                            <button class="moltbot-btn moltbot-btn-primary" data-status="pending">Pending</button>
-                            <button class="moltbot-btn" data-status="approved">Approved</button>
-                            <button class="moltbot-btn" data-status="rejected">Rejected</button>
-                            <button class="moltbot-btn" data-status="">All</button>
+                            <button class="openclaw-btn openclaw-btn moltbot-btn openclaw-btn-primary openclaw-btn-primary moltbot-btn-primary" data-status="pending">Pending</button>
+                            <button class="openclaw-btn openclaw-btn moltbot-btn" data-status="approved">Approved</button>
+                            <button class="openclaw-btn openclaw-btn moltbot-btn" data-status="rejected">Rejected</button>
+                            <button class="openclaw-btn openclaw-btn moltbot-btn" data-status="">All</button>
                         </div>
-                        <button class="moltbot-btn moltbot-btn-sm" id="apr-refresh-btn" style="margin-left: auto;">
+                        <button class="openclaw-btn openclaw-btn moltbot-btn openclaw-btn-sm openclaw-btn-sm moltbot-btn-sm" id="apr-refresh-btn" style="margin-left: auto;">
                             Refresh
                         </button>
                     </div>
                 </div>
 
-                <div id="apr-list" class="moltbot-scroll-area" style="padding:0;">
-                     <div class="moltbot-empty-state">Loading...</div>
+                <div id="apr-list" class="openclaw-scroll-area openclaw-scroll-area moltbot-scroll-area" style="padding:0;">
+                     <div class="openclaw-empty-state openclaw-empty-state moltbot-empty-state">Loading...</div>
                 </div>
             </div>
 
             <!-- Details Modal -->
-             <div id="apr-editor-overlay" class="moltbot-modal-overlay" style="display:none;">
-                <div id="apr-details-modal" class="moltbot-modal" style="width: 600px;">
-                    <div class="moltbot-modal-header">
+             <div id="apr-editor-overlay" class="openclaw-modal-overlay openclaw-modal-overlay moltbot-modal-overlay" style="display:none;">
+                <div id="apr-details-modal" class="openclaw-modal openclaw-modal moltbot-modal" style="width: 600px;">
+                    <div class="openclaw-modal-header openclaw-modal-header moltbot-modal-header">
                         <span id="apr-modal-title">Request Details</span>
                     </div>
 
-                    <div class="moltbot-modal-body">
+                    <div class="openclaw-modal-body openclaw-modal-body moltbot-modal-body">
                          <div style="font-family: var(--moltbot-font-mono); font-size: var(--moltbot-font-xs); background: #111; padding: 10px; border: 1px solid #333; height: 300px; overflow: auto; white-space: pre-wrap;" id="apr-modal-content"></div>
                     </div>
 
-                    <div class="moltbot-modal-footer">
-                        <button class="moltbot-btn" id="apr-modal-close">Close</button>
+                    <div class="openclaw-modal-footer openclaw-modal-footer moltbot-modal-footer">
+                        <button class="openclaw-btn openclaw-btn moltbot-btn" id="apr-modal-close">Close</button>
                         <div id="apr-modal-actions" style="display:flex; gap:10px;"></div>
                     </div>
                 </div>
@@ -104,7 +104,7 @@ export const ApprovalsTab = {
             const isPending = req.status === "pending";
 
             return `
-                <div class="moltbot-list-item" style="padding: 10px; border-bottom: 1px solid var(--moltbot-color-border); margin-bottom: 4px; border-left: 3px solid var(--moltbot-color-border);">
+                <div class="openclaw-list-item openclaw-list-item moltbot-list-item" style="padding: 10px; border-bottom: 1px solid var(--moltbot-color-border); margin-bottom: 4px; border-left: 3px solid var(--moltbot-color-border);">
                     <div style="display: flex; justify-content: space-between; align-items: flex-start;">
                         <div>
                             <div style="font-weight: bold; font-size: var(--moltbot-font-md); color: var(--moltbot-color-fg);">
@@ -120,15 +120,15 @@ export const ApprovalsTab = {
                             </div>
                         </div>
                         <div style="display: flex; flex-direction: column; align-items: flex-end; gap: 5px;">
-                            <span class="moltbot-badge ${statusClass}">
+                            <span class="openclaw-badge openclaw-badge moltbot-badge ${statusClass}">
                                 ${req.status.toUpperCase()}
                             </span>
 
                             <div style="display: flex; gap: 5px; margin-top: 5px;">
-                                <button class="moltbot-btn moltbot-btn-sm" data-action="details" data-id="${req.approval_id}">Details</button>
+                                <button class="openclaw-btn openclaw-btn moltbot-btn openclaw-btn-sm openclaw-btn-sm moltbot-btn-sm" data-action="details" data-id="${req.approval_id}">Details</button>
                                 ${isPending ? `
-                                    <button class="moltbot-btn moltbot-btn-sm moltbot-btn-primary" data-action="approve" data-id="${req.approval_id}">Approve</button>
-                                    <button class="moltbot-btn moltbot-btn-sm moltbot-btn-danger" data-action="reject" data-id="${req.approval_id}">Reject</button>
+                                    <button class="openclaw-btn openclaw-btn moltbot-btn openclaw-btn-sm openclaw-btn-sm moltbot-btn-sm openclaw-btn-primary openclaw-btn-primary moltbot-btn-primary" data-action="approve" data-id="${req.approval_id}">Approve</button>
+                                    <button class="openclaw-btn openclaw-btn moltbot-btn openclaw-btn-sm openclaw-btn-sm moltbot-btn-sm openclaw-btn-danger openclaw-btn-danger moltbot-btn-danger" data-action="reject" data-id="${req.approval_id}">Reject</button>
                                 ` : ''}
                             </div>
                         </div>
@@ -139,7 +139,7 @@ export const ApprovalsTab = {
 
         const renderList = () => {
             if (currentState.approvals.length === 0) {
-                ui.list.innerHTML = '<div class="moltbot-empty-state">No requests found.</div>';
+                ui.list.innerHTML = '<div class="openclaw-empty-state openclaw-empty-state moltbot-empty-state">No requests found.</div>';
                 return;
             }
             ui.list.innerHTML = currentState.approvals.map(renderListItem).join("");
@@ -203,8 +203,8 @@ export const ApprovalsTab = {
             // Render actions
             if (req.status === "pending") {
                 ui.modal.actions.innerHTML = `
-                    <button class="moltbot-btn moltbot-btn-primary" id="apr-modal-approve">Approve</button>
-                    <button class="moltbot-btn moltbot-btn-danger" id="apr-modal-reject">Reject</button>
+                    <button class="openclaw-btn openclaw-btn moltbot-btn openclaw-btn-primary openclaw-btn-primary moltbot-btn-primary" id="apr-modal-approve">Approve</button>
+                    <button class="openclaw-btn openclaw-btn moltbot-btn openclaw-btn-danger openclaw-btn-danger moltbot-btn-danger" id="apr-modal-reject">Reject</button>
                 `;
 
                 // Bind dynamic buttons
@@ -233,8 +233,8 @@ export const ApprovalsTab = {
             const btn = e.target.closest("button[data-status]");
             if (btn && btn.parentElement === ui.filters) { // Ensure strict match
                 // Update active state
-                ui.filters.querySelectorAll("button").forEach(b => b.classList.remove("moltbot-btn-primary"));
-                btn.classList.add("moltbot-btn-primary");
+                ui.filters.querySelectorAll("button").forEach(b => b.classList.remove("openclaw-btn-primary", "openclaw-btn-primary", "moltbot-btn-primary"));
+                btn.classList.add("openclaw-btn-primary", "openclaw-btn-primary", "moltbot-btn-primary");
 
                 // Update state
                 currentState.status = btn.dataset.status; // "" for all

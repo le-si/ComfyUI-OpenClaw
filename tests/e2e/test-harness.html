@@ -75,6 +75,7 @@
       window.__moltbotTestReady = true;
       document.getElementById('test-status').textContent = '✓ Ready for Testing';
       document.getElementById('test-status').className = 'ready';
+      window.dispatchEvent(new CustomEvent('openclaw-ready'));
       window.dispatchEvent(new CustomEvent('moltbot-ready'));
     } catch (e) {
       console.error('[Test Harness] Failed to load OpenClaw UI:', e);

@@ -27,6 +27,7 @@ class Metrics:
                         "webhook_requests_deduped": 0,
                         "webhook_requests_executed": 0,
                         "webhook_requests_validated": 0,
+                        "legacy_api_hits": 0,
                         # R33: Budget denial metrics
                         "budget_denied_total": 0,
                         "budget_denied_global_concurrency": 0,
@@ -68,6 +69,7 @@ class Metrics:
             "errors_captured": counters.get("errors", 0),
             # Log processing is not currently tracked; keep as 0 for now.
             "logs_processed": 0,
+            "legacy_api_hits": counters.get("legacy_api_hits", 0),
         }
 
     def reset(self) -> None:

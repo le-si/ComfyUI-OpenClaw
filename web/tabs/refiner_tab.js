@@ -8,36 +8,36 @@ export const RefinerTab = {
 
     render(container) {
         container.innerHTML = `
-            <div class="moltbot-panel">
-                <div class="moltbot-scroll-area">
-                    <div class="moltbot-card">
-                         <div class="moltbot-section-header">Source Context</div>
+            <div class="openclaw-panel openclaw-panel moltbot-panel">
+                <div class="openclaw-scroll-area openclaw-scroll-area moltbot-scroll-area">
+                    <div class="openclaw-card openclaw-card moltbot-card">
+                         <div class="openclaw-section-header openclaw-section-header moltbot-section-header">Source Context</div>
 
-                        <div class="moltbot-error-box" style="display:none"></div>
+                        <div class="openclaw-error-box openclaw-error-box moltbot-error-box" style="display:none"></div>
 
-                        <div class="moltbot-input-group">
-                            <label class="moltbot-label">Source Image</label>
+                        <div class="openclaw-input-group openclaw-input-group moltbot-input-group">
+                            <label class="openclaw-label openclaw-label moltbot-label">Source Image</label>
                             <div style="display:flex; gap:10px; align-items:center;">
-                                <input type="file" id="refiner-img-upload" class="moltbot-input" accept="image/png, image/jpeg">
+                                <input type="file" id="refiner-img-upload" class="openclaw-input openclaw-input moltbot-input" accept="image/png, image/jpeg">
                                 <img id="refiner-img-preview" style="height:40px; border-radius:4px; display:none; border:1px solid #444;">
                             </div>
                         </div>
 
-                        <div class="moltbot-input-group">
-                            <label class="moltbot-label">Original Positive</label>
-                            <textarea id="refiner-orig-pos" class="moltbot-textarea"></textarea>
+                        <div class="openclaw-input-group openclaw-input-group moltbot-input-group">
+                            <label class="openclaw-label openclaw-label moltbot-label">Original Positive</label>
+                            <textarea id="refiner-orig-pos" class="openclaw-textarea openclaw-textarea moltbot-textarea"></textarea>
                         </div>
 
-                        <div class="moltbot-input-group">
-                            <label class="moltbot-label">Original Negative</label>
-                            <textarea id="refiner-orig-neg" class="moltbot-textarea" rows="2"></textarea>
+                        <div class="openclaw-input-group openclaw-input-group moltbot-input-group">
+                            <label class="openclaw-label openclaw-label moltbot-label">Original Negative</label>
+                            <textarea id="refiner-orig-neg" class="openclaw-textarea openclaw-textarea moltbot-textarea" rows="2"></textarea>
                         </div>
                     </div>
 
-                    <div class="moltbot-card">
-                        <div class="moltbot-section-header">Goal / Issue</div>
-                        <div class="moltbot-input-group">
-                            <textarea id="refiner-issue" class="moltbot-textarea moltbot-textarea-sm" placeholder="What's wrong? or What to change?"></textarea>
+                    <div class="openclaw-card openclaw-card moltbot-card">
+                        <div class="openclaw-section-header openclaw-section-header moltbot-section-header">Goal / Issue</div>
+                        <div class="openclaw-input-group openclaw-input-group moltbot-input-group">
+                            <textarea id="refiner-issue" class="openclaw-textarea openclaw-textarea moltbot-textarea openclaw-textarea-sm openclaw-textarea-sm moltbot-textarea-sm" placeholder="What's wrong? or What to change?"></textarea>
                         </div>
 
                         <!-- R38-Lite: Loading state container -->
@@ -49,27 +49,27 @@ export const RefinerTab = {
                                     <div id="refiner-elapsed" style="font-size: 0.9em; opacity: 0.7;">Elapsed: 0s</div>
                                 </div>
                             </div>
-                            <button id="refiner-cancel-btn" class="moltbot-btn" style="margin-top: 8px; width: 100%; background: var(--input-background); border: 1px solid var(--border-color);">Cancel</button>
+                            <button id="refiner-cancel-btn" class="openclaw-btn openclaw-btn moltbot-btn" style="margin-top: 8px; width: 100%; background: var(--input-background); border: 1px solid var(--border-color);">Cancel</button>
                         </div>
 
-                        <button id="refiner-run-btn" class="moltbot-btn moltbot-btn-primary">Refine Prompts</button>
+                        <button id="refiner-run-btn" class="openclaw-btn openclaw-btn moltbot-btn openclaw-btn-primary openclaw-btn-primary moltbot-btn-primary">Refine Prompts</button>
                     </div>
 
 
-                    <div id="refiner-results" style="display:none;" class="moltbot-split-v">
-                        <div class="moltbot-card">
-                            <div class="moltbot-section-header">Refinement</div>
-                            <div class="moltbot-input-group">
-                                <label class="moltbot-label">Rationale</label>
-                                <div id="refiner-rationale" class="moltbot-markdown-box"></div>
+                    <div id="refiner-results" style="display:none;" class="openclaw-split-v openclaw-split-v moltbot-split-v">
+                        <div class="openclaw-card openclaw-card moltbot-card">
+                            <div class="openclaw-section-header openclaw-section-header moltbot-section-header">Refinement</div>
+                            <div class="openclaw-input-group openclaw-input-group moltbot-input-group">
+                                <label class="openclaw-label openclaw-label moltbot-label">Rationale</label>
+                                <div id="refiner-rationale" class="openclaw-markdown-box openclaw-markdown-box moltbot-markdown-box"></div>
                             </div>
-                            <div class="moltbot-input-group">
-                                <label class="moltbot-label">New Positive</label>
-                                <textarea id="refiner-new-pos" class="moltbot-textarea moltbot-textarea-md"></textarea>
+                            <div class="openclaw-input-group openclaw-input-group moltbot-input-group">
+                                <label class="openclaw-label openclaw-label moltbot-label">New Positive</label>
+                                <textarea id="refiner-new-pos" class="openclaw-textarea openclaw-textarea moltbot-textarea openclaw-textarea-md openclaw-textarea-md moltbot-textarea-md"></textarea>
                             </div>
-                             <div class="moltbot-input-group">
-                                <label class="moltbot-label">New Negative</label>
-                                <textarea id="refiner-new-neg" class="moltbot-textarea" rows="2"></textarea>
+                             <div class="openclaw-input-group openclaw-input-group moltbot-input-group">
+                                <label class="openclaw-label openclaw-label moltbot-label">New Negative</label>
+                                <textarea id="refiner-new-neg" class="openclaw-textarea openclaw-textarea moltbot-textarea" rows="2"></textarea>
                             </div>
                         </div>
                     </div>

@@ -54,11 +54,11 @@ export async function waitForMoltbotReady(page) {
   }
 
   // Basic sanity: header + tab bar exists
-  await expect(page.locator('.moltbot-header')).toBeVisible();
-  await expect(page.locator('.moltbot-tabs')).toBeVisible();
+  await expect(page.locator('.openclaw-header')).toBeVisible();
+  await expect(page.locator('.openclaw-tabs')).toBeVisible();
 }
 
 export async function clickTab(page, title) {
-  const tab = page.locator('.moltbot-tab', { hasText: title });
+  const tab = page.locator('.openclaw-tab', { hasText: title });
   await tab.click();
 }

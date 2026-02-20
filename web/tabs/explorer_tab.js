@@ -15,17 +15,17 @@ export const ExplorerTab = {
         container.innerHTML = "";
 
         // Layout: Sidebar (Inventory/Snapshots) + Main (Preflight/Details)
-        const layout = makeEl("div", "moltbot-explorer-layout");
+        const layout = makeEl("div", "openclaw-explorer-layout openclaw-explorer-layout moltbot-explorer-layout");
         layout.style.display = "flex";
         layout.style.height = "100%";
         layout.style.gap = "1rem";
 
-        const leftPanel = makeEl("div", "moltbot-explorer-sidebar");
+        const leftPanel = makeEl("div", "openclaw-explorer-sidebar openclaw-explorer-sidebar moltbot-explorer-sidebar");
         leftPanel.style.flex = "1";
         leftPanel.style.display = "flex";
         leftPanel.style.flexDirection = "column";
 
-        const rightPanel = makeEl("div", "moltbot-explorer-main");
+        const rightPanel = makeEl("div", "openclaw-explorer-main openclaw-explorer-main moltbot-explorer-main");
         rightPanel.style.flex = "2";
         rightPanel.style.display = "flex";
         rightPanel.style.flexDirection = "column";
@@ -35,24 +35,24 @@ export const ExplorerTab = {
         container.appendChild(layout);
 
         // --- Left Panel Tabs ---
-        const leftTabs = makeEl("div", "moltbot-subtabs");
+        const leftTabs = makeEl("div", "openclaw-subtabs openclaw-subtabs moltbot-subtabs");
         leftTabs.style.display = "flex";
         leftTabs.style.gap = "10px";
         leftTabs.style.marginBottom = "10px";
 
-        const tabInv = makeEl("button", "moltbot-btn active", "Inventory");
-        const tabSnaps = makeEl("button", "moltbot-btn", "Snapshots");
+        const tabInv = makeEl("button", "openclaw-btn openclaw-btn moltbot-btn active", "Inventory");
+        const tabSnaps = makeEl("button", "openclaw-btn openclaw-btn moltbot-btn", "Snapshots");
         leftTabs.appendChild(tabInv);
         leftTabs.appendChild(tabSnaps);
         leftPanel.appendChild(leftTabs);
 
         // Content Areas
-        const invContent = makeEl("div", "moltbot-tab-content active");
+        const invContent = makeEl("div", "openclaw-tab-content openclaw-tab-content moltbot-tab-content active");
         invContent.style.flex = "1";
         invContent.style.display = "flex";
         invContent.style.flexDirection = "column";
 
-        const snapsContent = makeEl("div", "moltbot-tab-content");
+        const snapsContent = makeEl("div", "openclaw-tab-content openclaw-tab-content moltbot-tab-content");
         snapsContent.style.flex = "1";
         snapsContent.style.display = "none";
         snapsContent.style.flexDirection = "column";
@@ -76,11 +76,11 @@ export const ExplorerTab = {
         };
 
         // --- Inventory Content ---
-        const searchInput = makeEl("input", "moltbot-input");
+        const searchInput = makeEl("input", "openclaw-input openclaw-input moltbot-input");
         searchInput.placeholder = "Search nodes or models...";
         searchInput.style.marginBottom = "10px";
 
-        const invList = makeEl("div", "moltbot-inventory-list");
+        const invList = makeEl("div", "openclaw-inventory-list openclaw-inventory-list moltbot-inventory-list");
         invList.style.flex = "1";
         invList.style.overflowY = "auto";
         invList.style.border = "1px solid var(--border-color, #444)";
@@ -90,7 +90,7 @@ export const ExplorerTab = {
         invContent.appendChild(invList);
 
         // --- Snapshots Content ---
-        const snapList = makeEl("div", "moltbot-snapshot-list");
+        const snapList = makeEl("div", "openclaw-snapshot-list openclaw-snapshot-list moltbot-snapshot-list");
         snapList.style.flex = "1";
         snapList.style.overflowY = "auto";
         snapList.style.border = "1px solid var(--border-color, #444)";
@@ -106,7 +106,7 @@ export const ExplorerTab = {
         diagDesc.style.fontSize = "0.9em";
         diagDesc.style.opacity = "0.8";
 
-        const jsonInput = makeEl("textarea", "moltbot-input");
+        const jsonInput = makeEl("textarea", "openclaw-input openclaw-input moltbot-input");
         jsonInput.placeholder = 'Paste workflow JSON here... {"3": {"class_type": ...}}';
         jsonInput.style.flex = "1";
         jsonInput.style.fontFamily = "monospace";
@@ -117,13 +117,13 @@ export const ExplorerTab = {
         actionsRow.style.display = "flex";
         actionsRow.style.gap = "10px";
 
-        const runBtn = makeEl("button", "moltbot-btn primary", "Run Preflight");
-        const clearBtn = makeEl("button", "moltbot-btn", "Clear");
+        const runBtn = makeEl("button", "openclaw-btn openclaw-btn moltbot-btn primary", "Run Preflight");
+        const clearBtn = makeEl("button", "openclaw-btn openclaw-btn moltbot-btn", "Clear");
 
         actionsRow.appendChild(runBtn);
         actionsRow.appendChild(clearBtn);
 
-        const resultsArea = makeEl("div", "moltbot-preflight-results");
+        const resultsArea = makeEl("div", "openclaw-preflight-results openclaw-preflight-results moltbot-preflight-results");
         resultsArea.style.marginTop = "10px";
         resultsArea.style.padding = "10px";
         resultsArea.style.border = "1px solid var(--border-color, #444)";
@@ -187,7 +187,7 @@ export const ExplorerTab = {
                 invList.appendChild(h);
 
                 filteredNodes.slice(0, MAX_ITEMS_PER_CAT).forEach(n => {
-                    const row = makeEl("div", "moltbot-inv-item", n);
+                    const row = makeEl("div", "openclaw-inv-item openclaw-inv-item moltbot-inv-item", n);
                     row.style.fontSize = "0.9em";
                     row.style.padding = "2px 0";
                     invList.appendChild(row);
@@ -212,7 +212,7 @@ export const ExplorerTab = {
                     invList.appendChild(h);
 
                     filteredVars.slice(0, MAX_ITEMS_PER_CAT).forEach(m => {
-                        const row = makeEl("div", "moltbot-inv-item", m);
+                        const row = makeEl("div", "openclaw-inv-item openclaw-inv-item moltbot-inv-item", m);
                         row.style.fontSize = "0.9em";
                         row.style.padding = "2px 0";
                         row.title = m; // tooltip
@@ -281,7 +281,7 @@ export const ExplorerTab = {
             summaryEl.style.fontWeight = "bold";
             summaryEl.textContent = report.ok ? "✅ Workflow Compatible" : "❌ Issues Detected";
 
-            const saveBtn = makeEl("button", "moltbot-btn", "Save Snapshot");
+            const saveBtn = makeEl("button", "openclaw-btn openclaw-btn moltbot-btn", "Save Snapshot");
             saveBtn.onclick = async () => {
                 const name = prompt("Snapshot Name:", "New Snapshot");
                 if (name) {

@@ -9,7 +9,7 @@ export function installGlobalErrorHandlers() {
     if (installed) return;
 
     window.addEventListener("error", (event) => {
-        // Filter for moltbot-related errors if possible, or just log generic
+        // Filter for openclaw-related moltbot-related errors if possible, or just log generic
         // For MVP, we simply log to console with a specific prefix for easier debugging
         console.error("[OpenClaw Global Error]", event.error);
     });

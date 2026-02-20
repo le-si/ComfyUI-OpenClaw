@@ -75,7 +75,20 @@ def get_effective_trace_id(headers: dict, body_data: dict) -> str:
     3. Body: traceId (camelCase, for JS clients)
     4. Generated
     """
-    header_trace = headers.get(TRACE_HEADER) or headers.get(LEGACY_TRACE_HEADER)
+    try:
+        from .metrics import metrics
+    except ImportError:
+        metrics = None
+
+    header_trace = headers.get(TRACE_HEADER)
+    if not header_trace and headers.get(LEGACY_TRACE_HEADER):
+        header_trace = headers.get(LEGACY_TRACE_HEADER)
+        if metrics:
+            metrics.inc("legacy_api_hits")
+        logger.warning(
+            f"DEPRECATION WARNING: Legacy header used: {LEGACY_TRACE_HEADER}. Please migrate to {TRACE_HEADER}."
+        )
+
     body_trace = body_data.get("trace_id") or body_data.get("traceId")
     # Priority: Header > Body > Generated
     return get_or_create_trace_id(header_trace or body_trace)

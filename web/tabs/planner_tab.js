@@ -8,30 +8,30 @@ export const PlannerTab = {
 
     render(container) {
         container.innerHTML = `
-            <div class="moltbot-panel">
-                <div class="moltbot-scroll-area">
-                    <div class="moltbot-card">
-                        <div class="moltbot-section-header">Generation Goal</div>
+            <div class="openclaw-panel openclaw-panel moltbot-panel">
+                <div class="openclaw-scroll-area openclaw-scroll-area moltbot-scroll-area">
+                    <div class="openclaw-card openclaw-card moltbot-card">
+                        <div class="openclaw-section-header openclaw-section-header moltbot-section-header">Generation Goal</div>
 
-                        <div class="moltbot-error-box" style="display:none" id="planner-error"></div>
+                        <div class="openclaw-error-box openclaw-error-box moltbot-error-box" style="display:none" id="planner-error"></div>
 
-                        <div class="moltbot-grid-2">
-                             <div class="moltbot-input-group">
-                                <label class="moltbot-label">Profile</label>
-                                <select id="planner-profile" class="moltbot-select">
+                        <div class="openclaw-grid-2 openclaw-grid-2 moltbot-grid-2">
+                             <div class="openclaw-input-group openclaw-input-group moltbot-input-group">
+                                <label class="openclaw-label openclaw-label moltbot-label">Profile</label>
+                                <select id="planner-profile" class="openclaw-select openclaw-select moltbot-select">
                                     <option value="SDXL-v1">SDXL v1</option>
                                     <option value="Flux-Dev">Flux Dev</option>
                                 </select>
                             </div>
-                            <div class="moltbot-input-group">
-                                <label class="moltbot-label">Style / Directives</label>
-                                <input type="text" id="planner-style" class="moltbot-input" placeholder="e.g. Cyberpunk, 8k...">
+                            <div class="openclaw-input-group openclaw-input-group moltbot-input-group">
+                                <label class="openclaw-label openclaw-label moltbot-label">Style / Directives</label>
+                                <input type="text" id="planner-style" class="openclaw-input openclaw-input moltbot-input" placeholder="e.g. Cyberpunk, 8k...">
                             </div>
                         </div>
 
-                        <div class="moltbot-input-group">
-                            <label class="moltbot-label">Requirements</label>
-                            <textarea id="planner-reqs" class="moltbot-textarea moltbot-textarea-sm" placeholder="Describe the image..."></textarea>
+                        <div class="openclaw-input-group openclaw-input-group moltbot-input-group">
+                            <label class="openclaw-label openclaw-label moltbot-label">Requirements</label>
+                            <textarea id="planner-reqs" class="openclaw-textarea openclaw-textarea moltbot-textarea openclaw-textarea-sm openclaw-textarea-sm moltbot-textarea-sm" placeholder="Describe the image..."></textarea>
                         </div>
 
                         <!-- R38-Lite: Loading state container -->
@@ -43,26 +43,26 @@ export const PlannerTab = {
                                     <div id="planner-elapsed" style="font-size: 0.9em; opacity: 0.7;">Elapsed: 0s</div>
                                 </div>
                             </div>
-                            <button id="planner-cancel-btn" class="moltbot-btn" style="margin-top: 8px; width: 100%; background: var(--input-background); border: 1px solid var(--border-color);">Cancel</button>
+                            <button id="planner-cancel-btn" class="openclaw-btn openclaw-btn moltbot-btn" style="margin-top: 8px; width: 100%; background: var(--input-background); border: 1px solid var(--border-color);">Cancel</button>
                         </div>
 
-                        <button id="planner-run-btn" class="moltbot-btn moltbot-btn-primary">Plan Generation</button>
+                        <button id="planner-run-btn" class="openclaw-btn openclaw-btn moltbot-btn openclaw-btn-primary openclaw-btn-primary moltbot-btn-primary">Plan Generation</button>
                     </div>
 
-                    <div id="planner-results" style="display:none;" class="moltbot-split-v">
-                        <div class="moltbot-card">
-                            <div class="moltbot-section-header">Plan Output</div>
-                            <div class="moltbot-input-group">
-                                <label class="moltbot-label">Positive</label>
-                                <textarea id="planner-out-pos" class="moltbot-textarea moltbot-textarea-md" readonly></textarea>
+                    <div id="planner-results" style="display:none;" class="openclaw-split-v openclaw-split-v moltbot-split-v">
+                        <div class="openclaw-card openclaw-card moltbot-card">
+                            <div class="openclaw-section-header openclaw-section-header moltbot-section-header">Plan Output</div>
+                            <div class="openclaw-input-group openclaw-input-group moltbot-input-group">
+                                <label class="openclaw-label openclaw-label moltbot-label">Positive</label>
+                                <textarea id="planner-out-pos" class="openclaw-textarea openclaw-textarea moltbot-textarea openclaw-textarea-md openclaw-textarea-md moltbot-textarea-md" readonly></textarea>
                             </div>
-                            <div class="moltbot-input-group">
-                                <label class="moltbot-label">Negative</label>
-                                <textarea id="planner-out-neg" class="moltbot-textarea" rows="2" readonly></textarea>
+                            <div class="openclaw-input-group openclaw-input-group moltbot-input-group">
+                                <label class="openclaw-label openclaw-label moltbot-label">Negative</label>
+                                <textarea id="planner-out-neg" class="openclaw-textarea openclaw-textarea moltbot-textarea" rows="2" readonly></textarea>
                             </div>
-                            <div class="moltbot-input-group">
-                                <label class="moltbot-label">Params (JSON)</label>
-                                <textarea id="planner-out-params" class="moltbot-textarea moltbot-textarea-md" readonly></textarea>
+                            <div class="openclaw-input-group openclaw-input-group moltbot-input-group">
+                                <label class="openclaw-label openclaw-label moltbot-label">Params (JSON)</label>
+                                <textarea id="planner-out-params" class="openclaw-textarea openclaw-textarea moltbot-textarea openclaw-textarea-md openclaw-textarea-md moltbot-textarea-md" readonly></textarea>
                             </div>
                         </div>
                     </div>

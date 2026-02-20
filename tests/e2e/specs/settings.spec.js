@@ -93,7 +93,7 @@ test.describe('Settings Tab Stability', () => {
         await savePromise;
 
         // Expect success message
-        await expect(page.locator('.moltbot-status.ok')).toContainText('Saved!');
-        await expect(page.locator('.moltbot-status.ok')).toContainText('Applied immediately');
+        await expect(page.locator('.openclaw-status.ok')).toContainText('Saved!');
+        await expect(page.locator('.openclaw-status.ok')).toContainText('Applied immediately');
     });
 });
