@@ -105,3 +105,82 @@ export async function copyToClipboard(text, btnElement) {
         alert("Failed to copy to clipboard");
     }
 }
+
+/**
+ * R38-Lite: Create a shared request lifecycle controller for staged loading + elapsed timer + cancel.
+ *
+ * @param {HTMLElement} container
+ * @param {object} selectors
+ * @param {string} selectors.loading
+ * @param {string} selectors.runButton
+ * @param {string} selectors.stage
+ * @param {string} selectors.elapsed
+ */
+export function createRequestLifecycleController(container, selectors) {
+    const loadingEl = container.querySelector(selectors.loading);
+    const runBtnEl = container.querySelector(selectors.runButton);
+    const stageEl = container.querySelector(selectors.stage);
+    const elapsedEl = container.querySelector(selectors.elapsed);
+
+    let abortController = null;
+    let timerInterval = null;
+    let startTime = 0;
+
+    const showLoading = (show) => {
+        if (loadingEl) loadingEl.style.display = show ? "block" : "none";
+        if (runBtnEl) runBtnEl.style.display = show ? "none" : "block";
+    };
+
+    const stopTimer = () => {
+        if (timerInterval) {
+            clearInterval(timerInterval);
+            timerInterval = null;
+        }
+    };
+
+    const setStage = (text) => {
+        if (stageEl) stageEl.textContent = text;
+    };
+
+    const startTimer = () => {
+        startTime = Date.now();
+        if (elapsedEl) elapsedEl.textContent = "Elapsed: 0s";
+        stopTimer();
+        timerInterval = setInterval(() => {
+            if (!elapsedEl) return;
+            const elapsed = Math.floor((Date.now() - startTime) / 1000);
+            elapsedEl.textContent = `Elapsed: ${elapsed}s`;
+        }, 500);
+    };
+
+    const begin = (initialStage = "Preparing request...") => {
+        if (abortController) {
+            abortController.abort();
+        }
+        abortController = new AbortController();
+        setStage(initialStage);
+        showLoading(true);
+        startTimer();
+        return abortController.signal;
+    };
+
+    const end = () => {
+        stopTimer();
+        showLoading(false);
+        abortController = null;
+    };
+
+    const cancel = () => {
+        if (!abortController) return false;
+        abortController.abort();
+        end();
+        return true;
+    };
+
+    return {
+        begin,
+        end,
+        cancel,
+        setStage,
+    };
+}

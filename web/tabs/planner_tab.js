@@ -1,5 +1,5 @@
 import { openclawApi } from "../openclaw_api.js";
-import { showError, clearError } from "../openclaw_utils.js";
+import { showError, clearError, showToast, createRequestLifecycleController } from "../openclaw_utils.js";
 
 export const PlannerTab = {
     id: "planner",
@@ -76,34 +76,13 @@ export const PlannerTab = {
             </style>
         `;
 
-        // R38-Lite: Abort controller for cancellation
-        let abortController = null;
-        let timerInterval = null;
-        let startTime = 0;
-
-        const updateStage = (stage) => {
-            container.querySelector("#planner-stage").textContent = stage;
-        };
-
-        const startTimer = () => {
-            startTime = Date.now();
-            timerInterval = setInterval(() => {
-                const elapsed = Math.floor((Date.now() - startTime) / 1000);
-                container.querySelector("#planner-elapsed").textContent = `Elapsed: ${elapsed}s`;
-            }, 500);
-        };
-
-        const stopTimer = () => {
-            if (timerInterval) {
-                clearInterval(timerInterval);
-                timerInterval = null;
-            }
-        };
-
-        const showLoading = (show) => {
-            container.querySelector("#planner-loading").style.display = show ? "block" : "none";
-            container.querySelector("#planner-run-btn").style.display = show ? "none" : "block";
-        };
+        const lifecycle = createRequestLifecycleController(container, {
+            loading: "#planner-loading",
+            runButton: "#planner-run-btn",
+            stage: "#planner-stage",
+            elapsed: "#planner-elapsed",
+        });
+        let activeRequestId = 0;
 
         container.querySelector("#planner-run-btn").onclick = async () => {
             const profile = container.querySelector("#planner-profile").value;
@@ -115,21 +94,13 @@ export const PlannerTab = {
             clearError(container);
             resDiv.style.display = "none";
 
-            // R38-Lite: Create abort controller
-            abortController = new AbortController();
-
-            showLoading(true);
-            updateStage("Preparing request...");
-            startTimer();
+            const requestId = ++activeRequestId;
+            const signal = lifecycle.begin("Preparing request...");
 
             try {
-                // Stage 1: Preparing
-                await new Promise(resolve => setTimeout(resolve, 100)); // Brief delay to show stage
-                updateStage("Sending request to backend...");
-
-                // Stage 2: Sending
-                await new Promise(resolve => setTimeout(resolve, 50));
-                updateStage("Waiting for provider response...");
+                lifecycle.setStage("Sending request to backend...");
+                await new Promise((resolve) => requestAnimationFrame(resolve));
+                lifecycle.setStage("Waiting for provider response...");
 
                 const res = await openclawApi.runPlanner(
                     {
@@ -137,42 +108,45 @@ export const PlannerTab = {
                         requirements: reqs,
                         style_directives: style
                     },
-                    abortController.signal  // Pass signal (note: runPlanner needs to support this)
+                    signal
                 );
 
-                stopTimer();
+                if (requestId !== activeRequestId) {
+                    return;
+                }
 
                 if (res.ok) {
-                    updateStage("Parsing and validating output...");
+                    lifecycle.setStage("Parsing and validating output...");
+                    await new Promise((resolve) => requestAnimationFrame(resolve));
                     resDiv.style.display = "flex"; // Re-enable flex layout
                     container.querySelector("#planner-out-pos").value = res.data.positive || "";
                     container.querySelector("#planner-out-neg").value = res.data.negative || "";
                     container.querySelector("#planner-out-params").value = JSON.stringify(res.data.params || {}, null, 2);
-                    showLoading(false);
                 } else if (res.error === "timeout") {
-                    showLoading(false);
                     showError(container, "Request timed out");
                 } else if (res.error === "cancelled") {
-                    // User cancelled
-                    showLoading(false);
-                    showError(container, "Request cancelled by user");
+                    showToast("Request cancelled by user", "info");
                 } else {
-                    showLoading(false);
                     showError(container, res.error || "Planning failed");
                 }
             } catch (err) {
-                stopTimer();
-                showLoading(false);
+                if (requestId !== activeRequestId) {
+                    return;
+                }
                 showError(container, err.message || "Unexpected error");
+            } finally {
+                if (requestId === activeRequestId) {
+                    lifecycle.end();
+                }
             }
         };
 
         // R38-Lite: Cancel button handler
         container.querySelector("#planner-cancel-btn").onclick = () => {
-            if (abortController) {
-                abortController.abort();
-                stopTimer();
-                showLoading(false);
+            if (lifecycle.cancel()) {
+                // Invalidate pending promise handlers so stale responses cannot mutate UI.
+                activeRequestId += 1;
+                showToast("Request cancelled by user", "info");
             }
         };
     }
