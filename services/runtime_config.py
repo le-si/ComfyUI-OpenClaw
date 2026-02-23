@@ -103,6 +103,8 @@ ALLOWED_SCHEDULER_KEYS = {
     "startup_jitter_sec",
     "max_runs_per_tick",
     "skip_missed_intervals",
+    "execution_mode",
+    "compute_error_disable_threshold",
 }
 
 # Default values
@@ -122,6 +124,8 @@ DEFAULTS = {
         "startup_jitter_sec": 30,
         "max_runs_per_tick": 5,
         "skip_missed_intervals": False,
+        "execution_mode": "auto",
+        "compute_error_disable_threshold": 3,
     },
 }
 
@@ -135,6 +139,7 @@ CONSTRAINTS = {
 SCHEDULER_CONSTRAINTS = {
     "startup_jitter_sec": (0, 300),
     "max_runs_per_tick": (1, 100),
+    "compute_error_disable_threshold": (1, 20),
 }
 
 # Environment variable mappings (new, legacy)
@@ -157,6 +162,11 @@ SCHEDULER_ENV_MAPPINGS = {
     "startup_jitter_sec": ("OPENCLAW_SCHEDULER_STARTUP_JITTER_SEC", ""),
     "max_runs_per_tick": ("OPENCLAW_SCHEDULER_MAX_RUNS_PER_TICK", ""),
     "skip_missed_intervals": ("OPENCLAW_SCHEDULER_SKIP_MISSED", ""),
+    "execution_mode": ("OPENCLAW_SCHEDULER_EXECUTION_MODE", ""),
+    "compute_error_disable_threshold": (
+        "OPENCLAW_SCHEDULER_COMPUTE_ERROR_DISABLE_THRESHOLD",
+        "",
+    ),
 }
 
 # IMPORTANT:

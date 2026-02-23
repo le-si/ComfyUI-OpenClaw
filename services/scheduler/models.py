@@ -65,6 +65,10 @@ class Schedule:
     last_tick_ts: Optional[float] = None
     last_run_id: Optional[str] = None
 
+    # R92: bounded compute-error tracking for due/recompute failures
+    compute_error_count: int = 0
+    last_compute_error: Optional[str] = None
+
     def __post_init__(self):
         """Validation after initialization."""
         self.validate()
@@ -109,6 +113,9 @@ class Schedule:
                 if not url.startswith(("http://", "https://")):
                     raise ValueError("delivery.url must be http(s)")
 
+        if self.compute_error_count < 0:
+            raise ValueError("compute_error_count must be >= 0")
+
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dict for JSON serialization."""
         d = asdict(self)
@@ -133,6 +140,28 @@ class Schedule:
         self.last_tick_ts = tick_ts
         self.last_run_id = run_id
         self.updated_at = datetime.now(timezone.utc).isoformat()
+
+    def clear_compute_error(self) -> None:
+        """Reset transient compute-error state after successful due evaluation."""
+        if self.compute_error_count or self.last_compute_error:
+            self.compute_error_count = 0
+            self.last_compute_error = None
+            self.updated_at = datetime.now(timezone.utc).isoformat()
+
+    def record_compute_error(self, error_message: str, disable_threshold: int) -> bool:
+        """
+        Record a due/recompute error and optionally disable this schedule.
+
+        Returns:
+            True if the schedule is disabled by threshold, otherwise False.
+        """
+        self.compute_error_count += 1
+        self.last_compute_error = str(error_message or "")[:200]
+        disabled = self.compute_error_count >= max(1, disable_threshold)
+        if disabled:
+            self.enabled = False
+        self.updated_at = datetime.now(timezone.utc).isoformat()
+        return disabled
 
 
 # Maximum schedules allowed

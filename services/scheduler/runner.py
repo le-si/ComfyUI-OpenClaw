@@ -6,6 +6,7 @@ Background tick loop for executing due schedules.
 import asyncio
 import hashlib
 import logging
+import os
 import random
 import threading
 import time
@@ -18,6 +19,41 @@ from .models import Schedule, TriggerType
 from .storage import get_schedule_store
 
 logger = logging.getLogger("ComfyUI-OpenClaw.services.scheduler")
+
+SCHEDULER_EXECUTION_EMBEDDED = "embedded"
+SCHEDULER_EXECUTION_DELEGATED = "delegated"
+
+
+def resolve_scheduler_execution_mode(config: Optional[dict] = None) -> str:
+    """
+    Resolve scheduler execution mode for current runtime.
+
+    Modes:
+    - embedded: in-process scheduler executes due jobs.
+    - delegated: in-process scheduler is read-only; execution is delegated.
+    """
+    if config is None:
+        config = get_scheduler_config()
+
+    explicit = str(config.get("execution_mode", "auto")).strip().lower()
+    if explicit in {SCHEDULER_EXECUTION_EMBEDDED, SCHEDULER_EXECUTION_DELEGATED}:
+        return explicit
+
+    profile = os.environ.get("OPENCLAW_DEPLOYMENT_PROFILE", "local").strip().lower()
+    try:
+        from ..control_plane import ControlPlaneMode, resolve_control_plane_mode
+
+        if (
+            profile == "public"
+            and resolve_control_plane_mode(profile) == ControlPlaneMode.SPLIT
+        ):
+            return SCHEDULER_EXECUTION_DELEGATED
+    except Exception:
+        # Fail-open to embedded for non-public/local workflows if control-plane
+        # module cannot be resolved in this runtime.
+        pass
+
+    return SCHEDULER_EXECUTION_EMBEDDED
 
 
 def compute_idempotency_key(schedule_id: str, tick_ts: float) -> str:
@@ -141,10 +177,131 @@ class SchedulerRunner:
 
         self._store = get_schedule_store()
 
+    def is_execution_delegated(self, config: Optional[dict] = None) -> bool:
+        """Return True when in-process scheduler execution is delegated/blocked."""
+        return resolve_scheduler_execution_mode(config) == SCHEDULER_EXECUTION_DELEGATED
+
+    @staticmethod
+    def _compute_cursor_tick_ts(schedule: Schedule, tick_ts: float) -> float:
+        """
+        Compute the persisted cursor timestamp for this execution.
+
+        R92 invariant:
+        - Interval schedules advance by one interval step from previous cursor
+          (when available), rather than jumping directly to `now`.
+        - This prevents cadence drift/long-jump behavior for daily intervals.
+        """
+        if (
+            schedule.trigger_type == TriggerType.INTERVAL
+            and schedule.interval_sec
+            and schedule.last_tick_ts is not None
+        ):
+            next_tick = schedule.last_tick_ts + float(schedule.interval_sec)
+            if next_tick <= tick_ts:
+                return next_tick
+        return tick_ts
+
+    @staticmethod
+    def _compute_startup_skip_cursor_ts(schedule: Schedule, now_ts: float) -> float:
+        """
+        Compute cursor advancement for startup skip-missed maintenance.
+
+        For interval schedules, advance to the latest interval boundary <= now.
+        For all other cases, fall back to now.
+        """
+        if (
+            schedule.trigger_type == TriggerType.INTERVAL
+            and schedule.interval_sec
+            and schedule.last_tick_ts is not None
+            and schedule.interval_sec > 0
+        ):
+            elapsed = now_ts - schedule.last_tick_ts
+            if elapsed <= 0:
+                return now_ts
+            intervals = int(elapsed // float(schedule.interval_sec))
+            if intervals > 0:
+                return schedule.last_tick_ts + (
+                    intervals * float(schedule.interval_sec)
+                )
+        return now_ts
+
+    def _record_compute_error(
+        self, schedule: Schedule, exc: Exception, disable_threshold: int
+    ) -> None:
+        """Persist per-schedule due/recompute error and deterministic disable state."""
+        disabled = schedule.record_compute_error(str(exc), disable_threshold)
+        self._store.update(schedule)
+
+        if disabled:
+            logger.error(
+                "R92_SCHED_COMPUTE_DISABLED: schedule=%s disabled after %s due/recompute errors",
+                schedule.schedule_id,
+                schedule.compute_error_count,
+            )
+        else:
+            logger.warning(
+                "R92_SCHED_COMPUTE_ERROR: schedule=%s error_count=%s error=%s",
+                schedule.schedule_id,
+                schedule.compute_error_count,
+                str(exc),
+            )
+
+    def _evaluate_schedule_due(
+        self,
+        schedule: Schedule,
+        now: datetime,
+        now_ts: float,
+        disable_threshold: int,
+    ) -> bool:
+        """Evaluate due status with bounded error tracking."""
+        try:
+            is_due = False
+            if schedule.trigger_type == TriggerType.CRON:
+                is_due = is_cron_due(schedule.cron_expr, schedule.last_tick_ts, now)
+            elif schedule.trigger_type == TriggerType.INTERVAL:
+                is_due = is_interval_due(
+                    schedule.interval_sec, schedule.last_tick_ts, now_ts
+                )
+            had_compute_error = bool(
+                schedule.compute_error_count or schedule.last_compute_error
+            )
+            schedule.clear_compute_error()
+            if had_compute_error:
+                self._store.update(schedule)
+            return is_due
+        except Exception as e:
+            self._record_compute_error(schedule, e, disable_threshold)
+            return False
+
+    def _collect_due_schedules(
+        self,
+        schedules: list[Schedule],
+        now: datetime,
+        now_ts: float,
+        disable_threshold: int,
+    ) -> list[Schedule]:
+        """Execution-path recompute: collect due schedules without cursor mutation."""
+        due_schedules: list[Schedule] = []
+        for schedule in schedules:
+            if not schedule.enabled:
+                continue
+            if self._evaluate_schedule_due(schedule, now, now_ts, disable_threshold):
+                due_schedules.append(schedule)
+        return due_schedules
+
     def start(self) -> None:
         """Start the scheduler background loop."""
         if self._running:
             logger.warning("Scheduler already running")
+            return
+
+        startup_config = get_scheduler_config()
+        if self.is_execution_delegated(startup_config):
+            logger.info(
+                "R92: Scheduler execution delegated (public+split). Embedded runner is disabled."
+            )
+            self._running = False
+            self._thread = None
             return
 
         self._running = True
@@ -177,6 +334,13 @@ class SchedulerRunner:
         # R34: Read config once at startup for jitter/skip behavior
         config = get_scheduler_config()
 
+        if self.is_execution_delegated(config):
+            logger.info(
+                "R92: Scheduler loop startup blocked by delegated execution mode."
+            )
+            self._running = False
+            return
+
         # 1. Startup Jitter
         jitter_sec = config.get("startup_jitter_sec", 0)
         if jitter_sec > 0:
@@ -193,11 +357,17 @@ class SchedulerRunner:
         if config.get("skip_missed_intervals"):
             logger.info("Skip Missed Intervals enabled: advancing cursors...")
             try:
-                self._skip_missed_ticks()
+                self._skip_missed_ticks(config=config)
             except Exception as e:
                 logger.error(f"Failed to skip missed ticks: {e}")
 
         while not self._stop_event.is_set():
+            if self.is_execution_delegated():
+                logger.warning(
+                    "R92: execution mode switched to delegated; stopping embedded scheduler loop."
+                )
+                self._running = False
+                break
             try:
                 self._tick()
             except Exception as e:
@@ -208,34 +378,34 @@ class SchedulerRunner:
 
         logger.debug("Scheduler loop exited")
 
-    def _skip_missed_ticks(self) -> None:
+    def _skip_missed_ticks(self, config: Optional[dict] = None) -> None:
         """
         Advance all due schedules to now without executing them.
         Prevents backlog burst after downtime.
         """
+        if config is None:
+            config = get_scheduler_config()
+
         now = datetime.now(timezone.utc)
         now_ts = now.timestamp()
+        disable_threshold = int(config.get("compute_error_disable_threshold", 3))
         schedules = self._store.list_all()
 
         skipped_count = 0
-        for schedule in schedules:
-            if not schedule.enabled:
-                continue
+        due_schedules = self._collect_due_schedules(
+            schedules=schedules,
+            now=now,
+            now_ts=now_ts,
+            disable_threshold=disable_threshold,
+        )
 
-            is_due = False
-            if schedule.trigger_type == TriggerType.CRON:
-                is_due = is_cron_due(schedule.cron_expr, schedule.last_tick_ts, now)
-            elif schedule.trigger_type == TriggerType.INTERVAL:
-                is_due = is_interval_due(
-                    schedule.interval_sec, schedule.last_tick_ts, now_ts
-                )
-
-            if is_due:
-                # Update cursor without running
-                # Use a special run_id to indicate skip
-                schedule.update_cursor(now_ts, "skipped_startup")
-                self._store.update(schedule)
-                skipped_count += 1
+        for schedule in due_schedules:
+            # Update cursor without running (startup skip policy)
+            # Use a special run_id to indicate skip.
+            skip_ts = self._compute_startup_skip_cursor_ts(schedule, now_ts)
+            schedule.update_cursor(skip_ts, "skipped_startup")
+            self._store.update(schedule)
+            skipped_count += 1
 
         if skipped_count > 0:
             logger.info(
@@ -250,25 +420,21 @@ class SchedulerRunner:
         # R34: Dynamic config read for runtime tuning
         config = get_scheduler_config()
         max_runs = config.get("max_runs_per_tick", 5)
+        disable_threshold = int(config.get("compute_error_disable_threshold", 3))
+
+        if self.is_execution_delegated(config):
+            logger.debug(
+                "R92: delegated mode active, skipping in-process scheduler tick execution."
+            )
+            return
 
         schedules = self._store.list_all()
-        due_schedules = []
-
-        for schedule in schedules:
-            if not schedule.enabled:
-                continue
-
-            is_due = False
-
-            if schedule.trigger_type == TriggerType.CRON:
-                is_due = is_cron_due(schedule.cron_expr, schedule.last_tick_ts, now)
-            elif schedule.trigger_type == TriggerType.INTERVAL:
-                is_due = is_interval_due(
-                    schedule.interval_sec, schedule.last_tick_ts, now_ts
-                )
-
-            if is_due:
-                due_schedules.append(schedule)
+        due_schedules = self._collect_due_schedules(
+            schedules=schedules,
+            now=now,
+            now_ts=now_ts,
+            disable_threshold=disable_threshold,
+        )
 
         if due_schedules:
             logger.debug(f"Found {len(due_schedules)} due schedules")
@@ -289,6 +455,9 @@ class SchedulerRunner:
 
     def _execute_schedule(self, schedule: Schedule, tick_ts: float) -> None:
         """Execute a single due schedule."""
+        if self.is_execution_delegated():
+            raise RuntimeError("scheduler_delegated")
+
         idempotency_key = compute_idempotency_key(schedule.schedule_id, tick_ts)
 
         # R9: Check if already processed via history
@@ -354,7 +523,8 @@ class SchedulerRunner:
                 run_record.skip("No submit function")
 
             # Update cursor
-            schedule.update_cursor(tick_ts, run_id)
+            effective_tick_ts = self._compute_cursor_tick_ts(schedule, tick_ts)
+            schedule.update_cursor(effective_tick_ts, run_id)
             self._store.update(schedule)
 
             # R9: Record run
@@ -368,7 +538,8 @@ class SchedulerRunner:
             history.add_run(run_record)
 
             # Still update cursor to avoid retry storm
-            schedule.update_cursor(tick_ts, run_id)
+            effective_tick_ts = self._compute_cursor_tick_ts(schedule, tick_ts)
+            schedule.update_cursor(effective_tick_ts, run_id)
             self._store.update(schedule)
 
 

@@ -8,10 +8,6 @@ from typing import Optional
 
 from aiohttp import web
 
-from ..services.scheduler.models import Schedule, TriggerType
-from ..services.scheduler.storage import get_schedule_store
-from ..services.templates import is_template_allowed
-
 # Import discipline:
 # - ComfyUI runtime: package-relative imports only (prevents collisions with other custom nodes).
 # - Unit tests: allow top-level fallbacks.
@@ -19,11 +15,33 @@ from ..services.templates import is_template_allowed
 # IMPORTANT: Avoid a broad `try/except ImportError` here. Falling back to `services.*` in ComfyUI
 # can silently import another pack's module and break auth/approval semantics.
 if __package__ and "." in __package__:
+    from ..services.scheduler.models import Schedule, TriggerType
+    from ..services.scheduler.storage import get_schedule_store
+    from ..services.templates import is_template_allowed
     from ..services.webhook_auth import AuthError
 else:  # pragma: no cover (test-only import mode)
+    from services.scheduler.models import Schedule, TriggerType  # type: ignore
+    from services.scheduler.storage import get_schedule_store  # type: ignore
+    from services.templates import is_template_allowed  # type: ignore
     from services.webhook_auth import AuthError  # type: ignore
 
 logger = logging.getLogger("ComfyUI-OpenClaw.api.schedules")
+
+
+def _get_scheduler_runner():
+    if __package__ and "." in __package__:
+        from ..services.scheduler.runner import get_scheduler_runner
+    else:  # pragma: no cover (test-only import mode)
+        from services.scheduler.runner import get_scheduler_runner  # type: ignore
+    return get_scheduler_runner()
+
+
+def _get_run_history():
+    if __package__ and "." in __package__:
+        from ..services.scheduler.history import get_run_history
+    else:  # pragma: no cover (test-only import mode)
+        from services.scheduler.history import get_run_history  # type: ignore
+    return get_run_history()
 
 
 class ScheduleHandlers:
@@ -278,9 +296,18 @@ class ScheduleHandlers:
         # Trigger immediate execution via scheduler runner
         import time
 
-        from ..services.scheduler.runner import get_scheduler_runner
+        runner = _get_scheduler_runner()
+        if runner.is_execution_delegated():
+            # IMPORTANT: in public+split mode, embedded scheduler execution must remain blocked.
+            return web.json_response(
+                {
+                    "error": "Scheduler execution is delegated to external control plane",
+                    "code": "scheduler_delegated",
+                    "remediation": "Use external scheduler control plane in split mode.",
+                },
+                status=503,
+            )
 
-        runner = get_scheduler_runner()
         try:
             runner._execute_schedule(schedule, time.time())
             return web.json_response(
@@ -309,9 +336,7 @@ class ScheduleHandlers:
         if not self._store.get(schedule_id):
             return web.json_response({"error": "Schedule not found"}, status=404)
 
-        from ..services.scheduler.history import get_run_history
-
-        history = get_run_history()
+        history = _get_run_history()
         limit = int(request.query.get("limit", "100"))
         offset = int(request.query.get("offset", "0"))
         status = request.query.get("status")
@@ -340,9 +365,7 @@ class ScheduleHandlers:
         except Exception:
             return web.json_response({"error": "Unauthorized"}, status=403)
 
-        from ..services.scheduler.history import get_run_history
-
-        history = get_run_history()
+        history = _get_run_history()
         limit = int(request.query.get("limit", "100"))
         offset = int(request.query.get("offset", "0"))
         status = request.query.get("status")
