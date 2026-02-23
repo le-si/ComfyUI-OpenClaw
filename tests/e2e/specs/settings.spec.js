@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test';
-import { mockComfyUiCore, waitForMoltbotReady, clickTab } from '../utils/helpers.js';
+import { mockComfyUiCore, waitForOpenClawReady, clickTab } from '../utils/helpers.js';
 
 test.describe('Settings Tab Stability', () => {
     test.beforeEach(async ({ page }) => {
@@ -60,7 +60,7 @@ test.describe('Settings Tab Stability', () => {
         });
 
         await page.goto('test-harness.html');
-        await waitForMoltbotReady(page);
+        await waitForOpenClawReady(page);
     });
 
     test('loads settings without flicker and populates fields', async ({ page }) => {

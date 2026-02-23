@@ -710,9 +710,3 @@ export const openclawActions = new OpenClawActions(openclawUI);
 
 const monitor = new QueueMonitor(openclawUI);
 monitor.start();
-
-// Legacy compatibility aliases (Moltbot -> OpenClaw)
-export const MoltbotUI = OpenClawUI;
-export const moltbotUI = openclawUI;
-export const MoltbotActions = OpenClawActions;
-export const moltbotActions = openclawActions;

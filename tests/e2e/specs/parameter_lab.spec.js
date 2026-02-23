@@ -1,12 +1,12 @@
 import { test, expect } from '@playwright/test';
-import { mockComfyUiCore, waitForMoltbotReady, clickTab } from '../utils/helpers.js';
+import { mockComfyUiCore, waitForOpenClawReady, clickTab } from '../utils/helpers.js';
 
 test.describe('Parameter Lab - Dynamic Dimensions', () => {
     test.beforeEach(async ({ page }) => {
         // 1. Setup mock environment
         await mockComfyUiCore(page);
         await page.goto('test-harness.html');
-        await waitForMoltbotReady(page);
+        await waitForOpenClawReady(page);
 
         // 2. Inject mock graph with nodes and widgets
         await page.evaluate(() => {

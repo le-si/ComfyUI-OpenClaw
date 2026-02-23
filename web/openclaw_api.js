@@ -635,7 +635,3 @@ export class OpenClawAPI {
 }
 
 export const openclawApi = new OpenClawAPI();
-
-// Legacy compatibility aliases (Moltbot -> OpenClaw)
-export const MoltbotAPI = OpenClawAPI;
-export const moltbotApi = openclawApi;

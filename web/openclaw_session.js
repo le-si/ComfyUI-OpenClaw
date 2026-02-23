@@ -47,6 +47,3 @@ export const OpenClawSession = {
         return !!this.getAdminToken();
     }
 };
-
-// Legacy compatibility alias (Moltbot -> OpenClaw)
-export const MoltbotSession = OpenClawSession;

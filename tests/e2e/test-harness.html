@@ -20,13 +20,13 @@
   <script type="module">
     import { createMockComfyUIApp } from './mocks/comfyui-app.js';
 
-    window.__moltbotTestReady = false;
-    window.__moltbotTestError = null;
+    window.__openclawTestReady = false;
+    window.__openclawTestError = null;
 
     // Mock ComfyUI app BEFORE importing extension
     window.app = createMockComfyUIApp();
 
-    // Minimal fetch mocks for moltbot UI calls
+    // Minimal fetch mocks for OpenClaw UI calls
     const realFetch = window.fetch.bind(window);
     window.fetch = async (input, init) => {
       const url = typeof input === 'string' ? input : (input?.url || '');
@@ -72,14 +72,13 @@
       // Allow async setup to mount
       await new Promise(r => setTimeout(r, 500));
 
-      window.__moltbotTestReady = true;
+      window.__openclawTestReady = true;
       document.getElementById('test-status').textContent = '✓ Ready for Testing';
       document.getElementById('test-status').className = 'ready';
       window.dispatchEvent(new CustomEvent('openclaw-ready'));
-      window.dispatchEvent(new CustomEvent('moltbot-ready'));
     } catch (e) {
       console.error('[Test Harness] Failed to load OpenClaw UI:', e);
-      window.__moltbotTestError = e;
+      window.__openclawTestError = e;
       document.getElementById('test-status').textContent = '✗ Load Failed: ' + (e?.message || String(e));
       document.getElementById('test-status').style.background = '#4c0f0f';
     }

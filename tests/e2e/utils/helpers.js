@@ -41,14 +41,14 @@ export async function mockComfyUiCore(page) {
   });
 }
 
-export async function waitForMoltbotReady(page) {
+export async function waitForOpenClawReady(page) {
   await page.waitForFunction(
-    () => window.__moltbotTestReady === true || window.__moltbotTestError,
+    () => window.__openclawTestReady === true || window.__openclawTestError,
     null,
     { timeout: 30_000 }
   );
 
-  const error = await page.evaluate(() => window.__moltbotTestError);
+  const error = await page.evaluate(() => window.__openclawTestError);
   if (error) {
     throw new Error(`OpenClaw test harness failed to load: ${error?.message || error}`);
   }

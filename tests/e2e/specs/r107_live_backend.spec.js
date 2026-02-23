@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test';
-import { mockComfyUiCore, waitForMoltbotReady, clickTab } from '../utils/helpers.js';
+import { mockComfyUiCore, waitForOpenClawReady, clickTab } from '../utils/helpers.js';
 
 test.describe('R107 Live Backend Parity', () => {
     test.beforeEach(async ({ page }) => {
@@ -17,7 +17,7 @@ test.describe('R107 Live Backend Parity', () => {
         });
 
         await page.goto('test-harness.html');
-        await waitForMoltbotReady(page);
+        await waitForOpenClawReady(page);
     });
 
     test('Planner (Submit) critical path - Success', async ({ page }) => {
