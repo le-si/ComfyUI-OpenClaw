@@ -1,8 +1,8 @@
 /**
  * S26: Settings Tab (simplified, collapsible secrets)
  */
-import { moltbotApi } from "../openclaw_api.js";
-import { MoltbotSession } from "../openclaw_session.js";
+import { openclawApi } from "../openclaw_api.js";
+import { OpenClawSession } from "../openclaw_session.js";
 import { getAdminErrorMessage } from "../admin_errors.js";
 
 export const settingsTab = {
@@ -10,12 +10,12 @@ export const settingsTab = {
     title: "Settings",
     icon: "pi pi-cog",
     render: async (container) => {
-        // IMPORTANT (UI layout): `.moltbot-content` has `overflow: hidden`.
-        // This tab MUST render its own scroll container (`.moltbot-scroll-area`),
+        // IMPORTANT (UI layout): `.openclaw-content` has `overflow: hidden`.
+        // This tab MUST render its own scroll container (`.openclaw-scroll-area`),
         // otherwise lower sections (e.g. UI Key Store) will be clipped with no way to scroll.
         container.innerHTML = `
-            <div class="moltbot-panel">
-                <div class="moltbot-scroll-area" id="openclaw-settings-scroll">
+            <div class="openclaw-panel openclaw-panel moltbot-panel">
+                <div class="openclaw-scroll-area openclaw-scroll-area moltbot-scroll-area" id="openclaw-settings-scroll">
                     <div class="openclaw-loading-gate" style="padding:16px;text-align:center;opacity:0.6;">Initializing…</div>
                 </div>
             </div>
@@ -25,16 +25,16 @@ export const settingsTab = {
         // F39: Capability probe FIRST — gate optional features before any rendering.
         let capabilities = {};
         try {
-            const capRes = await moltbotApi.getCapabilities();
+            const capRes = await openclawApi.getCapabilities();
             if (capRes.ok && capRes.data?.features) {
                 capabilities = capRes.data.features;
             }
         } catch { /* non-fatal */ }
 
         const [healthRes, logRes, configRes] = await Promise.all([
-            moltbotApi.getHealth(),
-            moltbotApi.getLogs(50),
-            moltbotApi.getConfig(),
+            openclawApi.getHealth(),
+            openclawApi.getLogs(50),
+            openclawApi.getConfig(),
         ]);
 
         // F39: Remove loading gate (readiness gating prevents first-render flicker)
@@ -47,7 +47,7 @@ export const settingsTab = {
         if (all404) {
             const warn = createSection("Backend Not Loaded");
             const hint = document.createElement("div");
-            hint.className = "moltbot-note";
+            hint.className = "openclaw-note openclaw-note moltbot-note";
             hint.style.borderLeft = "4px solid #ff4444";
             hint.innerHTML = `
                 OpenClaw UI loaded, but the server endpoints returned <code>HTTP 404</code>.
@@ -71,7 +71,7 @@ export const settingsTab = {
         if (!all404 && healthRes.ok && Object.keys(capabilities).length === 0) {
             const degradedWarn = createSection("Limited Mode");
             const degradedHint = document.createElement("div");
-            degradedHint.className = "moltbot-note";
+            degradedHint.className = "openclaw-note openclaw-note moltbot-note";
             degradedHint.style.borderLeft = "4px solid #ffaa00";
             degradedHint.innerHTML = `
                 <b>⚠ Capabilities endpoint unavailable.</b> Some features may be hidden or behave differently.
@@ -97,11 +97,11 @@ export const settingsTab = {
         // Detect Shim
         const hasShim = typeof window.comfyAPI?.fetchApi === "function" || typeof window.fetchApi === "function" || !!healthRes.ok;
         // Note: fetchApi is imported in module scope, not global. If request worked, shim worked.
-        // Actually best check is if healthRes.ok or we can inspect 'moltbotApi.prefix' implicitly.
+        // Actually best check is if healthRes.ok or we can inspect 'openclawApi.prefix' implicitly.
 
         const packVer = (healthRes.ok && healthRes.data?.pack?.version) || "Unknown";
         const basePath = (healthRes.ok && healthRes.data?.pack?.base_path) || "/openclaw (inferred)";
-        const comfyVersion = await detectComfyUiVersion(moltbotApi);
+        const comfyVersion = await detectComfyUiVersion(openclawApi);
 
         // Collapsed by default; auto-expand if errors
         diagDetails.open = all404 || !hasShim;
@@ -168,7 +168,7 @@ export const settingsTab = {
             // Provider dropdown
             const providerRow = createFormRow("Provider", sources.provider === "env");
             const providerSelect = document.createElement("select");
-            providerSelect.className = "moltbot-input";
+            providerSelect.className = "openclaw-input openclaw-input moltbot-input";
             providerSelect.disabled = sources.provider === "env";
             providers.forEach(p => {
                 const opt = document.createElement("option");
@@ -187,7 +187,7 @@ export const settingsTab = {
                 modelSelect.innerHTML = "";
                 modelDatalist.innerHTML = "";
                 modelsStatus.textContent = "";
-                modelsStatus.className = "moltbot-status";
+                modelsStatus.className = "openclaw-status openclaw-status moltbot-status";
                 updateModelUiVisibility();
             };
             providerSelect.onchange = () => resetModelList();
@@ -204,13 +204,13 @@ export const settingsTab = {
             // - After "Load Models": show a real <select> for discoverability + still allow "Custom…".
             const modelInput = document.createElement("input");
             modelInput.type = "text";
-            modelInput.className = "moltbot-input";
+            modelInput.className = "openclaw-input openclaw-input moltbot-input";
             modelInput.value = config.model || "";
             modelInput.disabled = sources.model === "env";
             modelInput.style.flex = "1";
 
             const modelSelect = document.createElement("select");
-            modelSelect.className = "moltbot-input";
+            modelSelect.className = "openclaw-input openclaw-input moltbot-input";
             modelSelect.disabled = sources.model === "env";
             modelSelect.style.flex = "1";
             modelSelect.style.display = "none"; // shown after models load
@@ -274,24 +274,24 @@ export const settingsTab = {
             };
 
             const refreshModelsBtn = document.createElement("button");
-            refreshModelsBtn.className = "moltbot-btn moltbot-btn-secondary";
+            refreshModelsBtn.className = "openclaw-btn openclaw-btn moltbot-btn openclaw-btn-secondary openclaw-btn-secondary moltbot-btn-secondary";
             refreshModelsBtn.textContent = "Load Models";
             refreshModelsBtn.disabled = false;
             refreshModelsBtn.title = "Fetch remote model list (admin boundary).";
 
             const modelsStatus = document.createElement("div");
-            modelsStatus.className = "moltbot-status";
+            modelsStatus.className = "openclaw-status openclaw-status moltbot-status";
             modelsStatus.style.minWidth = "120px";
 
             let tokenInput; // Will be set below
 
             refreshModelsBtn.onclick = async () => {
-                const token = (tokenInput?.value || MoltbotSession.getAdminToken() || "").trim();
+                const token = (tokenInput?.value || OpenClawSession.getAdminToken() || "").trim();
                 refreshModelsBtn.disabled = true;
                 modelsStatus.textContent = "Loading...";
-                modelsStatus.className = "moltbot-status";
+                modelsStatus.className = "openclaw-status openclaw-status moltbot-status";
 
-                const res = await moltbotApi.getModelList(providerSelect.value, token);
+                const res = await openclawApi.getModelList(providerSelect.value, token);
                 if (res.ok) {
                     modelDatalist.innerHTML = "";
                     const models = Array.isArray(res.data?.models) ? res.data.models : [];
@@ -303,14 +303,14 @@ export const settingsTab = {
                     });
                     populateModelSelect(models);
                     modelsStatus.textContent = `✓ ${models.length} models`;
-                    modelsStatus.className = "moltbot-status ok";
+                    modelsStatus.className = "openclaw-status openclaw-status moltbot-status ok";
                 } else {
                     const detail = [
                         res.status ? `HTTP ${res.status}` : null,
                         res.error || "Failed",
                     ].filter(Boolean).join(" — ");
                     modelsStatus.textContent = `✗ ${detail}`;
-                    modelsStatus.className = "moltbot-status error";
+                    modelsStatus.className = "openclaw-status openclaw-status moltbot-status error";
                 }
                 refreshModelsBtn.disabled = false;
             };
@@ -328,7 +328,7 @@ export const settingsTab = {
             const baseUrlRow = createFormRow("Base URL", sources.base_url === "env");
             const baseUrlInput = document.createElement("input");
             baseUrlInput.type = "text";
-            baseUrlInput.className = "moltbot-input";
+            baseUrlInput.className = "openclaw-input openclaw-input moltbot-input";
             baseUrlInput.value = config.base_url || "";
             baseUrlInput.placeholder = "Leave empty for provider default";
             baseUrlInput.disabled = sources.base_url === "env";
@@ -342,7 +342,7 @@ export const settingsTab = {
             const timeoutRow = createFormRow("Timeout (sec)", sources.timeout_sec === "env");
             const timeoutInput = document.createElement("input");
             timeoutInput.type = "number";
-            timeoutInput.className = "moltbot-input moltbot-input-sm";
+            timeoutInput.className = "openclaw-input openclaw-input moltbot-input openclaw-input-sm openclaw-input-sm moltbot-input-sm";
             timeoutInput.value = config.timeout_sec || 120;
             timeoutInput.min = 5;
             timeoutInput.max = 300;
@@ -354,7 +354,7 @@ export const settingsTab = {
             const retriesRow = createFormRow("Max Retries", sources.max_retries === "env");
             const retriesInput = document.createElement("input");
             retriesInput.type = "number";
-            retriesInput.className = "moltbot-input moltbot-input-sm";
+            retriesInput.className = "openclaw-input openclaw-input moltbot-input openclaw-input-sm openclaw-input-sm moltbot-input-sm";
             retriesInput.value = config.max_retries || 3;
             retriesInput.min = 0;
             retriesInput.max = 10;
@@ -382,18 +382,18 @@ export const settingsTab = {
             );
             tokenInput = document.createElement("input");
             tokenInput.type = "password";
-            tokenInput.className = "moltbot-input";
+            tokenInput.className = "openclaw-input openclaw-input moltbot-input";
             tokenInput.placeholder = "Enter OPENCLAW_ADMIN_TOKEN if required (localhost-only if not configured)";
             tokenInput.value = "";
             tokenInput.autocomplete = "off";
 
             const tokenClearBtn = document.createElement("button");
-            tokenClearBtn.className = "moltbot-btn moltbot-btn-secondary";
+            tokenClearBtn.className = "openclaw-btn openclaw-btn moltbot-btn openclaw-btn-secondary openclaw-btn-secondary moltbot-btn-secondary";
             tokenClearBtn.textContent = "Clear";
             tokenClearBtn.style.marginLeft = "4px";
             tokenClearBtn.onclick = () => {
                 tokenInput.value = "";
-                MoltbotSession.setAdminToken("");
+                OpenClawSession.setAdminToken("");
             };
 
             tokenRow.appendChild(tokenInput);
@@ -402,24 +402,24 @@ export const settingsTab = {
 
             // Status message area
             const statusDiv = document.createElement("div");
-            statusDiv.className = "moltbot-status";
+            statusDiv.className = "openclaw-status openclaw-status moltbot-status";
             llmSec.appendChild(statusDiv);
 
             // Buttons row
             const btnRow = document.createElement("div");
-            btnRow.className = "moltbot-btn-row";
+            btnRow.className = "openclaw-btn-row openclaw-btn-row moltbot-btn-row";
 
             // Save button
             const saveBtn = document.createElement("button");
-            saveBtn.className = "moltbot-btn";
+            saveBtn.className = "openclaw-btn openclaw-btn moltbot-btn";
             saveBtn.textContent = "Save";
             saveBtn.onclick = async () => {
-                const token = (tokenInput.value || MoltbotSession.getAdminToken() || "").trim();
-                if (token) MoltbotSession.setAdminToken(token);
+                const token = (tokenInput.value || OpenClawSession.getAdminToken() || "").trim();
+                if (token) OpenClawSession.setAdminToken(token);
 
                 saveBtn.disabled = true;
                 statusDiv.textContent = "Saving...";
-                statusDiv.className = "moltbot-status";
+                statusDiv.className = "openclaw-status openclaw-status moltbot-status";
 
                 const updates = {
                     provider: providerSelect.value,
@@ -440,7 +440,7 @@ export const settingsTab = {
                     }
                 }
 
-                const res = await moltbotApi.putConfig(updates, token);
+                const res = await openclawApi.putConfig(updates, token);
                 // R53: Hot-Reload Feedback
                 if (res.ok) {
                     const apply = res.data?.apply || {};
@@ -448,19 +448,19 @@ export const settingsTab = {
 
                     if (apply.restart_required?.length > 0) {
                         msg += " Restart required for: " + apply.restart_required.join(", ");
-                        statusDiv.className = "moltbot-status warning"; // Yellow/Orange
+                        statusDiv.className = "openclaw-status openclaw-status moltbot-status warning"; // Yellow/Orange
                     } else if (apply.applied_now?.length > 0) {
                         msg += " Applied immediately (Hot Reload).";
-                        statusDiv.className = "moltbot-status ok";
+                        statusDiv.className = "openclaw-status openclaw-status moltbot-status ok";
                     } else {
                         // No changes or unknown
-                        statusDiv.className = "moltbot-status ok";
+                        statusDiv.className = "openclaw-status openclaw-status moltbot-status ok";
                     }
                     statusDiv.textContent = msg;
                 } else {
                     const errorMsg = getAdminErrorMessage(res.error, res.status);
                     statusDiv.textContent = `✗ ${res.errors?.join(", ") || errorMsg}`;
-                    statusDiv.className = "moltbot-status error";
+                    statusDiv.className = "openclaw-status openclaw-status moltbot-status error";
                 }
                 saveBtn.disabled = false;
             };
@@ -468,7 +468,7 @@ export const settingsTab = {
 
             // Test button
             const testBtn = document.createElement("button");
-            testBtn.className = "moltbot-btn moltbot-btn-secondary";
+            testBtn.className = "openclaw-btn openclaw-btn moltbot-btn openclaw-btn-secondary openclaw-btn-secondary moltbot-btn-secondary";
             testBtn.textContent = "Test Connection";
 
             // R54: Debounced Test Action to prevent spam
@@ -480,19 +480,19 @@ export const settingsTab = {
             testBtn.onclick = async () => {
                 if (testBtn.disabled) return;
 
-                const token = (tokenInput.value || MoltbotSession.getAdminToken() || "").trim();
-                if (token) MoltbotSession.setAdminToken(token);
+                const token = (tokenInput.value || OpenClawSession.getAdminToken() || "").trim();
+                if (token) OpenClawSession.setAdminToken(token);
 
                 testBtn.disabled = true;
                 statusDiv.textContent = "Testing...";
-                statusDiv.className = "moltbot-status";
+                statusDiv.className = "openclaw-status openclaw-status moltbot-status";
 
                 // IMPORTANT (provider mismatch): "Test Connection" must test the provider/model currently
                 // selected in the UI, even if the user hasn't clicked Save yet. Otherwise, the backend
                 // falls back to the effective config (often "openai") and produces confusing errors like:
                 // "API key not configured for provider 'openai'" while the UI is set to Gemini.
                 try {
-                    const res = await moltbotApi.testLLM(token, {
+                    const res = await openclawApi.testLLM(token, {
                         provider: providerSelect.value,
                         model: modelInput.value,
                         base_url: baseUrlInput.value,
@@ -501,11 +501,11 @@ export const settingsTab = {
                     });
                     if (res.ok) {
                         statusDiv.textContent = "✓ Success! " + (res.response ? `"${res.response}"` : "");
-                        statusDiv.className = "moltbot-status ok";
+                        statusDiv.className = "openclaw-status openclaw-status moltbot-status ok";
                     } else {
                         const errorMsg = getAdminErrorMessage(res.error, res.status);
                         statusDiv.textContent = `✗ ${errorMsg}`;
-                        statusDiv.className = "moltbot-status error";
+                        statusDiv.className = "openclaw-status openclaw-status moltbot-status error";
                     }
                 } finally {
                     testBtn.disabled = false;
@@ -517,7 +517,7 @@ export const settingsTab = {
 
             // API Key instructions
             const keyNote = document.createElement("div");
-            keyNote.className = "moltbot-note";
+            keyNote.className = "openclaw-note openclaw-note moltbot-note";
             keyNote.innerHTML = `<b>API Key</b>: Use <code>OPENCLAW_LLM_API_KEY</code> (or provider-specific keys) via environment variable (recommended), or enable the UI Key Store below (server-side storage; never stored in browser).`;
             llmSec.appendChild(keyNote);
 
@@ -544,7 +544,7 @@ export const settingsTab = {
 
             const secretProviderRow = createFormRow("Store For");
             const secretProviderSelect = document.createElement("select");
-            secretProviderSelect.className = "moltbot-input";
+            secretProviderSelect.className = "openclaw-input openclaw-input moltbot-input";
             // Build options from provider catalog + generic fallback
             const providerOptions = [];
             providers.forEach(p => providerOptions.push({ id: p.id, label: p.label, requires_key: p.requires_key }));
@@ -568,14 +568,14 @@ export const settingsTab = {
 
             const secretKeyInput = document.createElement("input");
             secretKeyInput.type = "password";
-            secretKeyInput.className = "moltbot-input";
+            secretKeyInput.className = "openclaw-input openclaw-input moltbot-input";
             secretKeyInput.placeholder = "Paste provider API key (not stored in browser)";
             secretKeyInput.value = "";
             secretKeyInput.autocomplete = "off";
             secretKeyInput.style.flex = "1";
 
             const secretKeyClearBtn = document.createElement("button");
-            secretKeyClearBtn.className = "moltbot-btn moltbot-btn-secondary";
+            secretKeyClearBtn.className = "openclaw-btn openclaw-btn moltbot-btn openclaw-btn-secondary openclaw-btn-secondary moltbot-btn-secondary";
             secretKeyClearBtn.textContent = "Clear";
             secretKeyClearBtn.onclick = () => {
                 secretKeyInput.value = "";
@@ -587,11 +587,11 @@ export const settingsTab = {
             secretsContent.appendChild(secretKeyRow);
 
             const secretsStatus = document.createElement("div");
-            secretsStatus.className = "moltbot-status";
+            secretsStatus.className = "openclaw-status openclaw-status moltbot-status";
             secretsContent.appendChild(secretsStatus);
 
             const getAdminToken = () => {
-                const tok = (container.querySelector('input[type="password"][placeholder*="OPENCLAW_ADMIN_TOKEN"]')?.value || MoltbotSession.getAdminToken() || "").trim();
+                const tok = (container.querySelector('input[type="password"][placeholder*="OPENCLAW_ADMIN_TOKEN"]')?.value || OpenClawSession.getAdminToken() || "").trim();
                 return tok;
             };
 
@@ -599,17 +599,17 @@ export const settingsTab = {
                 const token = getAdminToken();
 
                 secretsStatus.textContent = "Loading...";
-                secretsStatus.className = "moltbot-status";
-                const res = await moltbotApi.getSecretsStatus(token);
+                secretsStatus.className = "openclaw-status openclaw-status moltbot-status";
+                const res = await openclawApi.getSecretsStatus(token);
                 if (res.ok) {
                     const secrets = res.data?.secrets || {};
                     const keys = Object.keys(secrets);
                     if (keys.length === 0) {
                         secretsStatus.textContent = "✓ No stored keys.";
-                        secretsStatus.className = "moltbot-status ok";
+                        secretsStatus.className = "openclaw-status openclaw-status moltbot-status ok";
                     } else {
                         secretsStatus.textContent = `✓ Stored keys: ${keys.join(", ")}`;
-                        secretsStatus.className = "moltbot-status ok";
+                        secretsStatus.className = "openclaw-status openclaw-status moltbot-status ok";
                     }
                 } else {
                     const detail = [
@@ -617,15 +617,15 @@ export const settingsTab = {
                         res.error || "Failed",
                     ].filter(Boolean).join(" — ");
                     secretsStatus.textContent = `✗ ${detail}`;
-                    secretsStatus.className = "moltbot-status error";
+                    secretsStatus.className = "openclaw-status openclaw-status moltbot-status error";
                 }
             };
 
             const secretsBtnRow = document.createElement("div");
-            secretsBtnRow.className = "moltbot-btn-row";
+            secretsBtnRow.className = "openclaw-btn-row openclaw-btn-row moltbot-btn-row";
 
             const secretsStatusBtn = document.createElement("button");
-            secretsStatusBtn.className = "moltbot-btn moltbot-btn-secondary";
+            secretsStatusBtn.className = "openclaw-btn openclaw-btn moltbot-btn openclaw-btn-secondary openclaw-btn-secondary moltbot-btn-secondary";
             secretsStatusBtn.textContent = "Check Status";
             secretsStatusBtn.onclick = async () => {
                 secretsStatusBtn.disabled = true;
@@ -635,27 +635,27 @@ export const settingsTab = {
             secretsBtnRow.appendChild(secretsStatusBtn);
 
             const secretsSaveBtn = document.createElement("button");
-            secretsSaveBtn.className = "moltbot-btn";
+            secretsSaveBtn.className = "openclaw-btn openclaw-btn moltbot-btn";
             secretsSaveBtn.textContent = "Save Key";
             secretsSaveBtn.onclick = async () => {
                 const token = getAdminToken();
                 const apiKey = (secretKeyInput.value || "").trim();
                 if (!apiKey) {
                     secretsStatus.textContent = "Please paste an API key first.";
-                    secretsStatus.className = "moltbot-status error";
+                    secretsStatus.className = "openclaw-status openclaw-status moltbot-status error";
                     return;
                 }
-                if (token) MoltbotSession.setAdminToken(token);
+                if (token) OpenClawSession.setAdminToken(token);
 
                 secretsSaveBtn.disabled = true;
                 secretsStatus.textContent = "Saving...";
-                secretsStatus.className = "moltbot-status";
+                secretsStatus.className = "openclaw-status openclaw-status moltbot-status";
 
-                const res = await moltbotApi.saveSecret(secretProviderSelect.value, apiKey, token);
+                const res = await openclawApi.saveSecret(secretProviderSelect.value, apiKey, token);
                 if (res.ok) {
                     secretKeyInput.value = "";
                     secretsStatus.textContent = "✓ Saved to server store. Restart ComfyUI if needed.";
-                    secretsStatus.className = "moltbot-status ok";
+                    secretsStatus.className = "openclaw-status openclaw-status moltbot-status ok";
                     await refreshSecretsStatus();
                 } else {
                     const detail = [
@@ -663,27 +663,27 @@ export const settingsTab = {
                         res.error || "Failed",
                     ].filter(Boolean).join(" — ");
                     secretsStatus.textContent = `✗ ${detail}`;
-                    secretsStatus.className = "moltbot-status error";
+                    secretsStatus.className = "openclaw-status openclaw-status moltbot-status error";
                 }
                 secretsSaveBtn.disabled = false;
             };
             secretsBtnRow.appendChild(secretsSaveBtn);
 
             const secretsClearBtn = document.createElement("button");
-            secretsClearBtn.className = "moltbot-btn moltbot-btn-danger";
+            secretsClearBtn.className = "openclaw-btn openclaw-btn moltbot-btn openclaw-btn-danger openclaw-btn-danger moltbot-btn-danger";
             secretsClearBtn.textContent = "Clear Stored Key";
             secretsClearBtn.onclick = async () => {
                 const token = getAdminToken();
-                if (token) MoltbotSession.setAdminToken(token);
+                if (token) OpenClawSession.setAdminToken(token);
 
                 secretsClearBtn.disabled = true;
                 secretsStatus.textContent = "Clearing...";
-                secretsStatus.className = "moltbot-status";
+                secretsStatus.className = "openclaw-status openclaw-status moltbot-status";
 
-                const res = await moltbotApi.clearSecret(secretProviderSelect.value, token);
+                const res = await openclawApi.clearSecret(secretProviderSelect.value, token);
                 if (res.ok) {
                     secretsStatus.textContent = "✓ Cleared.";
-                    secretsStatus.className = "moltbot-status ok";
+                    secretsStatus.className = "openclaw-status openclaw-status moltbot-status ok";
                     await refreshSecretsStatus();
                 } else {
                     const detail = [
@@ -691,7 +691,7 @@ export const settingsTab = {
                         res.error || "Failed",
                     ].filter(Boolean).join(" — ");
                     secretsStatus.textContent = `✗ ${detail}`;
-                    secretsStatus.className = "moltbot-status error";
+                    secretsStatus.className = "openclaw-status openclaw-status moltbot-status error";
                 }
                 secretsClearBtn.disabled = false;
             };
@@ -705,7 +705,7 @@ export const settingsTab = {
         // -- Logs Section --
         const logsSec = createSection("Recent Logs");
         const logView = document.createElement("div");
-        logView.className = "moltbot-log-viewer";
+        logView.className = "openclaw-log-viewer openclaw-log-viewer moltbot-log-viewer";
 
         if (logRes.ok) {
             const content = logRes.data?.content;
@@ -737,14 +737,14 @@ export const settingsTab = {
                 // "Recent Logs" -> "logs"
                 // "System Health" -> "health"
 
-                const sections = Array.from(scroll.querySelectorAll(".moltbot-section"));
+                const sections = Array.from(scroll.querySelectorAll(".openclaw-section"));
                 if (sectionKey === "llm") target = sections.find(s => s.textContent.includes("LLM Settings"));
                 else if (sectionKey === "secrets") {
                     target = sections.find(s => s.textContent.includes("UI Key Store"));
                     // Auto-expand if targeted
                     if (target) {
-                        const content = target.querySelector(".moltbot-collapsible-content");
-                        const toggle = target.querySelector(".moltbot-collapsible-header span:last-child");
+                        const content = target.querySelector(".openclaw-collapsible-content");
+                        const toggle = target.querySelector(".openclaw-collapsible-header span:last-child");
                         if (content) content.style.display = "block";
                         if (toggle) toggle.textContent = "▼";
                     }
@@ -765,7 +765,7 @@ export const settingsTab = {
 
 function createSection(title) {
     const div = document.createElement("div");
-    div.className = "moltbot-section";
+    div.className = "openclaw-section openclaw-section moltbot-section";
     const h4 = document.createElement("h4");
     h4.textContent = title;
     div.appendChild(h4);
@@ -774,10 +774,10 @@ function createSection(title) {
 
 function createCollapsibleSection(title, description, defaultExpanded = false) {
     const container = document.createElement("div");
-    container.className = "moltbot-section moltbot-collapsible-section";
+    container.className = "openclaw-section openclaw-section moltbot-section openclaw-collapsible-section openclaw-collapsible-section moltbot-collapsible-section";
 
     const header = document.createElement("div");
-    header.className = "moltbot-collapsible-header";
+    header.className = "openclaw-collapsible-header openclaw-collapsible-header moltbot-collapsible-header";
     header.style.cursor = "pointer";
     header.style.display = "flex";
     header.style.justifyContent = "space-between";
@@ -825,13 +825,13 @@ function createCollapsibleSection(title, description, defaultExpanded = false) {
     container.appendChild(header);
 
     const descDiv = document.createElement("div");
-    descDiv.className = "moltbot-note";
+    descDiv.className = "openclaw-note openclaw-note moltbot-note";
     descDiv.style.margin = "8px 0";
     descDiv.innerHTML = description;
     container.appendChild(descDiv);
 
     const content = document.createElement("div");
-    content.className = "moltbot-collapsible-content";
+    content.className = "openclaw-collapsible-content openclaw-collapsible-content moltbot-collapsible-content";
     content.style.display = defaultExpanded ? "block" : "none";
     content.style.marginTop = "8px";
     container.appendChild(content);
@@ -847,7 +847,7 @@ function createCollapsibleSection(title, description, defaultExpanded = false) {
 
 function createFormRow(label, locked = false, helpBtn = null) {
     const row = document.createElement("div");
-    row.className = "moltbot-form-row";
+    row.className = "openclaw-form-row openclaw-form-row moltbot-form-row";
     const header = document.createElement("div");
     header.style.display = "flex";
     header.style.alignItems = "center";
@@ -855,7 +855,7 @@ function createFormRow(label, locked = false, helpBtn = null) {
     header.style.gap = "8px";
 
     const lbl = document.createElement("label");
-    lbl.className = "moltbot-label";
+    lbl.className = "openclaw-label openclaw-label moltbot-label";
     lbl.textContent = label + (locked ? " 🔒" : "");
     if (locked) lbl.title = "Locked (env override)";
 
@@ -868,7 +868,7 @@ function createFormRow(label, locked = false, helpBtn = null) {
 function createHelpButton(title, html) {
     const btn = document.createElement("button");
     btn.type = "button";
-    btn.className = "moltbot-help-btn";
+    btn.className = "openclaw-help-btn openclaw-help-btn moltbot-help-btn";
     btn.textContent = "?";
     btn.title = "Help";
     btn.onclick = (e) => {
@@ -880,30 +880,30 @@ function createHelpButton(title, html) {
 
 function showHelpModal(title, html) {
     // Remove any existing modal overlay
-    const existing = document.querySelector(".moltbot-modal-overlay");
+    const existing = document.querySelector(".openclaw-modal-overlay");
     if (existing) existing.remove();
 
     const overlay = document.createElement("div");
-    overlay.className = "moltbot-modal-overlay";
+    overlay.className = "openclaw-modal-overlay openclaw-modal-overlay moltbot-modal-overlay";
     overlay.addEventListener("click", (e) => {
         if (e.target === overlay) overlay.remove();
     });
 
     const modal = document.createElement("div");
-    modal.className = "moltbot-modal";
+    modal.className = "openclaw-modal openclaw-modal moltbot-modal";
 
     const header = document.createElement("div");
-    header.className = "moltbot-modal-header";
+    header.className = "openclaw-modal-header openclaw-modal-header moltbot-modal-header";
     header.textContent = title;
 
     const closeBtn = document.createElement("button");
-    closeBtn.className = "moltbot-btn moltbot-btn-secondary";
+    closeBtn.className = "openclaw-btn openclaw-btn moltbot-btn openclaw-btn-secondary openclaw-btn-secondary moltbot-btn-secondary";
     closeBtn.textContent = "Close";
     closeBtn.onclick = () => overlay.remove();
     header.appendChild(closeBtn);
 
     const body = document.createElement("div");
-    body.className = "moltbot-modal-body";
+    body.className = "openclaw-modal-body openclaw-modal-body moltbot-modal-body";
     body.innerHTML = html;
 
     modal.appendChild(header);
@@ -914,14 +914,14 @@ function showHelpModal(title, html) {
 
 function addRow(container, key, val, valClass = "") {
     const row = document.createElement("div");
-    row.className = "moltbot-kv-row";
+    row.className = "openclaw-kv-row openclaw-kv-row moltbot-kv-row";
 
     const k = document.createElement("span");
-    k.className = "moltbot-kv-key";
+    k.className = "openclaw-kv-key openclaw-kv-key moltbot-kv-key";
     k.textContent = key;
 
     const v = document.createElement("span");
-    v.className = `moltbot-kv-val ${valClass}`;
+    v.className = `openclaw-kv-val openclaw-kv-val moltbot-kv-val ${valClass}`;
     v.textContent = val;
 
     row.appendChild(k);

@@ -1,4 +1,4 @@
-import { moltbotApi } from "../openclaw_api.js";
+import { openclawApi } from "../openclaw_api.js";
 import { tabManager } from "../openclaw_tabs.js";
 import { showError, clearError } from "../openclaw_utils.js";
 
@@ -21,59 +21,59 @@ export const LibraryTab = {
     render(container) {
         // --- 1. Static Layout ---
         container.innerHTML = `
-            <div class="moltbot-panel">
-                 <div class="moltbot-card" style="border-radius:0; border:none; border-bottom:1px solid var(--moltbot-color-border);">
-                    <div class="moltbot-section-header">Asset Library</div>
-                    <div class="moltbot-error-box" style="display:none"></div>
-                    <div class="moltbot-input-group">
-                        <input type="text" id="lib-search" class="moltbot-input" placeholder="Search...">
+            <div class="openclaw-panel openclaw-panel moltbot-panel">
+                 <div class="openclaw-card openclaw-card moltbot-card" style="border-radius:0; border:none; border-bottom:1px solid var(--moltbot-color-border);">
+                    <div class="openclaw-section-header openclaw-section-header moltbot-section-header">Asset Library</div>
+                    <div class="openclaw-error-box openclaw-error-box moltbot-error-box" style="display:none"></div>
+                    <div class="openclaw-input-group openclaw-input-group moltbot-input-group">
+                        <input type="text" id="lib-search" class="openclaw-input openclaw-input moltbot-input" placeholder="Search...">
                     </div>
-                    <div class="moltbot-toolbar" style="margin-top:8px; display:flex; gap:5px;" id="lib-filter-btns">
-                        <button class="moltbot-btn moltbot-btn-primary" data-cat="all">All</button>
-                        <button class="moltbot-btn" data-cat="prompt">Prompts</button>
-                        <button class="moltbot-btn" data-cat="params">Params</button>
-                        <button class="moltbot-btn" data-cat="packs">Packs</button>
-                        <button class="moltbot-btn" id="lib-new-btn" style="margin-left: auto;">+ New</button>
+                    <div class="openclaw-toolbar openclaw-toolbar moltbot-toolbar" style="margin-top:8px; display:flex; gap:5px;" id="lib-filter-btns">
+                        <button class="openclaw-btn openclaw-btn moltbot-btn openclaw-btn-primary openclaw-btn-primary moltbot-btn-primary" data-cat="all">All</button>
+                        <button class="openclaw-btn openclaw-btn moltbot-btn" data-cat="prompt">Prompts</button>
+                        <button class="openclaw-btn openclaw-btn moltbot-btn" data-cat="params">Params</button>
+                        <button class="openclaw-btn openclaw-btn moltbot-btn" data-cat="packs">Packs</button>
+                        <button class="openclaw-btn openclaw-btn moltbot-btn" id="lib-new-btn" style="margin-left: auto;">+ New</button>
                     </div>
                     <input type="file" id="lib-pack-upload" accept=".zip" style="display:none">
                 </div>
 
-                <div id="lib-list" class="moltbot-scroll-area" style="padding:0;">
+                <div id="lib-list" class="openclaw-scroll-area openclaw-scroll-area moltbot-scroll-area" style="padding:0;">
                     <!-- Items -->
-                    <div class="moltbot-empty-state">Loading...</div>
+                    <div class="openclaw-empty-state openclaw-empty-state moltbot-empty-state">Loading...</div>
                 </div>
             </div>
 
             <!-- Editor Modal (Presets) -->
-            <div id="lib-editor-overlay" class="moltbot-modal-overlay" style="display:none;">
-                <div id="lib-editor" class="moltbot-modal">
-                    <div class="moltbot-modal-header">
+            <div id="lib-editor-overlay" class="openclaw-modal-overlay openclaw-modal-overlay moltbot-modal-overlay" style="display:none;">
+                <div id="lib-editor" class="openclaw-modal openclaw-modal moltbot-modal">
+                    <div class="openclaw-modal-header openclaw-modal-header moltbot-modal-header">
                         <span id="lib-editor-title">Edit Preset</span>
                         <input type="hidden" id="lib-edit-id">
                     </div>
-                    <div class="moltbot-modal-body">
-                         <div class="moltbot-input-group">
-                            <label class="moltbot-label">Name</label>
-                            <input type="text" id="lib-edit-name" class="moltbot-input">
+                    <div class="openclaw-modal-body openclaw-modal-body moltbot-modal-body">
+                         <div class="openclaw-input-group openclaw-input-group moltbot-input-group">
+                            <label class="openclaw-label openclaw-label moltbot-label">Name</label>
+                            <input type="text" id="lib-edit-name" class="openclaw-input openclaw-input moltbot-input">
                         </div>
                         <br>
-                        <div class="moltbot-input-group">
-                            <label class="moltbot-label">Category</label>
-                            <select id="lib-edit-cat" class="moltbot-select">
+                        <div class="openclaw-input-group openclaw-input-group moltbot-input-group">
+                            <label class="openclaw-label openclaw-label moltbot-label">Category</label>
+                            <select id="lib-edit-cat" class="openclaw-select openclaw-select moltbot-select">
                                 <option value="general">General</option>
                                 <option value="prompt">Prompt</option>
                                 <option value="params">Params</option>
                             </select>
                         </div>
                         <br>
-                        <div class="moltbot-input-group">
-                            <label class="moltbot-label">Content (JSON)</label>
-                            <textarea id="lib-edit-params-json" class="moltbot-textarea moltbot-textarea-md"></textarea>
+                        <div class="openclaw-input-group openclaw-input-group moltbot-input-group">
+                            <label class="openclaw-label openclaw-label moltbot-label">Content (JSON)</label>
+                            <textarea id="lib-edit-params-json" class="openclaw-textarea openclaw-textarea moltbot-textarea openclaw-textarea-md openclaw-textarea-md moltbot-textarea-md"></textarea>
                         </div>
                     </div>
-                    <div class="moltbot-modal-footer">
-                        <button class="moltbot-btn" id="lib-editor-cancel">Cancel</button>
-                        <button class="moltbot-btn moltbot-btn-primary" id="lib-editor-save">Save</button>
+                    <div class="openclaw-modal-footer openclaw-modal-footer moltbot-modal-footer">
+                        <button class="openclaw-btn openclaw-btn moltbot-btn" id="lib-editor-cancel">Cancel</button>
+                        <button class="openclaw-btn openclaw-btn moltbot-btn openclaw-btn-primary openclaw-btn-primary moltbot-btn-primary" id="lib-editor-save">Save</button>
                     </div>
                 </div>
             </div>
@@ -107,33 +107,33 @@ export const LibraryTab = {
         // --- 3. View Logic (Renderers) ---
 
         const renderPresetItem = (p) => `
-            <div class="moltbot-list-item" style="padding: 10px; border-bottom: 1px solid var(--moltbot-color-border); display: flex; justify-content: space-between; align-items: center;">
+            <div class="openclaw-list-item openclaw-list-item moltbot-list-item" style="padding: 10px; border-bottom: 1px solid var(--moltbot-color-border); display: flex; justify-content: space-between; align-items: center;">
                 <div>
                     <div style="font-weight: bold;">${escapeHtml(p.name)}</div>
                     <div style="font-size: var(--moltbot-font-sm); color: var(--moltbot-color-fg-muted); margin-top:4px;">
-                        <span class="moltbot-badge" style="background:#555; color:#eee;">${escapeHtml(p.category)}</span>
+                        <span class="openclaw-badge openclaw-badge moltbot-badge" style="background:#555; color:#eee;">${escapeHtml(p.category)}</span>
                     </div>
                 </div>
                 <div style="display: flex; gap: 5px;">
                     ${getApplyButton(p)}
-                    <button class="moltbot-btn moltbot-btn-sm" data-action="edit" data-id="${p.id}">Edit</button>
-                    <button class="moltbot-btn moltbot-btn-sm moltbot-btn-danger" data-action="delete" data-id="${p.id}">Del</button>
+                    <button class="openclaw-btn openclaw-btn moltbot-btn openclaw-btn-sm openclaw-btn-sm moltbot-btn-sm" data-action="edit" data-id="${p.id}">Edit</button>
+                    <button class="openclaw-btn openclaw-btn moltbot-btn openclaw-btn-sm openclaw-btn-sm moltbot-btn-sm openclaw-btn-danger openclaw-btn-danger moltbot-btn-danger" data-action="delete" data-id="${p.id}">Del</button>
                 </div>
             </div>
         `;
 
         const renderPackItem = (p) => `
-            <div class="moltbot-list-item" style="padding: 10px; border-bottom: 1px solid var(--moltbot-color-border); display: flex; justify-content: space-between; align-items: center;">
+            <div class="openclaw-list-item openclaw-list-item moltbot-list-item" style="padding: 10px; border-bottom: 1px solid var(--moltbot-color-border); display: flex; justify-content: space-between; align-items: center;">
                 <div>
                     <div style="font-weight: bold;">${escapeHtml(p.name)} <span style="font-weight:normal; opacity:0.7">v${escapeHtml(p.version)}</span></div>
                     <div style="font-size: var(--moltbot-font-sm); color: var(--moltbot-color-fg-muted); margin-top:4px;">
-                        <span class="moltbot-badge" style="background:#2c4f7c; color:#eee;">${escapeHtml(p.type)}</span>
+                        <span class="openclaw-badge openclaw-badge moltbot-badge" style="background:#2c4f7c; color:#eee;">${escapeHtml(p.type)}</span>
                         <span style="margin-left:6px;">by ${escapeHtml(p.author)}</span>
                     </div>
                 </div>
                 <div style="display: flex; gap: 5px;">
-                    <button class="moltbot-btn moltbot-btn-sm" data-action="export-pack" data-name="${p.name}" data-ver="${p.version}">Export</button>
-                    <button class="moltbot-btn moltbot-btn-sm moltbot-btn-danger" data-action="delete-pack" data-name="${p.name}" data-ver="${p.version}">Uninst</button>
+                    <button class="openclaw-btn openclaw-btn moltbot-btn openclaw-btn-sm openclaw-btn-sm moltbot-btn-sm" data-action="export-pack" data-name="${p.name}" data-ver="${p.version}">Export</button>
+                    <button class="openclaw-btn openclaw-btn moltbot-btn openclaw-btn-sm openclaw-btn-sm moltbot-btn-sm openclaw-btn-danger openclaw-btn-danger moltbot-btn-danger" data-action="delete-pack" data-name="${p.name}" data-ver="${p.version}">Uninst</button>
                 </div>
             </div>
         `;
@@ -141,11 +141,11 @@ export const LibraryTab = {
         function getApplyButton(p) {
             if (p.category === "prompt") {
                 return `
-                    <button class="moltbot-btn moltbot-btn-sm moltbot-btn-primary" data-action="apply" data-id="${p.id}">Plan</button>
-                    <button class="moltbot-btn moltbot-btn-sm moltbot-btn-primary" data-action="apply-refiner" data-id="${p.id}">Refine</button>
+                    <button class="openclaw-btn openclaw-btn moltbot-btn openclaw-btn-sm openclaw-btn-sm moltbot-btn-sm openclaw-btn-primary openclaw-btn-primary moltbot-btn-primary" data-action="apply" data-id="${p.id}">Plan</button>
+                    <button class="openclaw-btn openclaw-btn moltbot-btn openclaw-btn-sm openclaw-btn-sm moltbot-btn-sm openclaw-btn-primary openclaw-btn-primary moltbot-btn-primary" data-action="apply-refiner" data-id="${p.id}">Refine</button>
                 `;
             } else if (p.category === "params") {
-                return `<button class="moltbot-btn moltbot-btn-sm moltbot-btn-primary" data-action="apply" data-id="${p.id}">Use</button>`;
+                return `<button class="openclaw-btn openclaw-btn moltbot-btn openclaw-btn-sm openclaw-btn-sm moltbot-btn-sm openclaw-btn-primary openclaw-btn-primary moltbot-btn-primary" data-action="apply" data-id="${p.id}">Use</button>`;
             }
             return "";
         }
@@ -157,7 +157,7 @@ export const LibraryTab = {
             );
 
             if (filtered.length === 0) {
-                ui.list.innerHTML = '<div class="moltbot-empty-state">No items found.</div>';
+                ui.list.innerHTML = '<div class="openclaw-empty-state openclaw-empty-state moltbot-empty-state">No items found.</div>';
                 return;
             }
 
@@ -176,11 +176,11 @@ export const LibraryTab = {
 
             let res;
             if (currentState.category === "packs") {
-                res = await moltbotApi.getPacks();
+                res = await openclawApi.getPacks();
             } else {
                 // If cat is 'all', allow backend/logic to handle null
                 const cat = currentState.category === "all" ? null : currentState.category;
-                res = await moltbotApi.listPresets(cat);
+                res = await openclawApi.listPresets(cat);
             }
 
             if (res.ok) {
@@ -226,8 +226,8 @@ export const LibraryTab = {
             ui.modal.save.disabled = true;
 
             let res;
-            if (id) res = await moltbotApi.updatePreset(id, { name, category: cat, content });
-            else res = await moltbotApi.createPreset({ name, category: cat, content });
+            if (id) res = await openclawApi.updatePreset(id, { name, category: cat, content });
+            else res = await openclawApi.createPreset({ name, category: cat, content });
 
             ui.modal.save.textContent = "Save";
             ui.modal.save.disabled = false;
@@ -245,9 +245,9 @@ export const LibraryTab = {
 
             let res;
             if (currentState.category === "packs") {
-                res = await moltbotApi.deletePack(idOrName, version);
+                res = await openclawApi.deletePack(idOrName, version);
             } else {
-                res = await moltbotApi.deletePreset(idOrName);
+                res = await openclawApi.deletePreset(idOrName);
             }
 
             if (res.ok) loadContent();
@@ -261,7 +261,7 @@ export const LibraryTab = {
 
             ui.list.innerHTML = '<div style="padding: 20px; text-align: center;">Importing Pack...</div>';
 
-            const res = await moltbotApi.importPack(file, false); // No overwrite by default for now
+            const res = await openclawApi.importPack(file, false); // No overwrite by default for now
             if (res.ok) {
                 alert(`Imported ${res.data.pack.name} v${res.data.pack.version}`);
                 loadContent();
@@ -289,8 +289,8 @@ export const LibraryTab = {
             const btn = e.target.closest("button[data-cat]");
             if (!btn) return;
 
-            ui.filters.querySelectorAll("button").forEach(b => b.classList.remove("moltbot-btn-primary"));
-            btn.classList.add("moltbot-btn-primary");
+            ui.filters.querySelectorAll("button").forEach(b => b.classList.remove("openclaw-btn-primary", "openclaw-btn-primary", "moltbot-btn-primary"));
+            btn.classList.add("openclaw-btn-primary", "openclaw-btn-primary", "moltbot-btn-primary");
 
             const cat = btn.dataset.cat;
             currentState.category = cat === "all" ? null : cat;
@@ -310,7 +310,7 @@ export const LibraryTab = {
             const action = btn.dataset.action;
 
             if (action === "edit") {
-                const res = await moltbotApi.getPreset(btn.dataset.id);
+                const res = await openclawApi.getPreset(btn.dataset.id);
                 if (res.ok) openModal(res.data);
                 else showError(container, "Failed to load preset details");
             } else if (action === "delete") {
@@ -318,7 +318,7 @@ export const LibraryTab = {
             } else if (action === "delete-pack") {
                 await deleteItem(btn.dataset.name, btn.dataset.ver);
             } else if (action === "export-pack") {
-                const res = await moltbotApi.exportPack(btn.dataset.name, btn.dataset.ver);
+                const res = await openclawApi.exportPack(btn.dataset.name, btn.dataset.ver);
                 if (res.ok) {
                     // Create blob link and click it
                     const url = window.URL.createObjectURL(res.data);
@@ -333,11 +333,11 @@ export const LibraryTab = {
                     showError(container, res.error);
                 }
             } else if (action === "apply") {
-                const res = await moltbotApi.getPreset(btn.dataset.id);
+                const res = await openclawApi.getPreset(btn.dataset.id);
                 if (res.ok) applyPreset(res.data, "planner");
                 else showError(container, "Failed to load preset for apply");
             } else if (action === "apply-refiner") {
-                const res = await moltbotApi.getPreset(btn.dataset.id);
+                const res = await openclawApi.getPreset(btn.dataset.id);
                 if (res.ok) applyPreset(res.data, "refiner");
                 else showError(container, "Failed to load preset for apply");
             }

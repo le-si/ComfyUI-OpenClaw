@@ -23,8 +23,8 @@ except ImportError:
     AioHTTPTestCase = unittest.TestCase
 
 # Set test env vars BEFORE importing webhook (module-level)
-os.environ.setdefault("MOLTBOT_WEBHOOK_AUTH_MODE", "bearer")
-os.environ.setdefault("MOLTBOT_WEBHOOK_BEARER_TOKEN", "test_submit_token")
+os.environ.setdefault("OPENCLAW_WEBHOOK_AUTH_MODE", "bearer")
+os.environ.setdefault("OPENCLAW_WEBHOOK_BEARER_TOKEN", "test_submit_token")
 
 
 @unittest.skipUnless(AIOHTTP_AVAILABLE, "aiohttp not available")
@@ -36,7 +36,7 @@ class TestWebhookSubmitContract(AioHTTPTestCase):
         from api.webhook_submit import webhook_submit_handler
 
         app = web.Application()
-        app.router.add_post("/moltbot/webhook/submit", webhook_submit_handler)
+        app.router.add_post("/openclaw/webhook/submit", webhook_submit_handler)
         return app
 
     @patch("api.webhook_submit.get_template_service")
@@ -74,7 +74,7 @@ class TestWebhookSubmitContract(AioHTTPTestCase):
 
         resp = await self.client.request(
             "POST",
-            "/moltbot/webhook/submit",
+            "/openclaw/webhook/submit",
             headers={
                 "Content-Type": "application/json",
                 "Authorization": "Bearer test_submit_token",
@@ -110,7 +110,7 @@ class TestWebhookSubmitContract(AioHTTPTestCase):
 
         resp = await self.client.request(
             "POST",
-            "/moltbot/webhook/submit",
+            "/openclaw/webhook/submit",
             headers={
                 "Content-Type": "application/json",
                 "Authorization": "Bearer test_submit_token",
@@ -138,7 +138,7 @@ class TestWebhookSubmitContract(AioHTTPTestCase):
         payload = {"version": 1, "inputs": {"seed": 123}}
         resp = await self.client.request(
             "POST",
-            "/moltbot/webhook/submit",
+            "/openclaw/webhook/submit",
             headers={
                 "Content-Type": "application/json",
                 "Authorization": "Bearer test_submit_token",

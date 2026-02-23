@@ -35,6 +35,13 @@ npx playwright install chromium
 npm test
 ```
 
+If port `3000` is blocked/reserved on your machine, set a custom E2E port:
+
+```powershell
+$env:OPENCLAW_E2E_PORT = "3300"
+npm test
+```
+
 ### 2.2 WSL2 (bash)
 
 ```bash
@@ -63,7 +70,7 @@ TMPDIR=.tmp/playwright TMP=.tmp/playwright TEMP=.tmp/playwright \
 - Creates a minimal mocked ComfyUI environment (`window.app`)
 - Mocks `fetch()` for `/openclaw/*` and legacy `/moltbot/*` endpoints (capabilities/health + predictable errors)
 - Imports `web/openclaw.js` (the real extension entry) and waits for readiness
-- Sets `window.__moltbotTestReady = true` and dispatches `moltbot-ready`
+- Sets `window.__openclawTestReady = true` and dispatches `openclaw-ready`
 
 ## 4. Common Troubleshooting
 

@@ -10,9 +10,8 @@ export function registerContextToolbox() {
     app.registerExtension({
         name: "OpenClaw.ContextToolbox",
         async setup() {
-            // Wait for MoltbotActions to be available (defer slightly if needed, or import directly)
-            // Since we import moltbotActions, it should be ready.
-            const { moltbotActions } = await import("../openclaw_ui.js");
+            // Wait for OpenClaw actions singleton to be available.
+            const { openclawActions } = await import("../openclaw_ui.js");
 
             const originalGetNodeMenuOptions = LGraphCanvas.prototype.getNodeMenuOptions;
 
@@ -27,7 +26,7 @@ export function registerContextToolbox() {
                 options.push({
                     content: "\uD83D\uDD0D OpenClaw: Inspect",
                     callback: () => {
-                        moltbotActions.openExplorer(node.type);
+                        openclawActions.openExplorer(node.type);
                     }
                 });
 
@@ -35,7 +34,7 @@ export function registerContextToolbox() {
                 options.push({
                     content: "\uD83D\uDC89 OpenClaw: Doctor",
                     callback: () => {
-                        moltbotActions.openDoctor();
+                        openclawActions.openDoctor();
                     }
                 });
 
@@ -43,7 +42,7 @@ export function registerContextToolbox() {
                 options.push({
                     content: "\u23F3 OpenClaw: Queue Status",
                     callback: () => {
-                        moltbotActions.openQueue("all");
+                        openclawActions.openQueue("all");
                     }
                 });
 
@@ -53,7 +52,7 @@ export function registerContextToolbox() {
                     options.push({
                         content: "\u2696\uFE0F OpenClaw: Compare...",
                         callback: () => {
-                            moltbotActions.openCompare(node);
+                            openclawActions.openCompare(node);
                         }
                     });
                 }
@@ -62,7 +61,7 @@ export function registerContextToolbox() {
                 options.push({
                     content: "\u2699\uFE0F OpenClaw: Settings",
                     callback: () => {
-                        moltbotActions.openSettings();
+                        openclawActions.openSettings();
                     }
                 });
 

@@ -1,12 +1,12 @@
 import { test, expect } from '@playwright/test';
-import { mockComfyUiCore, waitForMoltbotReady, clickTab } from '../utils/helpers.js';
+import { mockComfyUiCore, waitForOpenClawReady, clickTab } from '../utils/helpers.js';
 
 test.describe('Parameter Lab - Dynamic Dimensions', () => {
     test.beforeEach(async ({ page }) => {
         // 1. Setup mock environment
         await mockComfyUiCore(page);
         await page.goto('test-harness.html');
-        await waitForMoltbotReady(page);
+        await waitForOpenClawReady(page);
 
         // 2. Inject mock graph with nodes and widgets
         await page.evaluate(() => {
@@ -43,7 +43,7 @@ test.describe('Parameter Lab - Dynamic Dimensions', () => {
     test('can select node, widget, and add values via dropdown', async ({ page }) => {
         // Add Dimension
         await page.click('#lab-add-dim');
-        await expect(page.locator('.moltbot-lab-dim-row.dynamic')).toBeVisible();
+        await expect(page.locator('.openclaw-lab-dim-row.dynamic')).toBeVisible();
 
         // Select Node (KSampler id=10)
         await page.selectOption('.dim-node-select', { value: '10' });
@@ -59,15 +59,15 @@ test.describe('Parameter Lab - Dynamic Dimensions', () => {
         await page.selectOption('.dim-candidate-select', { value: 'ddim' });
 
         // Verify chip added
-        await expect(page.locator('.moltbot-chip >> text=ddim')).toBeVisible();
+        await expect(page.locator('.openclaw-chip >> text=ddim')).toBeVisible();
 
         // Select another "uni_pc"
         await page.selectOption('.dim-candidate-select', { value: 'uni_pc' });
-        await expect(page.locator('.moltbot-chip >> text=uni_pc')).toBeVisible();
+        await expect(page.locator('.openclaw-chip >> text=uni_pc')).toBeVisible();
 
         // Verify remove chip
-        await page.click('.moltbot-chip:has-text("ddim") .chip-rm');
-        await expect(page.locator('.moltbot-chip >> text=ddim')).not.toBeVisible();
+        await page.click('.openclaw-chip:has-text("ddim") .chip-rm');
+        await expect(page.locator('.openclaw-chip >> text=ddim')).not.toBeVisible();
     });
 
     test('can add custom manual values', async ({ page }) => {
@@ -84,7 +84,7 @@ test.describe('Parameter Lab - Dynamic Dimensions', () => {
         await page.press('.dim-manual-input', 'Enter');
 
         // Verify chip
-        await expect(page.locator('.moltbot-chip >> text=9999')).toBeVisible();
+        await expect(page.locator('.openclaw-chip >> text=9999')).toBeVisible();
     });
 
     test('generates correct plan payload', async ({ page }) => {

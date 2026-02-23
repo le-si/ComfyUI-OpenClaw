@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test';
-import { mockComfyUiCore, waitForMoltbotReady, clickTab } from '../utils/helpers.js';
+import { mockComfyUiCore, waitForOpenClawReady, clickTab } from '../utils/helpers.js';
 
 test.describe('R107 Live Backend Parity', () => {
     test.beforeEach(async ({ page }) => {
@@ -17,7 +17,7 @@ test.describe('R107 Live Backend Parity', () => {
         });
 
         await page.goto('test-harness.html');
-        await waitForMoltbotReady(page);
+        await waitForOpenClawReady(page);
     });
 
     test('Planner (Submit) critical path - Success', async ({ page }) => {
@@ -89,12 +89,12 @@ test.describe('R107 Live Backend Parity', () => {
         await page.getByText('Add').click();
 
         // Assert Job Row Appears
-        const jobRow = page.locator('.moltbot-job-row').first();
+        const jobRow = page.locator('.openclaw-job-row').first();
         await expect(jobRow).toBeVisible();
         await expect(jobRow).toContainText(jobId.substring(0, 16));
 
         // Wait for status to become completed (polling)
-        await expect(page.locator('.moltbot-kv-val.ok')).toHaveText('completed', { timeout: 10000 });
+        await expect(page.locator('.openclaw-kv-val.ok')).toHaveText('completed', { timeout: 10000 });
 
         // Assert Image Output
         await expect(page.locator('img[src*="test_img.png"]')).toBeVisible();

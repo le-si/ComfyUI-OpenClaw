@@ -6,7 +6,7 @@ These tests require aiohttp and test the actual HTTP behavior.
 Note: Tests that require specific env vars should be run with those vars set externally.
 
 Run with:
-  MOLTBOT_WEBHOOK_BEARER_TOKEN=test python -m unittest tests.test_webhook_contract -v
+  OPENCLAW_WEBHOOK_BEARER_TOKEN=test python -m unittest tests.test_webhook_contract -v
 """
 
 import hashlib
@@ -30,8 +30,8 @@ except ImportError:
 
 
 # Set test env vars BEFORE importing webhook (module-level)
-os.environ.setdefault("MOLTBOT_WEBHOOK_AUTH_MODE", "bearer")
-os.environ.setdefault("MOLTBOT_WEBHOOK_BEARER_TOKEN", "test_token_for_contract_tests")
+os.environ.setdefault("OPENCLAW_WEBHOOK_AUTH_MODE", "bearer")
+os.environ.setdefault("OPENCLAW_WEBHOOK_BEARER_TOKEN", "test_token_for_contract_tests")
 
 
 @unittest.skipUnless(AIOHTTP_AVAILABLE, "aiohttp not available")
@@ -43,14 +43,14 @@ class TestWebhookContract(AioHTTPTestCase):
         from api.webhook import webhook_handler
 
         app = web.Application()
-        app.router.add_post("/moltbot/webhook", webhook_handler)
+        app.router.add_post("/openclaw/webhook", webhook_handler)
         return app
 
     async def test_wrong_content_type(self):
         """Test that wrong Content-Type returns 415."""
         resp = await self.client.request(
             "POST",
-            "/moltbot/webhook",
+            "/openclaw/webhook",
             headers={
                 "Content-Type": "text/plain",
                 "Authorization": "Bearer test_token_for_contract_tests",
@@ -66,7 +66,7 @@ class TestWebhookContract(AioHTTPTestCase):
         large_payload = "x" * 70000
         resp = await self.client.request(
             "POST",
-            "/moltbot/webhook",
+            "/openclaw/webhook",
             headers={
                 "Content-Type": "application/json",
                 "Authorization": "Bearer test_token_for_contract_tests",
@@ -81,7 +81,7 @@ class TestWebhookContract(AioHTTPTestCase):
         """Test that missing auth returns 401."""
         resp = await self.client.request(
             "POST",
-            "/moltbot/webhook",
+            "/openclaw/webhook",
             headers={"Content-Type": "application/json"},
             data='{"version":1,"template_id":"t","profile_id":"p"}',
         )
@@ -91,7 +91,7 @@ class TestWebhookContract(AioHTTPTestCase):
         """Test that invalid token returns 401."""
         resp = await self.client.request(
             "POST",
-            "/moltbot/webhook",
+            "/openclaw/webhook",
             headers={
                 "Content-Type": "application/json",
                 "Authorization": "Bearer wrong_token",
@@ -104,7 +104,7 @@ class TestWebhookContract(AioHTTPTestCase):
         """Test that valid request returns 200 with normalized payload."""
         resp = await self.client.request(
             "POST",
-            "/moltbot/webhook",
+            "/openclaw/webhook",
             headers={
                 "Content-Type": "application/json",
                 "Authorization": "Bearer test_token_for_contract_tests",
@@ -128,7 +128,7 @@ class TestWebhookContract(AioHTTPTestCase):
         """Test that invalid JSON returns 400."""
         resp = await self.client.request(
             "POST",
-            "/moltbot/webhook",
+            "/openclaw/webhook",
             headers={
                 "Content-Type": "application/json",
                 "Authorization": "Bearer test_token_for_contract_tests",
@@ -143,7 +143,7 @@ class TestWebhookContract(AioHTTPTestCase):
         """Test that schema validation errors return 400."""
         resp = await self.client.request(
             "POST",
-            "/moltbot/webhook",
+            "/openclaw/webhook",
             headers={
                 "Content-Type": "application/json",
                 "Authorization": "Bearer test_token_for_contract_tests",

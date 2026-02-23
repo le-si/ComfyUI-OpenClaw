@@ -1,12 +1,12 @@
 /**
- * Moltbot Session Store (R12)
+ * OpenClaw Session Store (R12)
  * Manages transient session state like the Admin Token.
  *
  * Rules:
  * - Admin Token is stored in sessionStorage (cleared on tab close).
  * - NOT persisted to localStorage (security).
  */
-export const MoltbotSession = {
+export const OpenClawSession = {
     // Keys
     KEYS: {
         ADMIN_TOKEN: "openclaw_admin_token",

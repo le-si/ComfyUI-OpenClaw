@@ -21,7 +21,7 @@
     <div id="mock-app"></div>
 
     <script type="module">
-        import { MoltbotSession } from '../openclaw_session.js';
+        import { OpenClawSession } from '../openclaw_session.js';
 
         // Simple test runner
         const results = document.getElementById("results");
@@ -46,12 +46,12 @@
 
         async function verifyModules() {
             // Test 1: Session Store
-            await runTest("MoltbotSession Storage", () => {
-                MoltbotSession.setAdminToken("test-token");
-                if (MoltbotSession.getAdminToken() !== "test-token") throw new Error("Failed to set/get token");
+            await runTest("OpenClawSession Storage", () => {
+                OpenClawSession.setAdminToken("test-token");
+                if (OpenClawSession.getAdminToken() !== "test-token") throw new Error("Failed to set/get token");
 
-                MoltbotSession.setAdminToken(null);
-                if (MoltbotSession.getAdminToken() !== null) throw new Error("Failed to clear token");
+                OpenClawSession.setAdminToken(null);
+                if (OpenClawSession.getAdminToken() !== null) throw new Error("Failed to clear token");
 
                 // Cleanup
                 sessionStorage.clear();

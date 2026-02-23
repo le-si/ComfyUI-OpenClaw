@@ -25,7 +25,7 @@ export function makeEl(tag, className = "", text = "") {
  */
 export function showToast(message, variant = "info") {
     const toast = document.createElement("div");
-    toast.className = `moltbot-toast moltbot-toast-${variant}`;
+    toast.className = `openclaw-toast moltbot-toast openclaw-toast-${variant} moltbot-toast-${variant}`;
     toast.textContent = message;
     toast.style.position = "fixed";
     toast.style.right = "16px";
@@ -45,19 +45,19 @@ export function showToast(message, variant = "info") {
 
 /**
  * Display an error message within a container.
- * Looks for an existing .moltbot-error-box, or creates one at the top.
+ * Looks for an existing .openclaw-error-box (legacy: .moltbot-error-box), or creates one at the top.
  */
 export function showError(container, message) {
-    let errorBox = container.querySelector(".moltbot-error-box");
+    let errorBox = container.querySelector('.openclaw-error-box');
 
     if (!errorBox) {
         // Try to find one by ID pattern if specific class missing? No, stick to class.
         // If not found, inject at top of panel
-        const panel = container.querySelector(".moltbot-panel") || container;
+        const panel = container.querySelector('.openclaw-panel') || container;
         errorBox = document.createElement("div");
-        errorBox.className = "moltbot-error-box";
+        errorBox.className = "openclaw-error-box moltbot-error-box";
         // Insert after panel header or at top
-        const header = panel.querySelector(".moltbot-section-header");
+        const header = panel.querySelector('.openclaw-section-header');
         if (header && header.nextSibling) {
             panel.insertBefore(errorBox, header.nextSibling);
         } else {
@@ -76,7 +76,7 @@ export function showError(container, message) {
  * Clear error message in container.
  */
 export function clearError(container) {
-    const errorBox = container.querySelector(".moltbot-error-box");
+    const errorBox = container.querySelector('.openclaw-error-box');
     if (errorBox) {
         errorBox.style.display = "none";
         errorBox.textContent = "";
@@ -93,11 +93,11 @@ export async function copyToClipboard(text, btnElement) {
         // Show feedback on button
         const origText = btnElement.textContent;
         btnElement.textContent = "Copied!";
-        btnElement.classList.add("moltbot-btn-success");
+        btnElement.classList.add("openclaw-btn-success", "moltbot-btn-success");
 
         setTimeout(() => {
             btnElement.textContent = origText;
-            btnElement.classList.remove("moltbot-btn-success");
+            btnElement.classList.remove("openclaw-btn-success", "moltbot-btn-success");
         }, 1500);
 
     } catch (err) {

@@ -514,15 +514,35 @@ def register_dual_route(server, method: str, path: str, handler) -> None:
             f"[OpenClaw] Warning: Skipping route {method} {path} because handler is missing (None)."
         )
         return
+    # Phase 3 Deprecation wrapper for legacy paths
+    actual_handler = handler
+    if path.startswith("/moltbot"):
+        from functools import wraps
+
+        @wraps(handler)
+        async def _deprecated_handler(request: web.Request) -> web.Response:
+            try:
+                # Assuming `metrics` is available in scope (from module level imports)
+                if metrics:
+                    metrics.inc("legacy_api_hits")
+            except Exception:
+                pass
+            print(
+                f"[OpenClaw] DEPRECATION WARNING: Legacy route accessed: {request.path}. Please migrate to /openclaw/* equivalents."
+            )
+            return await handler(request)
+
+        actual_handler = _deprecated_handler
+
     # 1. Standard ComfyUI registration
     if method == "GET":
-        server.routes.get(path)(handler)
+        server.routes.get(path)(actual_handler)
     elif method == "POST":
-        server.routes.post(path)(handler)
+        server.routes.post(path)(actual_handler)
     elif method == "PUT":
-        server.routes.put(path)(handler)
+        server.routes.put(path)(actual_handler)
     elif method == "DELETE":
-        server.routes.delete(path)(handler)
+        server.routes.delete(path)(actual_handler)
 
     # 2. Hardened direct registration
     if hasattr(server, "app") and hasattr(server.app, "router"):

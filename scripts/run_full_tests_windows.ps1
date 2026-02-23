@@ -150,6 +150,57 @@ if ($nodeMajor -lt 18) {
   throw "[tests] ERROR: Node >=18 required, current=$(node -v)"
 }
 
+function Test-PortBindable {
+  param([Parameter(Mandatory = $true)][int]$Port)
+
+  $listener = $null
+  try {
+    $listener = [System.Net.Sockets.TcpListener]::new([System.Net.IPAddress]::Parse("127.0.0.1"), $Port)
+    $listener.Server.ExclusiveAddressUse = $true
+    $listener.Start()
+    return $true
+  }
+  catch {
+    return $false
+  }
+  finally {
+    if ($listener -ne $null) {
+      $listener.Stop()
+    }
+  }
+}
+
+function Resolve-E2EPort {
+  $requested = $env:OPENCLAW_E2E_PORT
+  if ($requested) {
+    [int]$requestedPort = 0
+    if (-not [int]::TryParse($requested, [ref]$requestedPort)) {
+      throw "[tests] ERROR: OPENCLAW_E2E_PORT must be an integer, got '$requested'"
+    }
+    if (-not (Test-PortBindable -Port $requestedPort)) {
+      throw "[tests] ERROR: OPENCLAW_E2E_PORT=$requestedPort is not bindable on 127.0.0.1"
+    }
+    return $requestedPort
+  }
+
+  foreach ($candidate in @(3000, 3300, 3400, 3500, 3600)) {
+    if (Test-PortBindable -Port $candidate) {
+      return $candidate
+    }
+  }
+
+  throw "[tests] ERROR: no bindable local port found for Playwright webServer (tried 3000,3300,3400,3500,3600)"
+}
+
+$selectedE2EPort = Resolve-E2EPort
+$env:OPENCLAW_E2E_PORT = "$selectedE2EPort"
+if ($selectedE2EPort -ne 3000) {
+  Write-Host "[tests] WARN: port 3000 unavailable; using OPENCLAW_E2E_PORT=$selectedE2EPort for Playwright."
+}
+else {
+  Write-Host "[tests] INFO: using OPENCLAW_E2E_PORT=$selectedE2EPort for Playwright."
+}
+
 Write-Host "[tests] Node version: $(node -v)"
 
 Write-Host "[tests] 0/8 R120 dependency preflight"

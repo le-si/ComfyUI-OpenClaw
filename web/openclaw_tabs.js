@@ -49,12 +49,12 @@ export class TabManager {
 
         this.tabs.forEach(tab => {
             const btn = document.createElement("div");
-            btn.className = "moltbot-tab";
+            btn.className = "openclaw-tab moltbot-tab";
             if (tab.icon) {
                 const icon = document.createElement("i");
-                icon.className = `moltbot-tab-icon ${tab.icon}`;
+                icon.className = `openclaw-tab-icon moltbot-tab-icon ${tab.icon}`;
                 const label = document.createElement("span");
-                label.className = "moltbot-tab-label";
+                label.className = "openclaw-tab-label moltbot-tab-label";
                 label.textContent = tab.title;
                 btn.appendChild(icon);
                 btn.appendChild(label);
@@ -67,10 +67,10 @@ export class TabManager {
             this.tabsEl.appendChild(btn);
 
             // Create container for tab content if not exists
-            if (!this.contentEl.querySelector(`#moltbot-tab-${tab.id}`)) {
+            if (!this.contentEl.querySelector(`#openclaw-tab-${tab.id}`)) {
                 const pane = document.createElement("div");
-                pane.id = `moltbot-tab-${tab.id}`;
-                pane.className = "moltbot-tab-pane";
+                pane.id = `openclaw-tab-${tab.id}`;
+                pane.className = "openclaw-tab-pane moltbot-tab-pane";
                 this.contentEl.appendChild(pane);
             }
         });
@@ -78,7 +78,7 @@ export class TabManager {
 
     activateTab(id) {
         this.activeTabId = id;
-        localStorage.setItem("moltbot-active-tab", id);
+        localStorage.setItem("openclaw-active-tab", id);
 
         // Update Tab Buttons
         Array.from(this.tabsEl.children).forEach((btn, idx) => {
@@ -89,13 +89,17 @@ export class TabManager {
 
         // Update Panes
         Array.from(this.contentEl.children).forEach(pane => {
-            if (pane.id === `moltbot-tab-${id}`) pane.classList.add("active");
+            if (pane.id === `openclaw-tab-${id}` || pane.id === `moltbot-tab-${id}`) {
+                pane.classList.add("active");
+            }
             else pane.classList.remove("active");
         });
 
         // Lazy Render
         const tab = this.tabs.find(t => t.id === id);
-        const pane = this.contentEl.querySelector(`#moltbot-tab-${id}`);
+        const pane =
+            this.contentEl.querySelector(`#openclaw-tab-${id}`) ||
+            this.contentEl.querySelector(`#moltbot-tab-${id}`);
         const shouldRender = tab && pane && (!tab.loaded || !pane.hasChildNodes());
         if (shouldRender) {
             const boundary = new ErrorBoundary(`Tab: ${tab.title}`);
@@ -110,7 +114,10 @@ export class TabManager {
     }
 
     _restoreActiveTab() {
-        const saved = localStorage.getItem("moltbot-active-tab");
+        // CRITICAL: keep legacy key fallback to avoid tab-state loss across migration.
+        const saved =
+            localStorage.getItem("openclaw-active-tab") ||
+            localStorage.getItem("moltbot-active-tab");
         const defaultTab = this.tabs.length > 0 ? this.tabs[0].id : null;
         this.activateTab(saved && this.tabs.find(t => t.id === saved) ? saved : defaultTab);
     }

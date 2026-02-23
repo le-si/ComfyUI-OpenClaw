@@ -279,6 +279,42 @@ if [ "$NODE_MAJOR" -lt 18 ]; then
   exit 1
 fi
 
+can_bind_local_port() {
+  local port="$1"
+  node -e "const net=require('net'); const port=Number(process.argv[1]); const server=net.createServer(); server.unref(); server.once('error', ()=>process.exit(1)); server.listen({host:'127.0.0.1', port, exclusive:true}, ()=>server.close(()=>process.exit(0)));" "$port" >/dev/null 2>&1
+}
+
+resolve_e2e_port() {
+  if [ -n "${OPENCLAW_E2E_PORT:-}" ]; then
+    if ! can_bind_local_port "$OPENCLAW_E2E_PORT"; then
+      echo "[pre-push] ERROR: OPENCLAW_E2E_PORT=$OPENCLAW_E2E_PORT is not bindable on 127.0.0.1." >&2
+      echo "[pre-push] Hint: unset OPENCLAW_E2E_PORT or set another port (example: 3300)." >&2
+      exit 1
+    fi
+    echo "$OPENCLAW_E2E_PORT"
+    return 0
+  fi
+
+  local candidate
+  for candidate in 3000 3300 3400 3500 3600; do
+    if can_bind_local_port "$candidate"; then
+      echo "$candidate"
+      return 0
+    fi
+  done
+
+  echo "[pre-push] ERROR: no bindable local port found for Playwright webServer (tried 3000,3300,3400,3500,3600)." >&2
+  exit 1
+}
+
+E2E_PORT="$(resolve_e2e_port)"
+export OPENCLAW_E2E_PORT="$E2E_PORT"
+if [ "$E2E_PORT" != "3000" ]; then
+  echo "[pre-push] WARN: port 3000 unavailable; using OPENCLAW_E2E_PORT=$E2E_PORT for Playwright."
+else
+  echo "[pre-push] INFO: using OPENCLAW_E2E_PORT=$E2E_PORT for Playwright."
+fi
+
 echo "[pre-push] Node version: $(node -v)"
 echo "[pre-push] 0/7 R120 dependency preflight"
 "$VENV_PY" scripts/preflight_check.py --strict

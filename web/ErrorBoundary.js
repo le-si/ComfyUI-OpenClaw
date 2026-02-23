@@ -30,7 +30,7 @@ export class ErrorBoundary {
         }
 
         const box = document.createElement("div");
-        box.className = "moltbot-error-boundary";
+        box.className = "openclaw-error-boundary moltbot-error-boundary";
 
         const h3 = document.createElement("h3");
         h3.textContent = `Error in ${this.componentName}`;

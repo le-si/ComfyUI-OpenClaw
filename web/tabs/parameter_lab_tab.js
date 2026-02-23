@@ -1,8 +1,8 @@
 // CRITICAL: this tab module is loaded under /extensions/<pack>/web/tabs/*.js.
 // Must resolve ComfyUI core app from /scripts/app.js via ../../../ prefix.
 import { app } from "../../../scripts/app.js";
-import { moltbotApi } from "../openclaw_api.js";
-import { moltbotUI } from "../openclaw_ui.js";
+import { openclawApi } from "../openclaw_api.js";
+import { openclawUI } from "../openclaw_ui.js";
 
 /**
  * F52: Parameter Lab Tab
@@ -24,34 +24,34 @@ export const ParameterLabTab = {
 
     render(container) {
         container.innerHTML = "";
-        container.className = "moltbot-tab-content moltbot-lab-container";
+        container.className = "openclaw-tab-content openclaw-tab-content moltbot-tab-content openclaw-lab-container openclaw-lab-container moltbot-lab-container";
 
         // 1. Header / Toolbar
         const header = document.createElement("div");
-        header.className = "moltbot-lab-header";
+        header.className = "openclaw-lab-header openclaw-lab-header moltbot-lab-header";
         header.innerHTML = `
-            <div class="moltbot-lab-title-wrap">
+            <div class="openclaw-lab-title-wrap openclaw-lab-title-wrap moltbot-lab-title-wrap">
                 <h3>Parameter Lab</h3>
                 <p>Build bounded sweeps and compare model variants directly from canvas.</p>
             </div>
-            <div class="moltbot-lab-actions">
-                <button id="lab-history" class="moltbot-btn has-icon moltbot-lab-action-btn" title="View History">
-                    <span class="moltbot-lab-action-icon">\uD83D\uDCDC</span>
-                    <span class="moltbot-lab-action-label">History</span>
+            <div class="openclaw-lab-actions openclaw-lab-actions moltbot-lab-actions">
+                <button id="lab-history" class="openclaw-btn openclaw-btn moltbot-btn has-icon openclaw-lab-action-btn openclaw-lab-action-btn moltbot-lab-action-btn" title="View History">
+                    <span class="openclaw-lab-action-icon openclaw-lab-action-icon moltbot-lab-action-icon">\uD83D\uDCDC</span>
+                    <span class="openclaw-lab-action-label openclaw-lab-action-label moltbot-lab-action-label">History</span>
                 </button>
-                <div class="moltbot-separator"></div>
-                <button id="lab-compare-models" class="moltbot-btn has-icon moltbot-lab-action-btn" title="Wizard: Compare Models">
-                    <span class="moltbot-lab-action-icon">\u2696\uFE0F</span>
-                    <span class="moltbot-lab-action-label">Compare Models</span>
+                <div class="openclaw-separator openclaw-separator moltbot-separator"></div>
+                <button id="lab-compare-models" class="openclaw-btn openclaw-btn moltbot-btn has-icon openclaw-lab-action-btn openclaw-lab-action-btn moltbot-lab-action-btn" title="Wizard: Compare Models">
+                    <span class="openclaw-lab-action-icon openclaw-lab-action-icon moltbot-lab-action-icon">\u2696\uFE0F</span>
+                    <span class="openclaw-lab-action-label openclaw-lab-action-label moltbot-lab-action-label">Compare Models</span>
                 </button>
-                <div class="moltbot-separator"></div>
-                <button id="lab-add-dim" class="moltbot-btn moltbot-lab-action-btn">
-                    <span class="moltbot-lab-action-icon">&#x2795;</span>
-                    <span class="moltbot-lab-action-label">+ Dimension</span>
+                <div class="openclaw-separator openclaw-separator moltbot-separator"></div>
+                <button id="lab-add-dim" class="openclaw-btn openclaw-btn moltbot-btn openclaw-lab-action-btn openclaw-lab-action-btn moltbot-lab-action-btn">
+                    <span class="openclaw-lab-action-icon openclaw-lab-action-icon moltbot-lab-action-icon">&#x2795;</span>
+                    <span class="openclaw-lab-action-label openclaw-lab-action-label moltbot-lab-action-label">+ Dimension</span>
                 </button>
-                <button id="lab-generate" class="moltbot-btn moltbot-lab-action-btn">
-                    <span class="moltbot-lab-action-icon">&#x1F9ED;</span>
-                    <span class="moltbot-lab-action-label">Generate Plan</span>
+                <button id="lab-generate" class="openclaw-btn openclaw-btn moltbot-btn openclaw-lab-action-btn openclaw-lab-action-btn moltbot-lab-action-btn">
+                    <span class="openclaw-lab-action-icon openclaw-lab-action-icon moltbot-lab-action-icon">&#x1F9ED;</span>
+                    <span class="openclaw-lab-action-label openclaw-lab-action-label moltbot-lab-action-label">Generate Plan</span>
                 </button>
             </div>
         `;
@@ -59,20 +59,20 @@ export const ParameterLabTab = {
         this.container = container;
 
         const main = document.createElement("div");
-        main.className = "moltbot-lab-main";
+        main.className = "openclaw-lab-main openclaw-lab-main moltbot-lab-main";
         container.appendChild(main);
 
         // 2. Configuration Area (Dimensions)
         const configCard = document.createElement("section");
-        configCard.className = "moltbot-lab-card";
+        configCard.className = "openclaw-lab-card openclaw-lab-card moltbot-lab-card";
         configCard.innerHTML = `
-            <div class="moltbot-lab-card-head">
+            <div class="openclaw-lab-card-head openclaw-lab-card-head moltbot-lab-card-head">
                 <h4>Dimensions</h4>
-                <span class="moltbot-lab-meta" id="lab-dimension-count">0 configured</span>
+                <span class="openclaw-lab-meta openclaw-lab-meta moltbot-lab-meta" id="lab-dimension-count">0 configured</span>
             </div>
         `;
         const configArea = document.createElement("div");
-        configArea.className = "moltbot-lab-config";
+        configArea.className = "openclaw-lab-config openclaw-lab-config moltbot-lab-config";
         configCard.appendChild(configArea);
         main.appendChild(configCard);
         this.configContainer = configArea;
@@ -80,15 +80,15 @@ export const ParameterLabTab = {
 
         // 3. Plan / Results Area
         const resultsCard = document.createElement("section");
-        resultsCard.className = "moltbot-lab-card";
+        resultsCard.className = "openclaw-lab-card openclaw-lab-card moltbot-lab-card";
         resultsCard.innerHTML = `
-            <div class="moltbot-lab-card-head">
+            <div class="openclaw-lab-card-head openclaw-lab-card-head moltbot-lab-card-head">
                 <h4>Plan & Results</h4>
-                <span class="moltbot-lab-meta">Live status</span>
+                <span class="openclaw-lab-meta openclaw-lab-meta moltbot-lab-meta">Live status</span>
             </div>
         `;
         const resultsArea = document.createElement("div");
-        resultsArea.className = "moltbot-lab-results";
+        resultsArea.className = "openclaw-lab-results openclaw-lab-results moltbot-lab-results";
         resultsCard.appendChild(resultsArea);
         main.appendChild(resultsCard);
         this.resultsContainer = resultsArea;
@@ -119,33 +119,34 @@ export const ParameterLabTab = {
 
         // F50: Listen for Compare Request (once)
         if (!this._listeningForCompare) {
-            window.addEventListener("moltbot:lab:compare", (e) => {
+            const onCompare = (e) => {
                 const node = e.detail.node;
-                if (node) {
-                    this.showCompareWizard(node);
-                }
-            });
+                if (node) this.showCompareWizard(node);
+            };
+            window.addEventListener("openclaw:lab:compare", onCompare);
+            // Legacy event name for compatibility.
+            window.addEventListener("moltbot:lab:compare", onCompare);
             this._listeningForCompare = true;
         }
     },
 
     async showHistory() {
-        this.resultsContainer.innerHTML = "<div class='moltbot-loading'>Loading history...</div>";
+        this.resultsContainer.innerHTML = "<div class='openclaw-loading openclaw-loading moltbot-loading'>Loading history...</div>";
         try {
-            const res = await moltbotApi.fetch(moltbotApi._path("/lab/experiments"));
+            const res = await openclawApi.fetch(openclawApi._path("/lab/experiments"));
             if (res.ok && res.data) {
                 this.renderHistoryList(res.data.experiments);
             } else {
-                this.resultsContainer.innerHTML = "<div class='moltbot-error'>Failed to load history.</div>";
+                this.resultsContainer.innerHTML = "<div class='openclaw-error openclaw-error moltbot-error'>Failed to load history.</div>";
             }
         } catch (e) {
-            this.resultsContainer.innerHTML = "<div class='moltbot-error'>Error: " + e.message + "</div>";
+            this.resultsContainer.innerHTML = "<div class='openclaw-error openclaw-error moltbot-error'>Error: " + e.message + "</div>";
         }
     },
 
     setActiveToolbarButton(buttonId) {
         if (!this.container) return;
-        this.container.querySelectorAll(".moltbot-lab-action-btn").forEach((btn) => {
+        this.container.querySelectorAll(".openclaw-lab-action-btn").forEach((btn) => {
             btn.classList.toggle("active", buttonId ? btn.id === buttonId : false);
         });
     },
@@ -153,26 +154,26 @@ export const ParameterLabTab = {
     renderHistoryList(experiments) {
         this.resultsContainer.innerHTML = "";
         const header = document.createElement("div");
-        header.className = "moltbot-lab-plan-header";
+        header.className = "openclaw-lab-plan-header openclaw-lab-plan-header moltbot-lab-plan-header";
         header.innerHTML = `<h4>Experiment History</h4><span>${experiments.length} Records</span>`;
         this.resultsContainer.appendChild(header);
 
         const list = document.createElement("div");
-        list.className = "moltbot-lab-run-list";
+        list.className = "openclaw-lab-run-list openclaw-lab-run-list moltbot-lab-run-list";
 
         if (experiments.length === 0) {
-            list.innerHTML = "<div class='moltbot-hint'>No history found. Run a sweep or compare to see results here.</div>";
+            list.innerHTML = "<div class='openclaw-hint openclaw-hint moltbot-hint'>No history found. Run a sweep or compare to see results here.</div>";
         }
 
         experiments.forEach(exp => {
             const item = document.createElement("div");
-            item.className = "moltbot-lab-run-item";
+            item.className = "openclaw-lab-run-item openclaw-lab-run-item moltbot-lab-run-item";
             const dateStr = new Date(exp.created_at * 1000).toLocaleString();
             item.innerHTML = `
                 <span class="run-idx">${exp.id.slice(0, 8)}</span>
                 <span class="run-params">${dateStr}</span>
                 <span class="run-status">${exp.completed_count}/${exp.run_count} runs</span>
-                <button class="moltbot-btn-icon load-exp" title="Load Details">\u2192</button>
+                <button class="openclaw-btn-icon openclaw-btn-icon moltbot-btn-icon load-exp" title="Load Details">\u2192</button>
              `;
             item.querySelector(".load-exp").onclick = () => this.loadExperiment(exp.id);
             list.appendChild(item);
@@ -181,16 +182,16 @@ export const ParameterLabTab = {
     },
 
     async loadExperiment(expId) {
-        this.resultsContainer.innerHTML = "<div class='moltbot-loading'>Loading details...</div>";
+        this.resultsContainer.innerHTML = "<div class='openclaw-loading openclaw-loading moltbot-loading'>Loading details...</div>";
         try {
-            const res = await moltbotApi.fetch(moltbotApi._path(`/lab/experiments/${expId}`));
+            const res = await openclawApi.fetch(openclawApi._path(`/lab/experiments/${expId}`));
             if (res.ok && res.data) {
                 this.plan = res.data.experiment;
                 this.experimentId = this.plan.experiment_id;
                 this.renderPlan();
             }
         } catch (e) {
-            this.resultsContainer.innerHTML = "<div class='moltbot-error'>Failed to load experiment.</div>";
+            this.resultsContainer.innerHTML = "<div class='openclaw-error openclaw-error moltbot-error'>Failed to load experiment.</div>";
         }
     },
 
@@ -267,9 +268,9 @@ export const ParameterLabTab = {
 
         // "Refresh" button (lightweight, just re-renders to pick up graph changes)
         const toolbar = document.createElement("div");
-        toolbar.className = "moltbot-lab-config-toolbar";
+        toolbar.className = "openclaw-lab-config-toolbar openclaw-lab-config-toolbar moltbot-lab-config-toolbar";
         const refreshBtn = document.createElement("button");
-        refreshBtn.className = "moltbot-btn-text";
+        refreshBtn.className = "openclaw-btn-text openclaw-btn-text moltbot-btn-text";
         refreshBtn.id = "lab-refresh-graph";
         refreshBtn.title = "Refresh from Canvas";
         refreshBtn.textContent = "\u21BB Refresh Options";
@@ -279,7 +280,7 @@ export const ParameterLabTab = {
 
         if (this.dimensions.length === 0) {
             const hint = document.createElement("div");
-            hint.className = "moltbot-hint";
+            hint.className = "openclaw-hint openclaw-hint moltbot-hint";
             hint.textContent = "No dimensions configured. Add one or use 'Compare Models'.";
             this.configContainer.appendChild(hint);
             return;
@@ -295,11 +296,11 @@ export const ParameterLabTab = {
             }
 
             const row = document.createElement("div");
-            row.className = "moltbot-lab-dim-row dynamic";
+            row.className = "openclaw-lab-dim-row openclaw-lab-dim-row moltbot-lab-dim-row dynamic";
 
             // 1. Node Selector
             const nodeGroup = document.createElement("div");
-            nodeGroup.className = "moltbot-form-group narrow";
+            nodeGroup.className = "openclaw-form-group openclaw-form-group moltbot-form-group narrow";
             nodeGroup.innerHTML = `<label>Node</label>`;
             const nodeSelect = document.createElement("select");
             nodeSelect.className = "dim-node-select";
@@ -331,7 +332,7 @@ export const ParameterLabTab = {
 
             // 2. Widget Selector (Dependent)
             const widgetGroup = document.createElement("div");
-            widgetGroup.className = "moltbot-form-group narrow";
+            widgetGroup.className = "openclaw-form-group openclaw-form-group moltbot-form-group narrow";
             widgetGroup.innerHTML = `<label>Widget</label>`;
             const widgetSelect = document.createElement("select");
             widgetSelect.className = "dim-widget-select";
@@ -370,7 +371,7 @@ export const ParameterLabTab = {
 
             // 3. Value Management (Candidates + Chips)
             const valueGroup = document.createElement("div");
-            valueGroup.className = "moltbot-form-group wide dynamic-values";
+            valueGroup.className = "openclaw-form-group openclaw-form-group moltbot-form-group wide dynamic-values";
             valueGroup.innerHTML = `<label>Values</label>`;
 
             const valueControls = document.createElement("div");
@@ -448,7 +449,7 @@ export const ParameterLabTab = {
             chips.className = "dim-value-chips";
             (dim.values || []).forEach((v, vIdx) => {
                 const chip = document.createElement("span");
-                chip.className = "moltbot-chip";
+                chip.className = "openclaw-chip openclaw-chip moltbot-chip";
                 // IMPORTANT: render value via textContent to avoid UI injection/markup breakage from workflow-provided strings.
                 chip.textContent = String(v) + " ";
 
@@ -471,7 +472,7 @@ export const ParameterLabTab = {
 
             // Remove Button
             const rmBtn = document.createElement("button");
-            rmBtn.className = "moltbot-btn-icon remove-dim";
+            rmBtn.className = "openclaw-btn-icon openclaw-btn-icon moltbot-btn-icon remove-dim";
             rmBtn.textContent = "x";
             rmBtn.title = "Remove Dimension";
             rmBtn.onclick = () => this.removeDimension(idx);
@@ -488,7 +489,7 @@ export const ParameterLabTab = {
         if (!node) {
             const nodes = app.graph._nodes.filter(n => n.type === "CheckpointLoaderSimple" || n.type === "LORALoader" || n.type === "UNETLoader");
             if (nodes.length === 0) {
-                moltbotUI.showBanner("warning", "No Checkpoint/LoRA loaders found in workflow.");
+                openclawUI.showBanner("warning", "No Checkpoint/LoRA loaders found in workflow.");
                 return;
             }
             node = nodes[0];
@@ -503,7 +504,7 @@ export const ParameterLabTab = {
         );
 
         if (!widget) {
-            moltbotUI.showBanner("error", "Could not find model widget on node " + node.id);
+            openclawUI.showBanner("error", "Could not find model widget on node " + node.id);
             return;
         }
 
@@ -529,7 +530,7 @@ export const ParameterLabTab = {
             strategy: "compare"
         });
 
-        moltbotUI.showBanner("info", `Setup comparison for Node ${node.id} (${node.title}). Edit values to select models.`);
+        openclawUI.showBanner("info", `Setup comparison for Node ${node.id} (${node.title}). Edit values to select models.`);
     },
 
     async generatePlan() {
@@ -537,7 +538,7 @@ export const ParameterLabTab = {
         const validDims = this.dimensions.filter(d => d.node_id && d.widget_name && d.values && d.values.length > 0);
 
         if (validDims.length === 0) {
-            moltbotUI.showBanner("error", "Please configure at least one valid dimension with values.");
+            openclawUI.showBanner("error", "Please configure at least one valid dimension with values.");
             return;
         }
 
@@ -554,7 +555,7 @@ export const ParameterLabTab = {
 
         const hasCompare = params.some(p => p.strategy === "compare");
         if (hasCompare && params.length !== 1) {
-            moltbotUI.showBanner(
+            openclawUI.showBanner(
                 "error",
                 "Compare mode supports exactly one comparison dimension."
             );
@@ -569,8 +570,8 @@ export const ParameterLabTab = {
             let res;
             if (hasCompare) {
                 const compare = params[0];
-                moltbotUI.showBanner("info", "Generating compare plan...");
-                res = await moltbotApi.fetch(moltbotApi._path("/lab/compare"), {
+                openclawUI.showBanner("info", "Generating compare plan...");
+                res = await openclawApi.fetch(openclawApi._path("/lab/compare"), {
                     method: "POST",
                     body: JSON.stringify({
                         workflow_json: graphJson,
@@ -580,8 +581,8 @@ export const ParameterLabTab = {
                     })
                 });
             } else {
-                moltbotUI.showBanner("info", "Generating sweep plan...");
-                res = await moltbotApi.fetch(moltbotApi._path("/lab/sweep"), {
+                openclawUI.showBanner("info", "Generating sweep plan...");
+                res = await openclawApi.fetch(openclawApi._path("/lab/sweep"), {
                     method: "POST",
                     body: JSON.stringify({
                         workflow_json: graphJson,
@@ -594,12 +595,12 @@ export const ParameterLabTab = {
                 this.plan = res.data.plan;
                 this.experimentId = this.plan.experiment_id;
                 this.renderPlan();
-                moltbotUI.showBanner("success", `Plan generated: ${this.plan.runs.length} runs.`);
+                openclawUI.showBanner("success", `Plan generated: ${this.plan.runs.length} runs.`);
             } else {
-                moltbotUI.showBanner("error", "Failed to generate plan: " + (res.error || "Unknown"));
+                openclawUI.showBanner("error", "Failed to generate plan: " + (res.error || "Unknown"));
             }
         } catch (e) {
-            moltbotUI.showBanner("error", "Plan generation error: " + e.message);
+            openclawUI.showBanner("error", "Plan generation error: " + e.message);
         }
     },
 
@@ -608,25 +609,25 @@ export const ParameterLabTab = {
         if (!this.plan) return;
 
         const header = document.createElement("div");
-        header.className = "moltbot-lab-plan-header";
+        header.className = "openclaw-lab-plan-header openclaw-lab-plan-header moltbot-lab-plan-header";
         header.innerHTML = `
             <h4>Experiment: ${this.experimentId.slice(0, 8)}</h4>
             <span>${this.plan.runs.length} Runs</span>
-            <button id="lab-run-all" class="moltbot-btn primary">Run Experiment</button>
+            <button id="lab-run-all" class="openclaw-btn openclaw-btn moltbot-btn primary">Run Experiment</button>
         `;
         this.resultsContainer.appendChild(header);
 
         const list = document.createElement("div");
-        list.className = "moltbot-lab-run-list";
+        list.className = "openclaw-lab-run-list openclaw-lab-run-list moltbot-lab-run-list";
 
         this.plan.runs.forEach((run, idx) => {
             const item = document.createElement("div");
-            item.className = "moltbot-lab-run-item";
+            item.className = "openclaw-lab-run-item openclaw-lab-run-item moltbot-lab-run-item";
             item.innerHTML = `
                 <span class="run-idx">#${idx + 1}</span>
                 <span class="run-params">${JSON.stringify(run).slice(0, 50)}...</span>
                 <span class="run-status ${run.status || 'pending'}">${run.status || 'Pending'}</span>
-                <button class="moltbot-btn-icon replay-run" title="Replay (Apply Values)">\u21A9\uFE0F</button>
+                <button class="openclaw-btn-icon openclaw-btn-icon moltbot-btn-icon replay-run" title="Replay (Apply Values)">\u21A9\uFE0F</button>
             `;
             item.dataset.idx = idx;
             item.querySelector(".replay-run").onclick = (e) => {
@@ -640,9 +641,9 @@ export const ParameterLabTab = {
 
         // F50: Side-by-Side Comparison Layout
         if (this.plan.dimensions.some(d => d.strategy === "compare")) {
-            this.resultsContainer.classList.add("moltbot-lab-compare-mode");
+            this.resultsContainer.classList.add("openclaw-lab-compare-mode", "moltbot-lab-compare-mode");
         } else {
-            this.resultsContainer.classList.remove("moltbot-lab-compare-mode");
+            this.resultsContainer.classList.remove("openclaw-lab-compare-mode", "moltbot-lab-compare-mode");
         }
 
         this.resultsContainer.querySelector("#lab-run-all").onclick = () => this.runExperiment();
@@ -651,12 +652,12 @@ export const ParameterLabTab = {
     async runExperiment() {
         if (this.isRunning) return;
         this.isRunning = true;
-        moltbotUI.showBanner("info", "Starting experiment...");
+        openclawUI.showBanner("info", "Starting experiment...");
 
-        const items = this.resultsContainer.querySelectorAll(".moltbot-lab-run-item");
+        const items = this.resultsContainer.querySelectorAll(".openclaw-lab-run-item");
 
         // Subscribe to events for status updates
-        const es = moltbotApi.subscribeEvents((data) => {
+        const es = openclawApi.subscribeEvents((data) => {
             if (!this.isRunning) return; // Note: we might want to keep listening even after queuing finishes
             const pid = data.prompt_id;
             if (!pid) return;
@@ -671,13 +672,13 @@ export const ParameterLabTab = {
                     statusSpan.className = "run-status success";
                     statusSpan.textContent = "Completed";
                     // Update backend
-                    moltbotApi.fetch(moltbotApi._path(`/lab/experiments/${this.experimentId}/runs/${runIdx}`), {
+                    openclawApi.fetch(openclawApi._path(`/lab/experiments/${this.experimentId}/runs/${runIdx}`), {
                         method: "POST", body: JSON.stringify({ status: "completed" })
                     });
                 } else if (data.event_type === "execution_error" || data.event_type === "failed") {
                     statusSpan.className = "run-status error";
                     statusSpan.textContent = "Failed";
-                    moltbotApi.fetch(moltbotApi._path(`/lab/experiments/${this.experimentId}/runs/${runIdx}`), {
+                    openclawApi.fetch(openclawApi._path(`/lab/experiments/${this.experimentId}/runs/${runIdx}`), {
                         method: "POST", body: JSON.stringify({ status: "failed" })
                     });
                 } else if (data.event_type === "executing") {
@@ -712,7 +713,7 @@ export const ParameterLabTab = {
                         statusSpan.textContent = "Queued (" + res.prompt_id.slice(0, 4) + ")";
 
                         // Register with backend
-                        moltbotApi.fetch(moltbotApi._path(`/lab/experiments/${this.experimentId}/runs/${i}`), {
+                        openclawApi.fetch(openclawApi._path(`/lab/experiments/${this.experimentId}/runs/${i}`), {
                             method: "POST",
                             body: JSON.stringify({ status: "queued", output: { prompt_id: res.prompt_id } })
                         });
@@ -730,14 +731,14 @@ export const ParameterLabTab = {
             }
         } finally {
             // Keep monitoring
-            moltbotUI.showBanner("success", "All runs queued. Monitoring progress...");
+            openclawUI.showBanner("success", "All runs queued. Monitoring progress...");
         }
     },
 
     replayRun(run) {
         if (confirm("Apply these parameter values to the current workflow?")) {
             this.applyOverrides(run);
-            moltbotUI.showBanner("success", "Values applied to nodes.");
+            openclawUI.showBanner("success", "Values applied to nodes.");
         }
     },
 

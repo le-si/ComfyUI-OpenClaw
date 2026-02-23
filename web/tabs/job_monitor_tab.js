@@ -2,19 +2,24 @@
  * F17: Job Monitor Tab
  * Tracks prompt execution and displays outputs.
  */
-import { moltbotApi } from "../openclaw_api.js";
+import { openclawApi } from "../openclaw_api.js";
 
 const POLL_INTERVAL_MS = 2000;
 const POLL_MAX_ATTEMPTS = 150;
-const STORAGE_KEY = "moltbot-job-monitor-jobs";
+const STORAGE_KEY = "openclaw-job-monitor-jobs";
+const LEGACY_STORAGE_KEY = "moltbot-job-monitor-jobs";
 
 let currentJobs = [];
 let pollIntervals = {};
 
 function loadJobs() {
     try {
-        const stored = localStorage.getItem(STORAGE_KEY);
+        // Keep one-way fallback so existing users keep their tracked jobs after rename.
+        const stored = localStorage.getItem(STORAGE_KEY) || localStorage.getItem(LEGACY_STORAGE_KEY);
         currentJobs = stored ? JSON.parse(stored) : [];
+        if (stored && !localStorage.getItem(STORAGE_KEY)) {
+            localStorage.setItem(STORAGE_KEY, stored);
+        }
     } catch {
         currentJobs = [];
     }
@@ -40,7 +45,7 @@ export const jobMonitorTab = {
 
         // Header
         const header = document.createElement("div");
-        header.className = "moltbot-section";
+        header.className = "openclaw-section moltbot-section";
         header.innerHTML = `<h4>Job Monitor</h4>`;
 
         // Add Manual Job
@@ -73,7 +78,7 @@ export const jobMonitorTab = {
 
         // Job List
         const listContainer = document.createElement("div");
-        listContainer.id = "moltbot-job-list";
+        listContainer.id = "openclaw-job-list";
         container.appendChild(listContainer);
 
         renderJobList();
@@ -88,7 +93,7 @@ export const jobMonitorTab = {
 
             currentJobs.forEach((job) => {
                 const row = document.createElement("div");
-                row.className = "moltbot-job-row";
+                row.className = "openclaw-job-row moltbot-job-row";
                 row.style.borderBottom = "1px solid var(--border-color)";
                 row.style.padding = "8px 0";
 
@@ -104,7 +109,7 @@ export const jobMonitorTab = {
                 idSpan.title = job.promptId;
 
                 const statusBadge = document.createElement("span");
-                statusBadge.className = `moltbot-kv-val ${job.status === "completed" ? "ok" : job.status === "error" ? "error" : ""}`;
+                statusBadge.className = `openclaw-kv-val moltbot-kv-val ${job.status === "completed" ? "ok" : job.status === "error" ? "error" : ""}`;
                 statusBadge.textContent = job.status;
 
                 const removeBtn = document.createElement("button");
@@ -211,7 +216,7 @@ async function startPolling(promptId, onUpdate) {
             return;
         }
 
-        const res = await moltbotApi.getHistory(promptId);
+        const res = await openclawApi.getHistory(promptId);
         if (!res.ok) return;
 
         const job = currentJobs.find((j) => j.promptId === promptId);
@@ -226,7 +231,7 @@ async function startPolling(promptId, onUpdate) {
 
         // R25: Best-effort trace lookup (optional endpoint; ignore 403/404)
         if (!job.traceId && (attempts === 1 || attempts % 5 === 0)) {
-            const t = await moltbotApi.getTrace(promptId);
+            const t = await openclawApi.getTrace(promptId);
             if (t.ok && t.data?.trace?.trace_id) {
                 job.traceId = t.data.trace.trace_id;
                 job.timeline = t.data.trace.events || [];
@@ -275,7 +280,7 @@ function extractImages(historyItem) {
                 filename: img.filename,
                 subfolder: img.subfolder || "",
                 type: img.type || "output",
-                view_url: moltbotApi.buildViewUrl(img.filename, img.subfolder || "", img.type || "output"),
+                view_url: openclawApi.buildViewUrl(img.filename, img.subfolder || "", img.type || "output"),
             });
         }
     }

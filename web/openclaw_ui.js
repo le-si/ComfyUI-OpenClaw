@@ -1,15 +1,15 @@
 /**
- * F7: Moltbot UI Shell
+ * F7: OpenClaw UI Shell
  * Manages the main sidebar layout: Header, Tabs, Content.
  */
 import { tabManager } from "./openclaw_tabs.js";
 import { ErrorBoundary } from "./ErrorBoundary.js";
-import { moltbotApi } from "./openclaw_api.js";
+import { openclawApi } from "./openclaw_api.js";
 
-export class MoltbotUI {
+export class OpenClawUI {
     constructor() {
         this.container = null;
-        this.boundary = new ErrorBoundary("MoltbotUI");
+        this.boundary = new ErrorBoundary("OpenClawUI");
         this.floating = {
             panel: null,
             content: null,
@@ -27,7 +27,7 @@ export class MoltbotUI {
     }
 
     _enforceSidebarMinWidth(container) {
-        // IMPORTANT: Keep this value aligned with CSS .moltbot-sidebar-container/.side-bar-panel min-width.
+        // IMPORTANT: Keep this value aligned with CSS .openclaw-sidebar-container/.moltbot-sidebar-container min-width.
         const minWidthPx = 560;
 
         const applyMinWidth = () => {
@@ -62,10 +62,10 @@ export class MoltbotUI {
     toggleFloatingPanel() {
         if (!this.floating.panel) {
             const panel = document.createElement("div");
-            panel.className = "moltbot-floating-panel";
+            panel.className = "openclaw-floating-panel moltbot-floating-panel";
 
             const close = document.createElement("button");
-            close.className = "moltbot-floating-close";
+            close.className = "openclaw-floating-close moltbot-floating-close";
             close.textContent = "\u00D7";
             close.title = "Close";
             close.addEventListener("click", () => {
@@ -73,7 +73,7 @@ export class MoltbotUI {
             });
 
             const content = document.createElement("div");
-            content.className = "moltbot-floating-content";
+            content.className = "openclaw-floating-content moltbot-floating-content";
 
             panel.appendChild(close);
             panel.appendChild(content);
@@ -98,38 +98,38 @@ export class MoltbotUI {
 
     _render(container) {
         container.innerHTML = "";
-        container.className = "moltbot-sidebar-container";
+        container.className = "openclaw-sidebar-container moltbot-sidebar-container";
 
         // 1. Header
         const header = document.createElement("div");
-        header.className = "moltbot-header";
+        header.className = "openclaw-header moltbot-header";
 
         const statusDot = document.createElement("div");
-        statusDot.className = "moltbot-status-dot ok";
+        statusDot.className = "openclaw-status-dot moltbot-status-dot ok";
         statusDot.title = "System Status";
         this.statusDot = statusDot;
 
         const title = document.createElement("div");
-        title.className = "moltbot-title";
+        title.className = "openclaw-title moltbot-title";
         title.textContent = "OpenClaw";
 
         // F9: About badges (version fetched from /openclaw/health; legacy /moltbot/health)
         const badges = document.createElement("div");
-        badges.className = "moltbot-badges";
+        badges.className = "openclaw-badges moltbot-badges";
         const versionSpan = document.createElement("span");
-        versionSpan.className = "moltbot-version";
+        versionSpan.className = "openclaw-version moltbot-version";
         versionSpan.textContent = "v...";
         const repoLink = document.createElement("a");
         repoLink.href = "https://github.com/rookiestar28/ComfyUI-OpenClaw";
         repoLink.target = "_blank";
-        repoLink.className = "moltbot-repo-link";
+        repoLink.className = "openclaw-repo-link moltbot-repo-link";
         repoLink.title = "View on GitHub";
         repoLink.textContent = "View on GitHub";
         badges.appendChild(versionSpan);
         badges.appendChild(repoLink);
 
         // Fetch version from health endpoint
-        moltbotApi.getHealth().then(res => {
+        openclawApi.getHealth().then(res => {
             if (res.ok && res.data) {
                 const data = res.data;
                 if (data.pack) {
@@ -139,7 +139,7 @@ export class MoltbotUI {
                 // F55: Control plane mode indicator badge
                 const cpMode = data?.control_plane?.mode || data?.deployment_profile || "local";
                 const modeBadge = document.createElement("span");
-                modeBadge.className = `moltbot-mode-badge moltbot-mode-${cpMode}`;
+                modeBadge.className = `openclaw-mode-badge moltbot-mode-badge openclaw-mode-${cpMode} moltbot-mode-${cpMode}`;
                 modeBadge.textContent = cpMode.toUpperCase();
                 modeBadge.title = `Control plane: ${cpMode}`;
                 // Style inline for immediate visibility
@@ -183,13 +183,13 @@ export class MoltbotUI {
 
         // 2. Tab Bar
         const tabBar = document.createElement("div");
-        tabBar.className = "moltbot-tabs";
+        tabBar.className = "openclaw-tabs moltbot-tabs";
         this.tabBar = tabBar;
         container.appendChild(tabBar);
 
         // 3. Content Area
         const contentArea = document.createElement("div");
-        contentArea.className = "moltbot-content";
+        contentArea.className = "openclaw-content moltbot-content";
         this.contentArea = contentArea;
         container.appendChild(contentArea);
 
@@ -239,7 +239,7 @@ export class MoltbotUI {
 
         // 1. Priority Check
         // If an error is currently shown, don't replace with info/warning unless it's a new error
-        const currentBanner = this.container.querySelector(".moltbot-banner");
+        const currentBanner = this.container.querySelector('.openclaw-banner');
         if (currentBanner) {
             const currentSeverity = currentBanner.dataset.severity;
             const isCurrentError = currentSeverity === "error";
@@ -264,11 +264,11 @@ export class MoltbotUI {
         if (!bannerEl) {
             bannerEl = document.createElement("div");
             // Insert after header
-            const header = this.container.querySelector(".moltbot-header");
+            const header = this.container.querySelector('.openclaw-header');
             header.after(bannerEl);
         }
 
-        bannerEl.className = `moltbot-banner moltbot-banner-${severity}`;
+        bannerEl.className = `openclaw-banner moltbot-banner openclaw-banner-${severity} moltbot-banner-${severity}`;
         bannerEl.dataset.id = id;
         bannerEl.dataset.severity = severity;
         bannerEl.innerHTML = ""; // Clear content
@@ -281,7 +281,7 @@ export class MoltbotUI {
         // Action Button
         if (action) {
             const btn = document.createElement("button");
-            btn.className = "moltbot-banner-action";
+            btn.className = "openclaw-banner-action moltbot-banner-action";
             btn.textContent = action.label;
             btn.addEventListener("click", () => this.handleAction(action));
             bannerEl.appendChild(btn);
@@ -290,7 +290,7 @@ export class MoltbotUI {
         // Dismiss Button
         if (dismissible) {
             const close = document.createElement("button");
-            close.className = "moltbot-banner-close";
+            close.className = "openclaw-banner-close moltbot-banner-close";
             close.textContent = "\u00D7";
             close.addEventListener("click", () => {
                 bannerEl.remove();
@@ -319,9 +319,9 @@ export class MoltbotUI {
                     tabManager.activateTab(action.payload);
                     break;
                 case "action":
-                    // F51: Route through MoltbotActions
-                    if (moltbotActions && moltbotActions.dispatch) {
-                        moltbotActions.dispatch(action.payload);
+                    // F51: Route through OpenClaw actions singleton.
+                    if (openclawActions && openclawActions.dispatch) {
+                        openclawActions.dispatch(action.payload);
                     } else {
                         console.log("Action triggered:", action.payload);
                     }
@@ -345,10 +345,10 @@ export class MoltbotUI {
     showConfirm({ title, message, fatal = false, onConfirm }) {
         // Create modal overlay
         const overlay = document.createElement("div");
-        overlay.className = "moltbot-modal-overlay";
+        overlay.className = "openclaw-modal-overlay moltbot-modal-overlay";
 
         const modal = document.createElement("div");
-        modal.className = `moltbot-modal ${fatal ? "fatal" : ""}`;
+        modal.className = `openclaw-modal moltbot-modal ${fatal ? "fatal" : ""}`;
 
         const h3 = document.createElement("h3");
         h3.textContent = title || "Confirm Action";
@@ -357,15 +357,15 @@ export class MoltbotUI {
         p.textContent = message || "Are you sure?";
 
         const buttons = document.createElement("div");
-        buttons.className = "moltbot-modal-buttons";
+        buttons.className = "openclaw-modal-buttons moltbot-modal-buttons";
 
         const cancelBtn = document.createElement("button");
-        cancelBtn.className = "moltbot-btn secondary";
+        cancelBtn.className = "openclaw-btn moltbot-btn secondary";
         cancelBtn.textContent = "Cancel";
         cancelBtn.onclick = () => overlay.remove();
 
         const confirmBtn = document.createElement("button");
-        confirmBtn.className = `moltbot-btn ${fatal ? "danger" : "primary"}`;
+        confirmBtn.className = `openclaw-btn moltbot-btn ${fatal ? "danger" : "primary"}`;
         confirmBtn.textContent = "Confirm";
         confirmBtn.onclick = () => {
             overlay.remove();
@@ -412,7 +412,7 @@ class QueueMonitor {
             this.es.close();
         }
 
-        this.es = moltbotApi.subscribeEvents(
+        this.es = openclawApi.subscribeEvents(
             (data) => this.handleEvent(data),
             (err) => this.handleConnectionError(err)
         );
@@ -457,7 +457,7 @@ class QueueMonitor {
 
     async checkHealth() {
         try {
-            const res = await moltbotApi.getHealth();
+            const res = await openclawApi.getHealth();
             if (res.ok && res.data) {
                 if (!this.isConnected) {
                     this.isConnected = true;
@@ -523,7 +523,7 @@ class QueueMonitor {
  * F51: Unified Action Router.
  * Centralizes navigation and command logic for key operator tasks.
  */
-export class MoltbotActions {
+export class OpenClawActions {
     constructor(ui) {
         this.ui = ui;
         this.capabilities = null;
@@ -532,12 +532,12 @@ export class MoltbotActions {
 
     async _fetchCapabilities() {
         try {
-            const res = await moltbotApi.getCapabilities();
+            const res = await openclawApi.getCapabilities();
             if (res.ok) {
                 this.capabilities = res.data;
             }
         } catch (e) {
-            console.warn("MoltbotActions: Failed to fetch capabilities", e);
+            console.warn("OpenClawActions: Failed to fetch capabilities", e);
         }
     }
 
@@ -574,7 +574,7 @@ export class MoltbotActions {
      */
     _showBlockedToast(actionName, reason) {
         const toast = document.createElement("div");
-        toast.className = "moltbot-blocked-toast";
+        toast.className = "openclaw-blocked-toast moltbot-blocked-toast";
         toast.style.cssText = `
             position: fixed; bottom: 20px; right: 20px; z-index: 99999;
             background: #1e1e2e; border: 1px solid #f59e0b;
@@ -585,7 +585,7 @@ export class MoltbotActions {
         `;
         toast.innerHTML = `
             <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;">
-                <span style="font-size:16px;">?›¡ï¸?/span>
+                <span style="font-size:16px;">!</span>
                 <strong style="color:#f59e0b;">Action Blocked - Split Mode</strong>
             </div>
             <div style="margin-bottom:4px;"><code>${actionName}</code> is not available in the current deployment mode.</div>
@@ -650,7 +650,7 @@ export class MoltbotActions {
     async _openDoctorImpl() {
         tabManager.activateTab("settings");
         try {
-            const res = await moltbotApi.fetch(moltbotApi._path("/security/doctor"));
+            const res = await openclawApi.fetch(openclawApi._path("/security/doctor"));
             if (res.ok && res.data) {
                 const issueCount = Array.isArray(res.data.issues)
                     ? res.data.issues.length
@@ -694,6 +694,10 @@ export class MoltbotActions {
             // Dispatch after tab activation tick so listeners are ready.
             setTimeout(() => {
                 window.dispatchEvent(
+                    new CustomEvent("openclaw:lab:compare", { detail: { node } })
+                );
+                // Legacy event name for compatibility with older listeners.
+                window.dispatchEvent(
                     new CustomEvent("moltbot:lab:compare", { detail: { node } })
                 );
             }, 0);
@@ -701,8 +705,8 @@ export class MoltbotActions {
     }
 }
 
-export const moltbotUI = new MoltbotUI();
-export const moltbotActions = new MoltbotActions(moltbotUI);
+export const openclawUI = new OpenClawUI();
+export const openclawActions = new OpenClawActions(openclawUI);
 
-const monitor = new QueueMonitor(moltbotUI);
+const monitor = new QueueMonitor(openclawUI);
 monitor.start();

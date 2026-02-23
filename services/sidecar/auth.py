@@ -153,12 +153,33 @@ def validate_device_token(
         return False, "Bridge not enabled", None
 
     # Extract headers
-    device_id = request.headers.get(HEADER_DEVICE_ID, "") or request.headers.get(
-        LEGACY_HEADER_DEVICE_ID, ""
-    )
-    device_token = request.headers.get(HEADER_DEVICE_TOKEN, "") or request.headers.get(
-        LEGACY_HEADER_DEVICE_TOKEN, ""
-    )
+    device_id = request.headers.get(HEADER_DEVICE_ID)
+    if not device_id and request.headers.get(LEGACY_HEADER_DEVICE_ID):
+        device_id = request.headers.get(LEGACY_HEADER_DEVICE_ID)
+        try:
+            from ..metrics import metrics
+
+            if metrics:
+                metrics.inc("legacy_api_hits")
+        except ImportError:
+            pass
+        logger.warning(
+            f"DEPRECATION WARNING: Legacy header {LEGACY_HEADER_DEVICE_ID} used. Please migrate to {HEADER_DEVICE_ID}."
+        )
+
+    device_token = request.headers.get(HEADER_DEVICE_TOKEN)
+    if not device_token and request.headers.get(LEGACY_HEADER_DEVICE_TOKEN):
+        device_token = request.headers.get(LEGACY_HEADER_DEVICE_TOKEN)
+        try:
+            from ..metrics import metrics
+
+            if metrics:
+                metrics.inc("legacy_api_hits")
+        except ImportError:
+            pass
+        logger.warning(
+            f"DEPRECATION WARNING: Legacy header {LEGACY_HEADER_DEVICE_TOKEN} used. Please migrate to {HEADER_DEVICE_TOKEN}."
+        )
 
     if not device_id:
         return False, "Missing device ID", None
@@ -231,7 +252,7 @@ def validate_device_token(
                 logger.warning(
                     f"Device {device_id[:8]} missing required scopes header."
                 )
-                return False, "Missing X-Moltbot-Scopes header", None
+                return False, "Missing X-OpenClaw-Scopes header", None
 
             granted_scopes = set(
                 s.strip() for s in scopes_header.split(",") if s.strip()

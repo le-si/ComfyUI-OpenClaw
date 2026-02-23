@@ -1,5 +1,6 @@
 /* R6: Error Boundary Styles */
 
+.openclaw-error-boundary,
 .moltbot-error-boundary {
     padding: 1rem;
     border: 1px solid #ff4444;
@@ -10,11 +11,13 @@
     font-family: sans-serif;
 }
 
+.openclaw-error-boundary h3,
 .moltbot-error-boundary h3 {
     margin-top: 0;
     color: #ff8888;
 }
 
+.openclaw-error-boundary code,
 .moltbot-error-boundary code {
     display: block;
     background: #000;
