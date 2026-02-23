@@ -50,6 +50,20 @@ Deployment profiles and hardening checklists:
 
 <details>
 
+<summary><strong>Latest completion: automation composer endpoint, safer payload drafting, and full verification pass</strong></summary>
+
+- Completed the automation payload composer flow for safe draft generation:
+  - added a new admin-only compose endpoint for trigger/webhook payload drafts (generate-only, no execution side effects)
+  - added strict server-side validation and normalization for trigger/webhook draft payloads
+  - added tool-calling schema support for automation payload composition with deterministic fallback behavior
+  - exposed composer capability flag for frontend/runtime feature probing
+  - added and extended backend tests for API handler, composer service, schema/validator coverage, and capability contract
+  - completed full validation gate pass (detect-secrets, pre-commit, backend test lanes, adversarial smoke gate, and frontend Playwright E2E)
+
+</details>
+
+<details>
+
 <summary><strong>Slack app support closeout: secure Events API ingress, connector parity, and no-skip verification lanes</strong></summary>
 
 - Completed Slack implementation hardening chain with full SOP validation:

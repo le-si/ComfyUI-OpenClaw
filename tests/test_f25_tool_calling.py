@@ -9,11 +9,15 @@ from services.tool_calling import (
     MAX_TOOL_ARGS_BYTES,
     PLANNER_TOOL_SCHEMA,
     REFINER_TOOL_SCHEMA,
+    TRIGGER_TOOL_SCHEMA,
+    WEBHOOK_TOOL_SCHEMA,
     extract_tool_call_by_name,
     extract_tool_calls,
     parse_tool_arguments,
     validate_planner_output,
     validate_refiner_output,
+    validate_trigger_request,
+    validate_webhook_request,
 )
 
 
@@ -294,6 +298,70 @@ class TestSchemas(unittest.TestCase):
         self.assertEqual(
             REFINER_TOOL_SCHEMA["function"]["name"], "openclaw_refiner_output"
         )
+
+    def test_trigger_schema_valid(self):
+        """Trigger schema should be valid JSON"""
+        schema_str = json.dumps(TRIGGER_TOOL_SCHEMA)
+        self.assertGreater(len(schema_str), 100)
+        self.assertEqual(TRIGGER_TOOL_SCHEMA["type"], "function")
+        self.assertEqual(
+            TRIGGER_TOOL_SCHEMA["function"]["name"], "openclaw_trigger_request"
+        )
+
+    def test_webhook_schema_valid(self):
+        """Webhook schema should be valid JSON"""
+        schema_str = json.dumps(WEBHOOK_TOOL_SCHEMA)
+        self.assertGreater(len(schema_str), 100)
+        self.assertEqual(WEBHOOK_TOOL_SCHEMA["type"], "function")
+        self.assertEqual(
+            WEBHOOK_TOOL_SCHEMA["function"]["name"], "openclaw_webhook_request"
+        )
+
+
+class TestValidateAutomationRequests(unittest.TestCase):
+    def test_validate_trigger_request_success(self):
+        args = {
+            "template_id": "portrait_v1",
+            "inputs": {"requirements": "portrait", "unknown": "drop-me"},
+            "require_approval": True,
+            "trace_id": "trace_123",
+            "callback": {"url": "https://example.com/cb", "foo": "drop"},
+        }
+
+        validated, error = validate_trigger_request(args)
+        self.assertIsNone(error)
+        self.assertEqual(validated["template_id"], "portrait_v1")
+        self.assertEqual(validated["inputs"], {"requirements": "portrait"})
+        self.assertTrue(validated["require_approval"])
+        self.assertEqual(validated["trace_id"], "trace_123")
+        self.assertEqual(validated["callback"], {"url": "https://example.com/cb"})
+
+    def test_validate_trigger_request_invalid_trace_id(self):
+        args = {"template_id": "portrait_v1", "trace_id": "bad trace id"}
+        validated, error = validate_trigger_request(args)
+        self.assertIsNone(validated)
+        self.assertIn("trace_id contains invalid characters", error)
+
+    def test_validate_webhook_request_success(self):
+        args = {
+            "template_id": "portrait_v1",
+            "profile_id": "SDXL-v1",
+            "inputs": {"requirements": "portrait", "unknown": "drop-me"},
+            "trace_id": "trace_ok_1",
+        }
+        validated, error = validate_webhook_request(args)
+        self.assertIsNone(error)
+        self.assertEqual(validated["version"], 1)
+        self.assertEqual(validated["template_id"], "portrait_v1")
+        self.assertEqual(validated["profile_id"], "SDXL-v1")
+        self.assertEqual(validated["inputs"], {"requirements": "portrait"})
+        self.assertEqual(validated["trace_id"], "trace_ok_1")
+
+    def test_validate_webhook_request_missing_profile(self):
+        args = {"template_id": "portrait_v1"}
+        validated, error = validate_webhook_request(args)
+        self.assertIsNone(validated)
+        self.assertIn("profile_id is required", error)
 
 
 if __name__ == "__main__":

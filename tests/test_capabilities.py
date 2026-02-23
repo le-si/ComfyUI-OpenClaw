@@ -40,6 +40,7 @@ class TestCapabilities(unittest.TestCase):
             "doctor",
             "job_monitor",
             "callback_delivery",
+            "assist_automation_compose",
         ]
         for feat in expected_features:
             self.assertIn(feat, features, f"Missing feature: {feat}")

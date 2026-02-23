@@ -27,6 +27,7 @@ class TestAssistAPI(unittest.IsolatedAsyncioTestCase):
         # Mock services to avoid LLM calls
         self.handler.planner = MagicMock()
         self.handler.refiner = MagicMock()
+        self.handler.composer = MagicMock()
 
     async def test_planner_no_auth(self):
         """Test that planner rejects unauthenticated requests."""
@@ -111,6 +112,72 @@ class TestAssistAPI(unittest.IsolatedAsyncioTestCase):
             body = json.loads(resp.body)
             self.assertEqual(body["refined_positive"], "new_pos")
             self.assertEqual(body["rationale"], "Fixed hands")
+
+    async def test_compose_no_auth(self):
+        """Test compose rejects unauthenticated requests."""
+        request = AsyncMock()
+        request.headers = {}
+
+        with patch("api.assist.require_admin_token", return_value=(False, "Denied")):
+            resp = await self.handler.compose_handler(request)
+            self.assertEqual(resp.status, 401)
+
+    async def test_compose_invalid_kind(self):
+        """Test compose validates kind field."""
+        request = AsyncMock()
+        request.json = AsyncMock(
+            return_value={
+                "kind": "unknown",
+                "template_id": "portrait_v1",
+                "intent": "make draft",
+            }
+        )
+
+        with patch("api.assist.require_admin_token", return_value=(True, None)):
+            resp = await self.handler.compose_handler(request)
+            self.assertEqual(resp.status, 400)
+            body = json.loads(resp.body)
+            self.assertIn("kind must be", body["error"])
+
+    async def test_compose_success(self):
+        """Test compose returns draft payload on success."""
+        request = AsyncMock()
+        request.json = AsyncMock(
+            return_value={
+                "kind": "webhook",
+                "template_id": "portrait_v1",
+                "profile_id": "SDXL-v1",
+                "intent": "render portrait with soft light",
+                "inputs_hint": {"requirements": "portrait"},
+                "trace_id": "trace_123",
+            }
+        )
+
+        with (
+            patch("api.assist.require_admin_token", return_value=(True, None)),
+            patch("api.assist.run_in_thread") as mock_run_in_thread,
+        ):
+            mock_run_in_thread.return_value = {
+                "kind": "webhook",
+                "payload": {
+                    "version": 1,
+                    "template_id": "portrait_v1",
+                    "profile_id": "SDXL-v1",
+                    "inputs": {"requirements": "portrait"},
+                    "trace_id": "trace_123",
+                    "job_id": None,
+                    "callback": None,
+                },
+                "warnings": [],
+                "used_tool_calling": False,
+            }
+
+            resp = await self.handler.compose_handler(request)
+            self.assertEqual(resp.status, 200)
+            body = json.loads(resp.body)
+            self.assertTrue(body["ok"])
+            self.assertEqual(body["kind"], "webhook")
+            self.assertEqual(body["payload"]["template_id"], "portrait_v1")
 
 
 if __name__ == "__main__":

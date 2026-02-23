@@ -774,6 +774,12 @@ def register_routes(server) -> None:
             register_dual_route(
                 server, "POST", f"{prefix}/assist/refiner", assist.refiner_handler
             )
+            register_dual_route(
+                server,
+                "POST",
+                f"{prefix}/assist/automation/compose",
+                assist.compose_handler,
+            )
 
     # F10 Bridge Routes (Sidecar)
     # R84 Boot Boundary: BRIDGE

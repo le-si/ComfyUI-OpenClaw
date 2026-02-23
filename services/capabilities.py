@@ -68,6 +68,7 @@ def get_capabilities() -> dict:
             "approvals": True,
             "assist_planner": True,
             "assist_refiner": True,
+            "assist_automation_compose": True,
             "scheduler": True,
             "triggers": True,
             "packs": True,
