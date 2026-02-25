@@ -12,21 +12,23 @@ import os
 import sys
 import time
 
-# R98: Endpoint Metadata
 if __package__ and "." in __package__:
-    from ..services.endpoint_manifest import (
-        AuthTier,
-        RiskTier,
-        RoutePlane,
-        endpoint_metadata,
-    )
+    from ..services.import_fallback import import_attrs_dual
 else:
-    from services.endpoint_manifest import (
-        AuthTier,
-        RiskTier,
-        RoutePlane,
-        endpoint_metadata,
-    )
+    from services.import_fallback import import_attrs_dual  # type: ignore
+
+# R98 / R64: Endpoint Metadata import via shared helper
+(
+    AuthTier,
+    RiskTier,
+    RoutePlane,
+    endpoint_metadata,
+) = import_attrs_dual(
+    __package__,
+    "..services.endpoint_manifest",
+    "services.endpoint_manifest",
+    ("AuthTier", "RiskTier", "RoutePlane", "endpoint_metadata"),
+)
 
 try:
     from aiohttp import web  # type: ignore
@@ -48,114 +50,174 @@ if web is not None:
     # Import discipline:
     # - ComfyUI runtime: package-relative imports only (prevents collisions with other custom nodes).
     # - Unit tests: allow top-level imports.
-    if __package__ and "." in __package__:
-        from ..api.capabilities import capabilities_handler
-        from ..api.checkpoints_handler import (
-            create_checkpoint_handler,
-            delete_checkpoint_handler,
-            get_checkpoint_handler,
-            list_checkpoints_handler,
+    (capabilities_handler,) = import_attrs_dual(
+        __package__,
+        "..api.capabilities",
+        "api.capabilities",
+        ("capabilities_handler",),
+    )
+    (
+        create_checkpoint_handler,
+        delete_checkpoint_handler,
+        get_checkpoint_handler,
+        list_checkpoints_handler,
+    ) = import_attrs_dual(
+        __package__,
+        "..api.checkpoints_handler",
+        "api.checkpoints_handler",
+        (
+            "create_checkpoint_handler",
+            "delete_checkpoint_handler",
+            "get_checkpoint_handler",
+            "list_checkpoints_handler",
+        ),
+    )
+    (
+        config_get_handler,
+        config_put_handler,
+        llm_chat_handler,
+        llm_models_handler,
+        llm_test_handler,
+    ) = import_attrs_dual(
+        __package__,
+        "..api.config",
+        "api.config",
+        (
+            "config_get_handler",
+            "config_put_handler",
+            "llm_chat_handler",
+            "llm_models_handler",
+            "llm_test_handler",
+        ),
+    )
+    (events_poll_handler, events_stream_handler) = import_attrs_dual(  # R71
+        __package__,
+        "..api.events",
+        "api.events",
+        ("events_poll_handler", "events_stream_handler"),
+    )
+    (inventory_handler, preflight_handler) = import_attrs_dual(
+        __package__,
+        "..api.preflight_handler",
+        "api.preflight_handler",
+        ("inventory_handler", "preflight_handler"),
+    )
+    (secrets_delete_handler, secrets_put_handler, secrets_status_handler) = (
+        import_attrs_dual(
+            __package__,
+            "..api.secrets",
+            "api.secrets",
+            ("secrets_delete_handler", "secrets_put_handler", "secrets_status_handler"),
         )
-        from ..api.config import (
-            config_get_handler,
-            config_put_handler,
-            llm_chat_handler,
-            llm_models_handler,
-            llm_test_handler,
-        )
-        from ..api.events import events_poll_handler, events_stream_handler  # R71
-        from ..api.preflight_handler import inventory_handler, preflight_handler
-        from ..api.secrets import (
-            secrets_delete_handler,
-            secrets_put_handler,
-            secrets_status_handler,
-        )
-        from ..api.security_doctor import security_doctor_handler  # S30
-        from ..api.templates import templates_list_handler
-        from ..api.tools import tools_list_handler, tools_run_handler  # S12
-        from ..api.webhook import webhook_handler
-        from ..api.webhook_submit import webhook_submit_handler
-        from ..api.webhook_validate import webhook_validate_handler
+    )
+    (security_doctor_handler,) = import_attrs_dual(  # S30
+        __package__,
+        "..api.security_doctor",
+        "api.security_doctor",
+        ("security_doctor_handler",),
+    )
+    (templates_list_handler,) = import_attrs_dual(
+        __package__,
+        "..api.templates",
+        "api.templates",
+        ("templates_list_handler",),
+    )
+    (tools_list_handler, tools_run_handler) = import_attrs_dual(  # S12
+        __package__,
+        "..api.tools",
+        "api.tools",
+        ("tools_list_handler", "tools_run_handler"),
+    )
+    (webhook_handler,) = import_attrs_dual(
+        __package__,
+        "..api.webhook",
+        "api.webhook",
+        ("webhook_handler",),
+    )
+    (webhook_submit_handler,) = import_attrs_dual(
+        __package__,
+        "..api.webhook_submit",
+        "api.webhook_submit",
+        ("webhook_submit_handler",),
+    )
+    (webhook_validate_handler,) = import_attrs_dual(
+        __package__,
+        "..api.webhook_validate",
+        "api.webhook_validate",
+        ("webhook_validate_handler",),
+    )
 
-        # IMPORTANT: use PACK_VERSION / PACK_START_TIME from config.
-        # Do NOT import VERSION or config_path (they do not exist) or route registration will fail.
-        from ..config import LOG_FILE, PACK_NAME, PACK_START_TIME, PACK_VERSION
+    # IMPORTANT: use PACK_VERSION / PACK_START_TIME from config.
+    # Do NOT import VERSION or config_path (they do not exist) or route registration will fail.
+    (LOG_FILE, PACK_NAME, PACK_START_TIME, PACK_VERSION) = import_attrs_dual(
+        __package__,
+        "..config",
+        "config",
+        ("LOG_FILE", "PACK_NAME", "PACK_START_TIME", "PACK_VERSION"),
+    )
 
-        # CRITICAL: These imports MUST remain present.
-        # If edited out, module-level placeholders stay as None and handlers raise at runtime
-        # (e.g., TypeError: 'NoneType' object is not callable), producing noisy aiohttp tracebacks.
-        from ..services.access_control import (
-            require_admin_token,
-            require_observability_access,
-        )
-        from ..services.log_tail import tail_log
-        from ..services.metrics import metrics
-        from ..services.parameter_lab import (
-            create_compare_handler,
-            create_sweep_handler,
-            get_experiment_handler,
-            list_experiments_handler,
-            select_apply_winner_handler,
-            update_experiment_handler,
-        )
-        from ..services.rate_limit import check_rate_limit
-        from ..services.redaction import redact_text
+    # CRITICAL: These imports MUST remain present.
+    # If edited out, module-level placeholders stay as None and handlers raise at runtime
+    # (e.g., TypeError: 'NoneType' object is not callable), producing noisy aiohttp tracebacks.
+    (require_admin_token, require_observability_access) = import_attrs_dual(
+        __package__,
+        "..services.access_control",
+        "services.access_control",
+        ("require_admin_token", "require_observability_access"),
+    )
+    (tail_log,) = import_attrs_dual(
+        __package__,
+        "..services.log_tail",
+        "services.log_tail",
+        ("tail_log",),
+    )
+    (metrics,) = import_attrs_dual(
+        __package__,
+        "..services.metrics",
+        "services.metrics",
+        ("metrics",),
+    )
+    (
+        create_compare_handler,
+        create_sweep_handler,
+        get_experiment_handler,
+        list_experiments_handler,
+        select_apply_winner_handler,
+        update_experiment_handler,
+    ) = import_attrs_dual(
+        __package__,
+        "..services.parameter_lab",
+        "services.parameter_lab",
+        (
+            "create_compare_handler",
+            "create_sweep_handler",
+            "get_experiment_handler",
+            "list_experiments_handler",
+            "select_apply_winner_handler",
+            "update_experiment_handler",
+        ),
+    )
+    (check_rate_limit,) = import_attrs_dual(
+        __package__,
+        "..services.rate_limit",
+        "services.rate_limit",
+        ("check_rate_limit",),
+    )
+    (redact_text,) = import_attrs_dual(
+        __package__,
+        "..services.redaction",
+        "services.redaction",
+        ("redact_text",),
+    )
 
-        # IMPORTANT: services.trace does NOT expose a `trace` symbol.
-        # Do not import `trace` here or route registration will fail.
-        from ..services.trace_store import trace_store
-    else:  # pragma: no cover (test-only import mode)
-        from api.capabilities import capabilities_handler
-        from api.checkpoints_handler import (
-            create_checkpoint_handler,
-            delete_checkpoint_handler,
-            get_checkpoint_handler,
-            list_checkpoints_handler,
-        )
-        from api.config import (
-            config_get_handler,
-            config_put_handler,
-            llm_chat_handler,
-            llm_models_handler,
-            llm_test_handler,
-        )
-        from api.events import (  # R71  # type: ignore
-            events_poll_handler,
-            events_stream_handler,
-        )
-        from api.preflight_handler import inventory_handler, preflight_handler
-        from api.secrets import (
-            secrets_delete_handler,
-            secrets_put_handler,
-            secrets_status_handler,
-        )
-        from api.security_doctor import security_doctor_handler  # type: ignore  # S30
-        from api.templates import templates_list_handler
-        from api.tools import tools_list_handler, tools_run_handler  # S12
-        from api.webhook import webhook_handler
-        from api.webhook_submit import webhook_submit_handler
-        from api.webhook_validate import webhook_validate_handler
-
-        # IMPORTANT: keep PACK_* imports aligned with config.py (VERSION/config_path do not exist).
-        from config import LOG_FILE, PACK_NAME, PACK_START_TIME, PACK_VERSION
-        from services.access_control import require_admin_token  # type: ignore
-        from services.access_control import require_observability_access  # type: ignore
-        from services.log_tail import tail_log  # type: ignore
-        from services.metrics import metrics  # type: ignore
-        from services.parameter_lab import (  # type: ignore
-            create_compare_handler,
-            create_sweep_handler,
-            get_experiment_handler,
-            list_experiments_handler,
-            select_apply_winner_handler,
-            update_experiment_handler,
-        )
-        from services.rate_limit import check_rate_limit  # type: ignore
-        from services.redaction import redact_text  # type: ignore
-
-        # IMPORTANT: services.trace does NOT expose a `trace` symbol.
-        # Do not import `trace` here or route registration will fail.
-        from services.trace_store import trace_store  # type: ignore
+    # IMPORTANT: services.trace does NOT expose a `trace` symbol.
+    # Do not import `trace` here or route registration will fail.
+    (trace_store,) = import_attrs_dual(
+        __package__,
+        "..services.trace_store",
+        "services.trace_store",
+        ("trace_store",),
+    )
 
 
 def check_dependency(module_name: str) -> bool:

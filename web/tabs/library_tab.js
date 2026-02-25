@@ -1,6 +1,6 @@
 import { openclawApi } from "../openclaw_api.js";
 import { tabManager } from "../openclaw_tabs.js";
-import { showError, clearError } from "../openclaw_utils.js";
+import { showError, clearError, parseJsonOrThrow } from "../openclaw_utils.js";
 
 // Helper for safe HTML escaping
 function escapeHtml(text) {
@@ -217,8 +217,13 @@ export const LibraryTab = {
             const cat = ui.modal.cat.value;
             let content;
 
-            try { content = JSON.parse(ui.modal.content.value); }
-            catch (e) { alert("Content must be valid JSON"); return; }
+            try {
+                content = parseJsonOrThrow(
+                    ui.modal.content.value,
+                    "Content must be valid JSON"
+                );
+            }
+            catch (e) { alert(e.message); return; }
 
             if (!name) { alert("Name required"); return; }
 

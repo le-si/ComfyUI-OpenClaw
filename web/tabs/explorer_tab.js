@@ -1,6 +1,6 @@
 
 import { openclawApi } from "../openclaw_api.js";
-import { makeEl, showToast } from "../openclaw_utils.js";
+import { makeEl, showToast, parseJsonOrThrow } from "../openclaw_utils.js";
 
 /**
  * F28: Explorer Tab
@@ -245,7 +245,7 @@ export const ExplorerTab = {
 
             let workflow;
             try {
-                workflow = JSON.parse(jsonStr);
+                workflow = parseJsonOrThrow(jsonStr, "Invalid JSON");
                 if (workflow.prompt) workflow = workflow.prompt;
                 else if (workflow.workflow) workflow = workflow.workflow;
             } catch (e) {

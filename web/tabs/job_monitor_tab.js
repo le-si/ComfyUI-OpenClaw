@@ -3,6 +3,7 @@
  * Tracks prompt execution and displays outputs.
  */
 import { openclawApi } from "../openclaw_api.js";
+import { parseJsonSafe } from "../openclaw_utils.js";
 
 const POLL_INTERVAL_MS = 2000;
 const POLL_MAX_ATTEMPTS = 150;
@@ -16,7 +17,7 @@ function loadJobs() {
     try {
         // Keep one-way fallback so existing users keep their tracked jobs after rename.
         const stored = localStorage.getItem(STORAGE_KEY) || localStorage.getItem(LEGACY_STORAGE_KEY);
-        currentJobs = stored ? JSON.parse(stored) : [];
+        currentJobs = stored ? parseJsonSafe(stored, []).value : [];
         if (stored && !localStorage.getItem(STORAGE_KEY)) {
             localStorage.setItem(STORAGE_KEY, stored);
         }

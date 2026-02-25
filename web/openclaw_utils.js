@@ -107,6 +107,64 @@ export async function copyToClipboard(text, btnElement) {
 }
 
 /**
+ * R55: Safe JSON parse helper with deterministic fallback semantics.
+ */
+export function parseJsonSafe(raw, fallbackValue = null) {
+    if (typeof raw !== "string") {
+        return {
+            ok: false,
+            value: fallbackValue,
+            error: new Error("json_input_must_be_string"),
+        };
+    }
+    try {
+        return { ok: true, value: JSON.parse(raw), error: null };
+    } catch (error) {
+        return { ok: false, value: fallbackValue, error };
+    }
+}
+
+/**
+ * R55: Parse JSON or throw with a consistent message.
+ */
+export function parseJsonOrThrow(raw, message = "Invalid JSON") {
+    const parsed = parseJsonSafe(raw);
+    if (parsed.ok) return parsed.value;
+    const suffix = parsed.error?.message ? `: ${parsed.error.message}` : "";
+    throw new Error(`${message}${suffix}`);
+}
+
+/**
+ * R55: Link an external AbortSignal to a local AbortController.
+ * Returns a cleanup function to remove listeners.
+ */
+export function linkAbortSignal(externalSignal, controller, onAbort = null) {
+    if (!externalSignal || !controller) {
+        return () => { };
+    }
+
+    const handleAbort = () => {
+        if (typeof onAbort === "function") onAbort();
+        controller.abort();
+    };
+
+    if (externalSignal.aborted) {
+        handleAbort();
+        return () => { };
+    }
+
+    externalSignal.addEventListener("abort", handleAbort, { once: true });
+    return () => externalSignal.removeEventListener("abort", handleAbort);
+}
+
+/**
+ * R55: Normalize abort error detection across modules.
+ */
+export function isAbortError(err) {
+    return Boolean(err && err.name === "AbortError");
+}
+
+/**
  * R38-Lite: Create a shared request lifecycle controller for staged loading + elapsed timer + cancel.
  *
  * @param {HTMLElement} container

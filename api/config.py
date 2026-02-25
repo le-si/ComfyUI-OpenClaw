@@ -9,13 +9,23 @@ import json
 import logging
 import time
 
+if __package__ and "." in __package__:
+    from ..services.import_fallback import import_attrs_dual, import_module_dual
+else:
+    from services.import_fallback import (  # type: ignore
+        import_attrs_dual,
+        import_module_dual,
+    )
+
 try:
-    from ..config import PACK_VERSION
+    (PACK_VERSION,) = import_attrs_dual(
+        __package__,
+        "..config",
+        "config",
+        ("PACK_VERSION",),
+    )
 except ImportError:  # pragma: no cover
-    try:
-        from config import PACK_VERSION  # type: ignore
-    except ImportError:
-        PACK_VERSION = "0.1.0"
+    PACK_VERSION = "0.1.0"
 
 try:
     from aiohttp import web
@@ -52,70 +62,88 @@ except ImportError:  # pragma: no cover (optional for unit tests)
 # Import discipline:
 # - In real ComfyUI runtimes, this pack is loaded as a package and must use package-relative imports.
 # - In unit tests, modules may be imported as top-level (e.g., `api.*`), so we allow top-level fallbacks.
-if __package__ and "." in __package__:
-    from ..services.access_control import (
-        is_loopback,
-        require_admin_token,
-        require_observability_access,
-        resolve_token_info,
+(
+    is_loopback,
+    require_admin_token,
+    require_observability_access,
+    resolve_token_info,
+) = import_attrs_dual(
+    __package__,
+    "..services.access_control",
+    "services.access_control",
+    (
+        "is_loopback",
+        "require_admin_token",
+        "require_observability_access",
+        "resolve_token_info",
+    ),
+)
+(emit_audit_event,) = import_attrs_dual(
+    __package__,
+    "..services.audit",
+    "services.audit",
+    ("emit_audit_event",),
+)
+
+try:
+    (require_same_origin_if_no_token,) = import_attrs_dual(
+        __package__,
+        "..services.csrf_protection",
+        "services.csrf_protection",
+        ("require_same_origin_if_no_token",),
     )
-    from ..services.audit import emit_audit_event
+except Exception:
+    # CRITICAL test/CI fallback (DO NOT replace with a direct import):
+    # Some unit-test environments import `api.config` without aiohttp installed.
+    # `services.csrf_protection` imports aiohttp at module load, which can raise
+    # ModuleNotFoundError and break unrelated tests (`test_r53`, `test_r60`).
+    # Keep import-time behavior resilient by using a no-op guard in that case.
+    def require_same_origin_if_no_token(*_args, **_kwargs):  # type: ignore
+        return None
 
-    try:
-        from ..services.csrf_protection import require_same_origin_if_no_token
-    except Exception:
-        # CRITICAL test/CI fallback (DO NOT replace with a direct import):
-        # Some unit-test environments import `api.config` without aiohttp installed.
-        # `services.csrf_protection` imports aiohttp at module load, which can raise
-        # ModuleNotFoundError and break unrelated tests (`test_r53`, `test_r60`).
-        # Keep import-time behavior resilient by using a no-op guard in that case.
-        def require_same_origin_if_no_token(*_args, **_kwargs):  # type: ignore
-            return None
 
-    from ..services.llm_client import LLMClient
-    from ..services.rate_limit import check_rate_limit
-    from ..services.request_ip import get_client_ip
-    from ..services.runtime_config import (
-        ALLOWED_LLM_KEYS,
-        get_admin_token,
-        get_apply_semantics,
-        get_effective_config,
-        get_llm_egress_controls,
-        get_settings_schema,
-        is_loopback_client,
-        update_config,
-    )
-else:  # pragma: no cover (test-only import mode)
-    from services.access_control import is_loopback  # type: ignore
-    from services.access_control import require_admin_token  # type: ignore
-    from services.access_control import require_observability_access  # type: ignore
-    from services.access_control import resolve_token_info  # type: ignore
-    from services.audit import emit_audit_event  # type: ignore
-
-    try:
-        from services.csrf_protection import (
-            require_same_origin_if_no_token,  # type: ignore
-        )
-    except Exception:
-        # CRITICAL test/CI fallback (DO NOT replace with a direct import):
-        # Do not hard-fail module import when `aiohttp` is absent in unit-test env.
-        # This keeps config semantics tests independent from HTTP framework deps.
-        def require_same_origin_if_no_token(*_args, **_kwargs):  # type: ignore
-            return None
-
-    from services.llm_client import LLMClient  # type: ignore
-    from services.rate_limit import check_rate_limit  # type: ignore
-    from services.request_ip import get_client_ip  # type: ignore
-    from services.runtime_config import ALLOWED_LLM_KEYS  # type: ignore
-    from services.runtime_config import (
-        get_admin_token,
-        get_apply_semantics,
-        get_effective_config,
-        get_llm_egress_controls,
-        get_settings_schema,
-        is_loopback_client,
-        update_config,
-    )
+(LLMClient,) = import_attrs_dual(
+    __package__,
+    "..services.llm_client",
+    "services.llm_client",
+    ("LLMClient",),
+)
+(check_rate_limit,) = import_attrs_dual(
+    __package__,
+    "..services.rate_limit",
+    "services.rate_limit",
+    ("check_rate_limit",),
+)
+(get_client_ip,) = import_attrs_dual(
+    __package__,
+    "..services.request_ip",
+    "services.request_ip",
+    ("get_client_ip",),
+)
+(
+    ALLOWED_LLM_KEYS,
+    get_admin_token,
+    get_apply_semantics,
+    get_effective_config,
+    get_llm_egress_controls,
+    get_settings_schema,
+    is_loopback_client,
+    update_config,
+) = import_attrs_dual(
+    __package__,
+    "..services.runtime_config",
+    "services.runtime_config",
+    (
+        "ALLOWED_LLM_KEYS",
+        "get_admin_token",
+        "get_apply_semantics",
+        "get_effective_config",
+        "get_llm_egress_controls",
+        "get_settings_schema",
+        "is_loopback_client",
+        "update_config",
+    ),
+)
 
 logger = logging.getLogger("ComfyUI-OpenClaw.api.config")
 
@@ -157,29 +185,30 @@ def _cache_get(key: tuple):
     return entry
 
 
-# S14/R98: Import Endpoint Metadata
-try:
-    from ..services.endpoint_manifest import (
-        AuthTier,
-        RiskTier,
-        RoutePlane,
-        endpoint_metadata,
-    )
-except ImportError:
-    # Test fallback
-    from services.endpoint_manifest import (
-        AuthTier,
-        RiskTier,
-        RoutePlane,
-        endpoint_metadata,
-    )
+# S14/R98 / R64: Import Endpoint Metadata
+(
+    AuthTier,
+    RiskTier,
+    RoutePlane,
+    endpoint_metadata,
+) = import_attrs_dual(
+    __package__,
+    "..services.endpoint_manifest",
+    "services.endpoint_manifest",
+    ("AuthTier", "RiskTier", "RoutePlane", "endpoint_metadata"),
+)
 
 
 # Provider catalog for UI dropdown (R16 dynamic)
 PROVIDER_CATALOG = []
 
 try:
-    from ..services.providers.catalog import PROVIDER_CATALOG as RAW_CATALOG
+    raw_catalog_module = import_module_dual(
+        __package__,
+        "..services.providers.catalog",
+        "services.providers.catalog",
+    )
+    RAW_CATALOG = raw_catalog_module.PROVIDER_CATALOG
 
     for pid, info in RAW_CATALOG.items():
         PROVIDER_CATALOG.append(

@@ -1,4 +1,4 @@
-import { showError, clearError } from "../openclaw_utils.js";
+import { showError, clearError, parseJsonOrThrow } from "../openclaw_utils.js";
 
 export const VariantsTab = {
     id: "variants",
@@ -55,12 +55,10 @@ export const VariantsTab = {
                 const baseStr = container.querySelector("#var-base-params").value;
                 if (!baseStr.trim()) throw new Error("Base parameters required");
 
-                let base;
-                try {
-                    base = JSON.parse(baseStr);
-                } catch (e) {
-                    throw new Error("Base parameters must be valid JSON");
-                }
+                const base = parseJsonOrThrow(
+                    baseStr,
+                    "Base parameters must be valid JSON"
+                );
 
                 const count = parseInt(container.querySelector("#var-seed-count").value) || 4;
                 const variants = [];

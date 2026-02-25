@@ -4,6 +4,7 @@
  */
 import { OpenClawSession } from "./openclaw_session.js";
 import { fetchApi, apiURL, fileURL } from "./openclaw_comfy_api.js";
+import { isAbortError, linkAbortSignal, parseJsonSafe } from "./openclaw_utils.js";
 
 export class OpenClawAPI {
     constructor() {
@@ -50,22 +51,14 @@ export class OpenClawAPI {
             controller.abort();
         }, timeout);
 
-        // If caller provides signal, listen for abort
-        if (externalSignal) {
-            if (externalSignal.aborted) {
+        // R55: Shared abort linkage helper (consistent cancel semantics)
+        const detachExternalAbort = linkAbortSignal(
+            externalSignal,
+            controller,
+            () => {
                 cancelledByCaller = true;
-                controller.abort();
-            } else {
-                externalSignal.addEventListener(
-                    "abort",
-                    () => {
-                        cancelledByCaller = true;
-                        controller.abort();
-                    },
-                    { once: true }
-                );
             }
-        }
+        );
 
         try {
             // R26: Use ComfyUI shim (fetchApi) which handles base path automatically
@@ -112,16 +105,15 @@ export class OpenClawAPI {
             // Best-effort body parsing
             let data = null;
             const contentType = response?.headers?.get("content-type");
-            if (contentType && contentType.includes("application/json")) {
-                try {
-                    data = await response.json();
-                } catch (e) {
-                    // Ignore JSON parse error, data remains null
-                }
+            let responseText = null;
+            try {
+                responseText = await response.text();
+            } catch (e) { }
+
+            if (contentType && contentType.includes("application/json") && typeof responseText === "string") {
+                data = parseJsonSafe(responseText, null).value;
             } else {
-                try {
-                    data = await response.text();
-                } catch (e) { }
+                data = responseText;
             }
 
             if (!response || !response.ok) {
@@ -143,7 +135,7 @@ export class OpenClawAPI {
         } catch (err) {
             clearTimeout(timeoutId);
             // Network or Timeout/Abort errors
-            const isAbort = err?.name === "AbortError";
+            const isAbort = isAbortError(err);
             const abortKind = cancelledByCaller ? "cancelled" : (timedOut ? "timeout" : "cancelled");
             return {
                 ok: false,
@@ -151,6 +143,8 @@ export class OpenClawAPI {
                 error: isAbort ? abortKind : "network_error",
                 detail: err?.message,
             };
+        } finally {
+            detachExternalAbort();
         }
     }
 
@@ -608,16 +602,17 @@ export class OpenClawAPI {
 
         const handle = (e) => {
             if (!e.data) return;
-            try {
-                const data = JSON.parse(e.data);
-                // Unified event type injection if missing
-                if (!data.event_type && e.type !== "message") {
-                    data.event_type = e.type;
-                }
-                onEvent(data);
-            } catch (err) {
-                console.warn("[OpenClaw] Failed to parse SSE event:", err);
+            const parsed = parseJsonSafe(e.data);
+            if (!parsed.ok || !parsed.value || typeof parsed.value !== "object") {
+                console.warn("[OpenClaw] Failed to parse SSE event:", parsed.error);
+                return;
             }
+            const data = parsed.value;
+            // Unified event type injection if missing
+            if (!data.event_type && e.type !== "message") {
+                data.event_type = e.type;
+            }
+            onEvent(data);
         };
 
         es.onmessage = handle;
