@@ -50,6 +50,20 @@ Deployment profiles and hardening checklists:
 
 <details>
 
+<summary><strong>Recent hardening and reliability improvements: runtime guardrails, crypto drills, compatibility governance, and safer management queries</strong></summary>
+
+- Completed a focused reliability + operations hardening batch with full SOP verification:
+  - consolidated shared frontend/backed helper paths to reduce duplicated cancellation, JSON parsing, and import-fallback logic
+  - added runtime guardrails diagnostics/contract enforcement so runtime-only safety limits stay visible and cannot be persisted back into config
+  - added cryptographic lifecycle drill automation with machine-readable evidence for rotation, revoke, key-loss recovery, and token-compromise scenarios
+  - added compatibility matrix governance metadata plus a refresh workflow script and operator-doctor freshness/drift warnings
+  - hardened management query pagination behavior with deterministic malformed-input handling, bounded scans, and clearer cursor diagnostics for admin/event list paths
+  - completed full verification gate pass (detect-secrets, pre-commit, backend unit suites, and frontend Playwright E2E)
+
+</details>
+
+<details>
+
 <summary><strong>Latest completion: automation composer endpoint, safer payload drafting, and full verification pass</strong></summary>
 
 - Completed the automation payload composer flow for safe draft generation:

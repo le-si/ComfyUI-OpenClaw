@@ -241,7 +241,10 @@ def _emit_degraded_guardrails_audit(snapshot: Dict[str, Any]) -> None:
         from .audit_events import build_audit_event, emit_audit_event
     except ImportError:
         try:
-            from services.audit_events import build_audit_event, emit_audit_event  # type: ignore
+            from services.audit_events import (  # type: ignore
+                build_audit_event,
+                emit_audit_event,
+            )
         except ImportError:
             return
 
@@ -266,7 +269,9 @@ def reset_runtime_guardrails_audit_cache() -> None:
     _AUDIT_FINGERPRINTS_EMITTED.clear()
 
 
-def strip_runtime_only_config_fields(config_blob: Dict[str, Any]) -> Tuple[Dict[str, Any], List[dict]]:
+def strip_runtime_only_config_fields(
+    config_blob: Dict[str, Any]
+) -> Tuple[Dict[str, Any], List[dict]]:
     """
     Remove runtime-only guardrail fields from config blobs before persistence/use.
 
@@ -283,7 +288,9 @@ def strip_runtime_only_config_fields(config_blob: Dict[str, Any]) -> Tuple[Dict[
                     "code": CODE_RUNTIME_ONLY_STRIPPED,
                     "path": key,
                     "reason": "runtime_only_guardrails_not_persisted",
-                    "removed_type": type(removed).__name__ if removed is not None else "none",
+                    "removed_type": (
+                        type(removed).__name__ if removed is not None else "none"
+                    ),
                 }
             )
 
@@ -297,9 +304,9 @@ def strip_runtime_only_config_fields(config_blob: Dict[str, Any]) -> Tuple[Dict[
                         "code": CODE_RUNTIME_ONLY_STRIPPED,
                         "path": f"llm.{key}",
                         "reason": "runtime_only_guardrails_not_persisted",
-                        "removed_type": type(removed).__name__
-                        if removed is not None
-                        else "none",
+                        "removed_type": (
+                            type(removed).__name__ if removed is not None else "none"
+                        ),
                     }
                 )
 
@@ -314,4 +321,3 @@ def payload_contains_runtime_guardrails(payload: Dict[str, Any]) -> bool:
         return True
     llm = payload.get("llm")
     return isinstance(llm, dict) and any(key in llm for key in RUNTIME_ONLY_CONFIG_KEYS)
-

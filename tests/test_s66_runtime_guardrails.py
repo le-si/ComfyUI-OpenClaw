@@ -48,7 +48,9 @@ class TestS66RuntimeGuardrails(unittest.TestCase):
         self.assertEqual(snap["code"], CODE_OK)
         self.assertTrue(snap["runtime_only"])
         self.assertEqual(snap["values"]["timeout_retry"]["llm_timeout_cap_sec"], 300)
-        self.assertEqual(snap["values"]["bounded_queues"]["max_inflight_submits_total"], 2)
+        self.assertEqual(
+            snap["values"]["bounded_queues"]["max_inflight_submits_total"], 2
+        )
 
     def test_invalid_and_clamped_envs_degrade_with_machine_codes(self):
         from services.runtime_guardrails import (

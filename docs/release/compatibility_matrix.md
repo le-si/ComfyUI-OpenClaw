@@ -1,5 +1,27 @@
 # Compatibility Matrix
 
+```openclaw-compat-matrix-meta
+{
+  "anchors": {
+    "comfyui": "unknown",
+    "comfyui_frontend": "unknown",
+    "desktop": "unknown"
+  },
+  "evidence": {
+    "evidence_id": "compat-matrix-20260225",
+    "updated_at": "2026-02-25T00:00:00+00:00",
+    "updated_by": "manual"
+  },
+  "last_validated_date": "2026-02-25",
+  "matrix_version": "v0.2.1",
+  "policy": {
+    "max_age_days": 45,
+    "warn_age_days": 30
+  },
+  "schema_version": 1
+}
+```
+
 This document outlines the validated environments for ComfyUI-OpenClaw `v0.2.1` (M1 Release).
 
 ## Core Dependencies

@@ -25,7 +25,9 @@ try:
     from .sidecar.bridge_contract import BridgeScope
 except ImportError:
     from services.bridge_token_lifecycle import BridgeTokenStore  # type: ignore
-    from services.registry_quarantine import _HAS_CRYPTO as _HAS_REGISTRY_CRYPTO  # type: ignore
+    from services.registry_quarantine import (
+        _HAS_CRYPTO as _HAS_REGISTRY_CRYPTO,  # type: ignore
+    )
     from services.registry_quarantine import TrustRoot, TrustRootStore  # type: ignore
     from services.sidecar.bridge_contract import BridgeScope  # type: ignore
 
@@ -58,7 +60,9 @@ class DrillEvidence:
     artifacts: List[Dict[str, Any]] = field(default_factory=list)
     decision_codes: List[str] = field(default_factory=list)
     fail_closed_assertions: List[Dict[str, Any]] = field(default_factory=list)
-    generated_at: str = field(default_factory=lambda: time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()))
+    generated_at: str = field(
+        default_factory=lambda: time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+    )
     schema_version: int = 1
 
     def to_dict(self) -> Dict[str, Any]:
@@ -117,7 +121,9 @@ class CryptoLifecycleDrillRunner:
     def run_many(self, scenarios: Iterable[str]) -> List[Dict[str, Any]]:
         return [self.run(s) for s in scenarios]
 
-    def write_evidence(self, evidence: List[Dict[str, Any]], output_path: str | Path) -> Path:
+    def write_evidence(
+        self, evidence: List[Dict[str, Any]], output_path: str | Path
+    ) -> Path:
         path = Path(output_path)
         path.parent.mkdir(parents=True, exist_ok=True)
         with open(path, "w", encoding="utf-8") as f:
@@ -135,7 +141,9 @@ class CryptoLifecycleDrillRunner:
             f.write("\n")
         return path
 
-    def _artifact(self, path: Path, *, kind: str, exists: Optional[bool] = None) -> Dict[str, Any]:
+    def _artifact(
+        self, path: Path, *, kind: str, exists: Optional[bool] = None
+    ) -> Dict[str, Any]:
         return {
             "kind": kind,
             "path": str(path),
@@ -188,7 +196,9 @@ class CryptoLifecycleDrillRunner:
                 "active_before_count": len(pre_active),
             },
             result={
-                "status": "pass" if all(c["passed"] for c in fail_closed_checks) else "fail",
+                "status": (
+                    "pass" if all(c["passed"] for c in fail_closed_checks) else "fail"
+                ),
                 "active_before": pre_active,
                 "active_after": post_active,
                 "rotation_overlap_supported": True,
@@ -231,7 +241,9 @@ class CryptoLifecycleDrillRunner:
             }
         )
         decision_codes.append(
-            "R119_TRUST_ROOT_EMERGENCY_REVOKE_BLOCKED" if passed else "R119_TRUST_ROOT_REVOKE_UNEXPECTED"
+            "R119_TRUST_ROOT_EMERGENCY_REVOKE_BLOCKED"
+            if passed
+            else "R119_TRUST_ROOT_REVOKE_UNEXPECTED"
         )
 
         return DrillEvidence(
@@ -313,14 +325,18 @@ class CryptoLifecycleDrillRunner:
             scenario=SCENARIO_KEY_LOSS_RECOVERY,
             precheck={
                 "state_dir": str(state_dir),
-                "crypto_available": bool(getattr(_secrets_encryption, "_HAS_CRYPTO", False)),
+                "crypto_available": bool(
+                    getattr(_secrets_encryption, "_HAS_CRYPTO", False)
+                ),
                 "encrypted_store_exists": enc_path.exists(),
                 "key_file_exists_before_loss": backup_path.exists(),
             },
             result={
-                "status": "pass"
-                if all(c["passed"] for c in fail_closed_checks) and recovered_ok
-                else "fail",
+                "status": (
+                    "pass"
+                    if all(c["passed"] for c in fail_closed_checks) and recovered_ok
+                    else "fail"
+                ),
                 "key_loss_blocked": blocked,
                 "recovery_loaded": recovered_ok,
                 "scope_widened": False,
@@ -335,8 +351,16 @@ class CryptoLifecycleDrillRunner:
                 self._artifact(backup_path, kind="secret_key_backup"),
             ],
             decision_codes=[
-                "R119_SECRETS_KEY_LOSS_FAIL_CLOSED" if blocked else "R119_SECRETS_KEY_LOSS_NOT_BLOCKED",
-                "R119_SECRETS_KEY_RECOVERY_OK" if recovered_ok else "R119_SECRETS_KEY_RECOVERY_FAILED",
+                (
+                    "R119_SECRETS_KEY_LOSS_FAIL_CLOSED"
+                    if blocked
+                    else "R119_SECRETS_KEY_LOSS_NOT_BLOCKED"
+                ),
+                (
+                    "R119_SECRETS_KEY_RECOVERY_OK"
+                    if recovered_ok
+                    else "R119_SECRETS_KEY_RECOVERY_FAILED"
+                ),
             ],
             fail_closed_assertions=fail_closed_checks,
         )
@@ -352,7 +376,9 @@ class CryptoLifecycleDrillRunner:
             s.value if hasattr(s, "value") else str(s) for s in token.scopes
         }
         store.revoke_token(token.token_id, reason="drill_compromise")
-        validation = store.validate_token(token.device_token, required_scope="job:submit")
+        validation = store.validate_token(
+            token.device_token, required_scope="job:submit"
+        )
 
         fail_closed_checks = [
             {
@@ -374,7 +400,9 @@ class CryptoLifecycleDrillRunner:
                 "issued_scopes": sorted(before_scope_values),
             },
             result={
-                "status": "pass" if all(c["passed"] for c in fail_closed_checks) else "fail",
+                "status": (
+                    "pass" if all(c["passed"] for c in fail_closed_checks) else "fail"
+                ),
                 "validation_ok": validation.ok,
                 "reject_reason": validation.reject_reason,
                 "scope_widened": scope_widened,
@@ -386,13 +414,17 @@ class CryptoLifecycleDrillRunner:
                 "detail": "Compromised token remains revoked after drill by design.",
             },
             artifacts=[
-                self._artifact(state_dir / "bridge_tokens.json", kind="bridge_token_store")
+                self._artifact(
+                    state_dir / "bridge_tokens.json", kind="bridge_token_store"
+                )
             ],
             decision_codes=[
                 "R119_TOKEN_COMPROMISE_REVOKED",
-                "R119_FAIL_CLOSED_TOKEN_REVOKED"
-                if fail_closed_checks[0]["passed"]
-                else "R119_FAIL_CLOSED_UNEXPECTED",
+                (
+                    "R119_FAIL_CLOSED_TOKEN_REVOKED"
+                    if fail_closed_checks[0]["passed"]
+                    else "R119_FAIL_CLOSED_UNEXPECTED"
+                ),
             ],
             fail_closed_assertions=fail_closed_checks,
         )

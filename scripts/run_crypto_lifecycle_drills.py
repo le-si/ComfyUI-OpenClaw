@@ -29,7 +29,10 @@ def _parse_scenarios(raw: str) -> list[str]:
 def main() -> int:
     _ensure_repo_on_path()
 
-    from services.crypto_lifecycle_drills import DEFAULT_SCENARIOS, run_crypto_lifecycle_drills
+    from services.crypto_lifecycle_drills import (
+        DEFAULT_SCENARIOS,
+        run_crypto_lifecycle_drills,
+    )
 
     parser = argparse.ArgumentParser(
         description="Run R119 crypto lifecycle drills and emit machine-readable evidence."

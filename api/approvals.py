@@ -13,6 +13,7 @@ try:
     from ..services.approvals.models import ApprovalStatus
     from ..services.approvals.service import get_approval_service
     from ..services.audit import emit_audit_event
+    from ..services.management_query import bounded_scan_collect, normalize_limit_offset
     from ..services.webhook_auth import AuthError
 except ImportError:
     # Fallback for ComfyUI's non-package loader or ad-hoc imports.
@@ -20,6 +21,10 @@ except ImportError:
     from services.approvals.models import ApprovalStatus
     from services.approvals.service import get_approval_service
     from services.audit import emit_audit_event  # type: ignore
+    from services.management_query import (  # type: ignore
+        bounded_scan_collect,
+        normalize_limit_offset,
+    )
     from services.webhook_auth import AuthError
 
 logger = logging.getLogger("ComfyUI-OpenClaw.api.approvals")
@@ -106,8 +111,13 @@ class ApprovalHandlers:
 
         # Parse query params
         status_filter = request.query.get("status")
-        limit = int(request.query.get("limit", "100"))
-        offset = int(request.query.get("offset", "0"))
+        page = normalize_limit_offset(
+            request.query,
+            default_limit=100,
+            max_limit=500,
+            default_offset=0,
+            max_offset=5000,
+        )
 
         # Validate and convert status
         status = None
@@ -120,17 +130,33 @@ class ApprovalHandlers:
                 )
 
         # Get approvals
+        # R95: bounded scan window protects API serialization path and keeps
+        # malformed-record behavior deterministic without swallowing service errors.
+        scan_cap = max(page.offset + page.limit + 200, page.limit * 10)
         approvals = self._service.list_all(
             status=status,
-            limit=min(limit, 500),
-            offset=offset,
+            limit=min(scan_cap, 5000),
+            offset=0,
+        )
+        page_result = bounded_scan_collect(
+            approvals,
+            skip=page.offset,
+            take=page.limit,
+            scan_cap=min(scan_cap, 5000),
+            serializer=lambda a: a.to_dict(),
         )
 
         return web.json_response(
             {
-                "approvals": [a.to_dict() for a in approvals],
-                "count": len(approvals),
+                "approvals": page_result.items,
+                "count": len(page_result.items),
                 "pending_count": self._service.count_pending(),
+                "pagination": {
+                    "limit": page.limit,
+                    "offset": page.offset,
+                    "warnings": page.warnings,
+                },
+                "scan": page_result.to_dict(),
             }
         )
 

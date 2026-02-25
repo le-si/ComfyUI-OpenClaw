@@ -44,9 +44,14 @@ class TestR119CryptoLifecycleDrills(unittest.TestCase):
         # Emergency revoke / token compromise must fail-closed.
         self.assertEqual(drills["emergency_revoke"]["result"]["status"], "pass")
         self.assertTrue(
-            any(a["passed"] for a in drills["emergency_revoke"]["fail_closed_assertions"])
+            any(
+                a["passed"]
+                for a in drills["emergency_revoke"]["fail_closed_assertions"]
+            )
         )
-        self.assertEqual(drills["token_compromise"]["result"]["reject_reason"], "token_revoked")
+        self.assertEqual(
+            drills["token_compromise"]["result"]["reject_reason"], "token_revoked"
+        )
         self.assertTrue(
             drills["token_compromise"]["result"]["scope_widened"] is False,
             "Drill flow must not widen privileges",

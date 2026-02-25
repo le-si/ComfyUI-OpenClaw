@@ -24,11 +24,13 @@ except ModuleNotFoundError:  # pragma: no cover
 if __package__ and "." in __package__:
     from ..services.access_control import require_observability_access
     from ..services.job_events import get_job_event_store
+    from ..services.management_query import normalize_cursor_limit
     from ..services.metrics import metrics
     from ..services.rate_limit import check_rate_limit
 else:  # pragma: no cover
     from services.access_control import require_observability_access  # type: ignore
     from services.job_events import get_job_event_store  # type: ignore
+    from services.management_query import normalize_cursor_limit  # type: ignore
     from services.metrics import metrics  # type: ignore
     from services.rate_limit import check_rate_limit  # type: ignore
 
@@ -193,29 +195,76 @@ async def events_poll_handler(request: web.Request) -> web.Response:
 
     store = get_job_event_store()
 
-    # Parse query params
-    try:
-        since = int(request.query.get("since", "0"))
-    except ValueError:
-        since = 0
-
+    # R95: deterministic pagination normalization + bounded scan diagnostics
     prompt_id = request.query.get("prompt_id")
-
-    try:
-        limit = max(1, min(int(request.query.get("limit", "50")), 200))
-    except ValueError:
-        limit = 50
-
-    events = store.events_since(
-        last_seq=since,
-        limit=limit,
-        prompt_id=prompt_id,
+    page = normalize_cursor_limit(
+        request.query,
+        cursor_key="since",
+        default_cursor=0,
+        min_cursor=0,
+        default_limit=50,
+        max_limit=200,
     )
+    since_requested = int(page.cursor or 0)
+    latest_seq = store.latest_seq()
+
+    cursor_status = "ok"
+    since_effective = since_requested
+    if since_requested > latest_seq:
+        cursor_status = "future_cursor_reset"
+        since_effective = latest_seq
+        page.warnings.append(
+            {
+                "code": "R95_STALE_CURSOR_FUTURE",
+                "field": "since",
+                "raw": str(since_requested),
+                "normalized": since_effective,
+            }
+        )
+
+    scan_cap = max(page.limit * 10, 500)
+    events, scan = store.events_since_bounded(
+        last_seq=since_effective,
+        limit=page.limit,
+        prompt_id=prompt_id,
+        scan_cap=scan_cap,
+    )
+
+    earliest_retained = scan.get("earliest_retained_seq")
+    if (
+        isinstance(earliest_retained, int)
+        and since_effective != 0
+        and since_effective < (earliest_retained - 1)
+    ):
+        cursor_status = "stale_cursor_reset"
+        since_effective = max(0, earliest_retained - 1)
+        page.warnings.append(
+            {
+                "code": "R95_STALE_CURSOR_RESET",
+                "field": "since",
+                "raw": str(since_requested),
+                "normalized": since_effective,
+            }
+        )
+        events, scan = store.events_since_bounded(
+            last_seq=since_effective,
+            limit=page.limit,
+            prompt_id=prompt_id,
+            scan_cap=scan_cap,
+        )
 
     return web.json_response(
         {
             "ok": True,
             "events": [e.to_dict() for e in events],
-            "latest_seq": store.latest_seq(),
+            "latest_seq": latest_seq,
+            "pagination": {
+                "limit": page.limit,
+                "since_requested": since_requested,
+                "since_effective": since_effective,
+                "cursor_status": cursor_status,
+                "warnings": page.warnings,
+            },
+            "scan": scan,
         }
     )

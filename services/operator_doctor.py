@@ -278,6 +278,131 @@ def check_contract_files(report: DoctorReport, pack_root: Path) -> None:
             )
 
 
+def check_compatibility_matrix_governance(
+    report: DoctorReport, pack_root: Path
+) -> None:
+    """
+    R90: Compatibility matrix freshness + anchor drift visibility.
+
+    Read-only local check. Uses optional env overrides for observed anchors:
+    - OPENCLAW_COMPAT_ANCHOR_COMFYUI
+    - OPENCLAW_COMPAT_ANCHOR_COMFYUI_FRONTEND
+    - OPENCLAW_COMPAT_ANCHOR_DESKTOP
+    """
+    matrix_path = pack_root / "docs" / "release" / "compatibility_matrix.md"
+    if not matrix_path.exists():
+        report.add(
+            CheckResult(
+                name="compatibility_matrix_governance",
+                severity=Severity.SKIP.value,
+                message="Compatibility matrix file missing",
+            )
+        )
+        return
+
+    try:
+        from .compatibility_matrix_governance import (
+            detect_anchor_drift,
+            normalize_observed_anchors,
+            read_matrix_document,
+            validate_metadata,
+        )
+    except Exception as e:
+        report.add(
+            CheckResult(
+                name="compatibility_matrix_governance",
+                severity=Severity.WARN.value,
+                message="Compatibility matrix governance helpers unavailable",
+                detail=str(e),
+            )
+        )
+        return
+
+    doc = read_matrix_document(matrix_path)
+    validation = validate_metadata(doc.get("metadata"))
+    observed = normalize_observed_anchors(
+        comfyui=os.environ.get("OPENCLAW_COMPAT_ANCHOR_COMFYUI"),
+        comfyui_frontend=os.environ.get("OPENCLAW_COMPAT_ANCHOR_COMFYUI_FRONTEND"),
+        desktop=os.environ.get("OPENCLAW_COMPAT_ANCHOR_DESKTOP"),
+    )
+    drift = detect_anchor_drift((doc.get("metadata") or {}).get("anchors"), observed)
+
+    report.environment["compat_matrix_validation_code"] = str(
+        validation.get("code", "")
+    )
+    if validation.get("age_days") is not None:
+        report.environment["compat_matrix_age_days"] = str(validation["age_days"])
+    report.environment["compat_matrix_drift_code"] = str(drift.get("code", ""))
+
+    if not validation.get("ok"):
+        report.add(
+            CheckResult(
+                name="compatibility_matrix_governance",
+                severity=Severity.WARN.value,
+                message="Compatibility matrix metadata invalid",
+                detail=json.dumps(
+                    {
+                        "doc_issues": doc.get("issues", []),
+                        "violations": validation.get("violations", []),
+                    },
+                    ensure_ascii=False,
+                ),
+                remediation=(
+                    "Repair the metadata block in docs/release/compatibility_matrix.md "
+                    "or run scripts/compatibility_matrix_refresh.py --apply."
+                ),
+            )
+        )
+        return
+
+    age_days = validation.get("age_days")
+    status = validation.get("status")
+    if status in ("warning", "stale"):
+        report.add(
+            CheckResult(
+                name="compatibility_matrix_governance",
+                severity=Severity.WARN.value,
+                message=(
+                    "Compatibility matrix age exceeds warning policy"
+                    if status == "warning"
+                    else "Compatibility matrix is stale"
+                ),
+                detail=json.dumps(
+                    {
+                        "age_days": age_days,
+                        "warn_age_days": validation.get("warn_age_days"),
+                        "max_age_days": validation.get("max_age_days"),
+                    }
+                ),
+                remediation=(
+                    "Refresh and validate the compatibility matrix before release tagging "
+                    "(scripts/compatibility_matrix_refresh.py)."
+                ),
+            )
+        )
+    else:
+        report.add(
+            CheckResult(
+                name="compatibility_matrix_governance",
+                severity=Severity.PASS.value,
+                message=f"Compatibility matrix metadata fresh (age={age_days}d)",
+            )
+        )
+
+    if not drift.get("ok"):
+        report.add(
+            CheckResult(
+                name="compatibility_matrix_anchor_drift",
+                severity=Severity.WARN.value,
+                message="Compatibility matrix anchor drift detected",
+                detail=json.dumps(drift.get("drift", []), ensure_ascii=False),
+                remediation=(
+                    "Refresh matrix anchors and publish updated evidence before release."
+                ),
+            )
+        )
+
+
 def check_state_dir(report: DoctorReport) -> None:
     """Check state directory accessibility."""
     state_dir = os.environ.get("MOLTBOT_STATE_DIR") or os.environ.get(
@@ -727,6 +852,7 @@ def run_doctor(pack_root: Optional[Path] = None) -> DoctorReport:
     check_state_dir(report)
     check_token_posture(report)
     check_contract_files(report, pack_root)
+    check_compatibility_matrix_governance(report, pack_root)  # R90
     check_core_imports(report)
 
     report.build_summary()

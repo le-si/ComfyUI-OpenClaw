@@ -35,7 +35,9 @@ class TestS66ConfigApiGuardrails(unittest.TestCase):
         mock_guardrails.return_value = {
             "status": "degraded",
             "code": "S66_GUARDRAILS_DEGRADED",
-            "violations": [{"code": "S66_INVALID_INT", "path": "timeout_retry.llm_timeout_cap_sec"}],
+            "violations": [
+                {"code": "S66_INVALID_INT", "path": "timeout_retry.llm_timeout_cap_sec"}
+            ],
             "values": {},
             "sources": {},
             "runtime_only": True,

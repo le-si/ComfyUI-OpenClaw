@@ -182,6 +182,73 @@ class JobEventStore:
                 break
         return results
 
+    def events_since_bounded(
+        self,
+        *,
+        last_seq: int = 0,
+        limit: int = 100,
+        prompt_id: Optional[str] = None,
+        scan_cap: int = 2000,
+    ) -> tuple[List[JobEvent], Dict[str, Any]]:
+        """
+        R95: Bounded scan variant of events_since() for management endpoints.
+
+        Prevents full-buffer traversal when many entries are skipped due to TTL,
+        prompt filter, or stale cursor ranges. Returns diagnostics so the API can
+        surface deterministic pagination behavior.
+        """
+        now = time.time()
+        all_events = self._queue.get_all()
+        if scan_cap < 1:
+            scan_cap = 1
+
+        results: List[JobEvent] = []
+        scanned = 0
+        earliest_retained_seq: Optional[int] = None
+        latest_retained_seq: Optional[int] = None
+
+        for evt in all_events:
+            if scanned >= scan_cap:
+                break
+            scanned += 1
+
+            if evt.seq <= last_seq:
+                continue
+            if now - evt.timestamp > EVENT_TTL_SEC:
+                continue
+            if prompt_id and evt.prompt_id != prompt_id:
+                continue
+
+            if earliest_retained_seq is None:
+                earliest_retained_seq = evt.seq
+            latest_retained_seq = evt.seq
+
+            results.append(evt)
+            if len(results) >= limit:
+                break
+
+        # If we didn't collect any matching events, still compute retained bounds
+        # from a second cheap pass to support stale cursor diagnostics.
+        if earliest_retained_seq is None or latest_retained_seq is None:
+            for evt in all_events:
+                if evt.seq <= 0:
+                    continue
+                if now - evt.timestamp > EVENT_TTL_SEC:
+                    continue
+                if prompt_id and evt.prompt_id != prompt_id:
+                    continue
+                if earliest_retained_seq is None:
+                    earliest_retained_seq = evt.seq
+                latest_retained_seq = evt.seq
+
+        return results, {
+            "scanned": scanned,
+            "scan_cap": scan_cap,
+            "truncated": scanned >= scan_cap and len(results) < limit,
+            "earliest_retained_seq": earliest_retained_seq,
+            "latest_retained_seq": latest_retained_seq,
+        }
+
     def latest_seq(self) -> int:
         """Return the latest sequence number."""
         with self._lock:
