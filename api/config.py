@@ -126,6 +126,7 @@ except Exception:
     get_apply_semantics,
     get_effective_config,
     get_llm_egress_controls,
+    get_runtime_guardrails,
     get_settings_schema,
     is_loopback_client,
     update_config,
@@ -139,10 +140,20 @@ except Exception:
         "get_apply_semantics",
         "get_effective_config",
         "get_llm_egress_controls",
+        "get_runtime_guardrails",
         "get_settings_schema",
         "is_loopback_client",
         "update_config",
     ),
+)
+(
+    CODE_RUNTIME_ONLY_PERSIST_FORBIDDEN,
+    payload_contains_runtime_guardrails,
+) = import_attrs_dual(
+    __package__,
+    "..services.runtime_guardrails",
+    "services.runtime_guardrails",
+    ("CODE_RUNTIME_ONLY_PERSIST_FORBIDDEN", "payload_contains_runtime_guardrails"),
 )
 
 logger = logging.getLogger("ComfyUI-OpenClaw.api.config")
@@ -268,12 +279,28 @@ async def config_get_handler(request: web.Request) -> web.Response:
 
     try:
         effective, sources = get_effective_config()
+        guardrails = get_runtime_guardrails()
+        if guardrails.get("status") != "ok":
+            token_info = resolve_token_info(request)
+            emit_audit_event(
+                action="runtime.guardrails",
+                target="runtime_guardrails",
+                outcome="warn",
+                token_info=token_info,
+                status_code=200,
+                details={
+                    "code": guardrails.get("code"),
+                    "violations": guardrails.get("violations", []),
+                },
+                request=request,
+            )
 
         return web.json_response(
             {
                 "ok": True,
                 "config": effective,
                 "sources": sources,
+                "runtime_guardrails": guardrails,
                 "providers": PROVIDER_CATALOG,
                 # R70: Settings schema for frontend type coercion / validation
                 "schema": get_settings_schema(),
@@ -687,6 +714,30 @@ async def config_put_handler(request: web.Request) -> web.Response:
             {
                 "ok": False,
                 "error": "Invalid JSON body",
+            },
+            status=400,
+        )
+
+    # S66: Runtime guardrails are ENV-driven + runtime-only and must never be
+    # persisted via config writes (prevents config drift / silent downgrade paths).
+    if payload_contains_runtime_guardrails(body):
+        emit_audit_event(
+            action="config.update",
+            target="config.json",
+            outcome="deny",
+            token_info=token_info,
+            status_code=400,
+            details={
+                "reason": "runtime_guardrails_runtime_only",
+                "code": CODE_RUNTIME_ONLY_PERSIST_FORBIDDEN,
+            },
+            request=request,
+        )
+        return web.json_response(
+            {
+                "ok": False,
+                "error": "runtime_guardrails are runtime-only (ENV-driven) and cannot be persisted via /config",
+                "code": CODE_RUNTIME_ONLY_PERSIST_FORBIDDEN,
             },
             status=400,
         )

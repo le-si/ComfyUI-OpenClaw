@@ -73,6 +73,8 @@ VIOLATION_CODE_MAP: Dict[str, str] = {
     "s45_exposed_no_auth": "SEC-S45-001",
     "s45_dangerous_override": "SEC-S45-002",
     "s45_hardened_loopback_no_admin": "SEC-S45-003",
+    # S66 runtime guardrails
+    "s66_runtime_guardrails": "SEC-S66-001",
 }
 
 # Reason codes that trigger high_risk_mode
@@ -1265,6 +1267,67 @@ def check_s45_exposure_posture(report: SecurityReport) -> None:
 
 
 # ---------------------------------------------------------------------------
+# Security checks — S66 runtime guardrails diagnostics
+# ---------------------------------------------------------------------------
+
+
+def check_runtime_guardrails(report: SecurityReport) -> None:
+    """S66: Surface centralized runtime guardrail diagnostics."""
+    try:
+        from .runtime_guardrails import get_runtime_guardrails_snapshot
+    except ImportError:
+        try:
+            from services.runtime_guardrails import (  # type: ignore
+                get_runtime_guardrails_snapshot,
+            )
+        except ImportError:
+            report.add(
+                SecurityCheckResult(
+                    name="s66_runtime_guardrails",
+                    severity=SecuritySeverity.SKIP.value,
+                    message="S66 runtime guardrails module unavailable",
+                    category="runtime",
+                )
+            )
+            return
+
+    snapshot = get_runtime_guardrails_snapshot()
+    report.environment["runtime_guardrails_status"] = str(snapshot.get("status", "ok"))
+    report.environment["runtime_guardrails_code"] = str(snapshot.get("code", ""))
+    report.environment["runtime_guardrails_violation_count"] = str(
+        len(snapshot.get("violations", []))
+    )
+
+    if snapshot.get("status") == "ok":
+        report.add(
+            SecurityCheckResult(
+                name="s66_runtime_guardrails",
+                severity=SecuritySeverity.PASS.value,
+                message="S66 runtime guardrails diagnostics OK",
+                category="runtime",
+            )
+        )
+        return
+
+    violations = snapshot.get("violations", [])
+    first = violations[0] if violations else {}
+    report.add(
+        SecurityCheckResult(
+            name="s66_runtime_guardrails",
+            severity=SecuritySeverity.WARN.value,
+            message="S66 runtime guardrails degraded (invalid/clamped ENV values)",
+            category="runtime",
+            detail=(
+                f"code={snapshot.get('code')} "
+                f"path={first.get('path','')} "
+                f"violation={first.get('code','')}"
+            ).strip(),
+            remediation="Fix invalid OPENCLAW guardrail environment values or remove overrides.",
+        )
+    )
+
+
+# ---------------------------------------------------------------------------
 # Main runner
 # ---------------------------------------------------------------------------
 
@@ -1297,6 +1360,7 @@ def run_security_doctor(
     check_state_dir_permissions(report)
     check_redaction_drift(report)
     check_comfyui_runtime(report)
+    check_runtime_guardrails(report)  # S66
     check_feature_flags(report)
     check_api_key_posture(report)
     check_connector_security_posture(report)  # S32

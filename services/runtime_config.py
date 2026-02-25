@@ -36,6 +36,57 @@ except ImportError:
             return True
 
 
+# S66: Runtime guardrails (centralized ENV-driven runtime-only limits/diagnostics)
+try:
+    from .runtime_guardrails import (
+        get_runtime_guardrails_snapshot,
+        strip_runtime_only_config_fields,
+    )
+except ImportError:
+    try:
+        from services.runtime_guardrails import (  # type: ignore
+            get_runtime_guardrails_snapshot,
+            strip_runtime_only_config_fields,
+        )
+    except ImportError:
+        # Compatibility fallback (should not happen in normal runtime/tests)
+        def get_runtime_guardrails_snapshot(*, emit_audit: bool = False):  # type: ignore
+            return {
+                "status": "ok",
+                "code": "S66_GUARDRAILS_OK",
+                "deployment_profile": (
+                    os.environ.get("OPENCLAW_DEPLOYMENT_PROFILE") or "local"
+                ),
+                "runtime_profile": (
+                    os.environ.get("OPENCLAW_RUNTIME_PROFILE") or "minimal"
+                ),
+                "runtime_only": True,
+                "values": {
+                    "retention": {
+                        "job_event_buffer_size": 500,
+                        "job_event_ttl_sec": 600,
+                    },
+                    "timeout_retry": {
+                        "llm_timeout_cap_sec": 300,
+                        "llm_max_retries_cap": 10,
+                    },
+                    "bounded_queues": {
+                        "max_inflight_submits_total": 2,
+                        "max_rendered_workflow_bytes": 512 * 1024,
+                    },
+                    "provider_safety": {
+                        "allow_any_public_llm_host_default": False,
+                        "allow_insecure_base_url_default": False,
+                    },
+                },
+                "sources": {},
+                "violations": [],
+            }
+
+        def strip_runtime_only_config_fields(config_blob):  # type: ignore
+            return config_blob, []
+
+
 # Config file location (under state dir)
 try:
     # Prefer package-relative imports when running as a ComfyUI custom node pack.
@@ -181,12 +232,48 @@ def _clamp(value: int, min_val: int, max_val: int) -> int:
     return max(min_val, min(max_val, value))
 
 
+def _s66_timeout_retry_caps() -> Tuple[int, int]:
+    """Return dynamic caps for timeout/retry, bounded by legacy constraints."""
+    snapshot = get_runtime_guardrails_snapshot()
+    timeout_caps = snapshot.get("values", {}).get("timeout_retry", {})
+    timeout_cap = int(
+        timeout_caps.get("llm_timeout_cap_sec", CONSTRAINTS["timeout_sec"][1])
+    )
+    retry_cap = int(
+        timeout_caps.get("llm_max_retries_cap", CONSTRAINTS["max_retries"][1])
+    )
+    timeout_cap = min(timeout_cap, CONSTRAINTS["timeout_sec"][1])
+    retry_cap = min(retry_cap, CONSTRAINTS["max_retries"][1])
+    return timeout_cap, retry_cap
+
+
+def _get_constraint_range(key: str) -> Tuple[int, int]:
+    """Resolve value constraint range, applying S66 runtime caps where relevant."""
+    min_val, max_val = CONSTRAINTS[key]
+    if key == "timeout_sec":
+        timeout_cap, _ = _s66_timeout_retry_caps()
+        max_val = min(max_val, timeout_cap)
+    elif key == "max_retries":
+        _, retry_cap = _s66_timeout_retry_caps()
+        max_val = min(max_val, retry_cap)
+    return min_val, max_val
+
+
 def _load_file_config() -> Dict[str, Any]:
     """Load config from file if exists."""
     if os.path.exists(CONFIG_FILE):
         try:
             with open(CONFIG_FILE, "r", encoding="utf-8") as f:
-                return json.load(f)
+                raw = json.load(f)
+            if isinstance(raw, dict):
+                sanitized, notices = strip_runtime_only_config_fields(raw)
+                if notices:
+                    logger.warning(
+                        "S66: Ignoring runtime-only guardrail keys from persisted config (%s)",
+                        ", ".join(n.get("path", "?") for n in notices),
+                    )
+                return sanitized
+            return {}
         except (json.JSONDecodeError, OSError) as e:
             logger.warning(f"Failed to load config file: {e}")
     return {}
@@ -195,9 +282,15 @@ def _load_file_config() -> Dict[str, Any]:
 def _save_file_config(config: Dict[str, Any]) -> bool:
     """Save config to file."""
     try:
+        config_to_save, notices = strip_runtime_only_config_fields(config)
+        if notices:
+            logger.warning(
+                "S66: Stripped runtime-only guardrail keys before config save (%s)",
+                ", ".join(n.get("path", "?") for n in notices),
+            )
         os.makedirs(os.path.dirname(CONFIG_FILE), exist_ok=True)
         with open(CONFIG_FILE, "w", encoding="utf-8") as f:
-            json.dump(config, f, indent=2)
+            json.dump(config_to_save, f, indent=2)
         logger.info(f"Saved config to {CONFIG_FILE}")
         return True
     except OSError as e:
@@ -264,10 +357,15 @@ def get_llm_egress_controls(provider: str, base_url: str) -> Dict[str, Any]:
     env_hosts = {h.lower().strip() for h in allowed_hosts_str.split(",") if h.strip()}
     allowed_hosts = set(get_default_public_llm_hosts()) | env_hosts
 
+    guardrails = get_runtime_guardrails_snapshot()
+    provider_safety = guardrails.get("values", {}).get("provider_safety", {})
+    default_allow_any = bool(
+        provider_safety.get("allow_any_public_llm_host_default", False)
+    )
     allow_any = _env_flag(
         "OPENCLAW_ALLOW_ANY_PUBLIC_LLM_HOST",
         "MOLTBOT_ALLOW_ANY_PUBLIC_LLM_HOST",
-        default=False,
+        default=default_allow_any,
     )
 
     allow_loopback_hosts: Optional[set[str]] = None
@@ -348,6 +446,8 @@ def get_effective_config() -> Tuple[Dict[str, Any], Dict[str, str]]:
         k for k in sorted(ALLOWED_LLM_KEYS) if k not in ENV_MAPPINGS
     ]
 
+    timeout_cap, retry_cap = _s66_timeout_retry_caps()
+
     for key in ordered_keys:
         # 1. Check ENV override
         env_val = _get_env_value(key)
@@ -359,7 +459,12 @@ def get_effective_config() -> Tuple[Dict[str, Any], Dict[str, str]]:
             if key in CONSTRAINTS:
                 try:
                     env_val = int(env_val)
-                    env_val = _clamp(env_val, *CONSTRAINTS[key])
+                    if key == "timeout_sec":
+                        env_val = _clamp(env_val, CONSTRAINTS[key][0], timeout_cap)
+                    elif key == "max_retries":
+                        env_val = _clamp(env_val, CONSTRAINTS[key][0], retry_cap)
+                    else:
+                        env_val = _clamp(env_val, *CONSTRAINTS[key])
                 except ValueError:
                     env_val = DEFAULTS["llm"].get(key)
             effective[key] = env_val
@@ -370,7 +475,12 @@ def get_effective_config() -> Tuple[Dict[str, Any], Dict[str, str]]:
         if key in file_config:
             val = file_config[key]
             if key in CONSTRAINTS and isinstance(val, (int, float)):
-                val = _clamp(int(val), *CONSTRAINTS[key])
+                if key == "timeout_sec":
+                    val = _clamp(int(val), CONSTRAINTS[key][0], timeout_cap)
+                elif key == "max_retries":
+                    val = _clamp(int(val), CONSTRAINTS[key][0], retry_cap)
+                else:
+                    val = _clamp(int(val), *CONSTRAINTS[key])
             effective[key] = val
             sources[key] = "file"
             continue
@@ -385,6 +495,11 @@ def get_effective_config() -> Tuple[Dict[str, Any], Dict[str, str]]:
 def get_settings_schema() -> dict:
     """R70: Return the full settings schema map for frontend consumption."""
     return get_schema_map()
+
+
+def get_runtime_guardrails() -> Dict[str, Any]:
+    """S66: Return centralized runtime guardrails diagnostics snapshot."""
+    return get_runtime_guardrails_snapshot()
 
 
 def validate_config_update(updates: Dict[str, Any]) -> Tuple[Dict[str, Any], list]:
@@ -414,7 +529,8 @@ def validate_config_update(updates: Dict[str, Any]) -> Tuple[Dict[str, Any], lis
             if not isinstance(val, (int, float)):
                 errors.append(f"{key} must be a number")
                 continue
-            val = _clamp(int(val), *CONSTRAINTS[key])
+            min_val, max_val = _get_constraint_range(key)
+            val = _clamp(int(val), min_val, max_val)
         elif key == "provider":
             if not isinstance(val, str):
                 errors.append("provider must be a string")
@@ -704,6 +820,7 @@ class RuntimeConfig:
     def __init__(self):
         # LLM Settings
         self.llm, _ = get_effective_config()
+        self.runtime_guardrails = get_runtime_guardrails_snapshot()
 
         # Feature Flags
         self.bridge_enabled = _env_flag(
