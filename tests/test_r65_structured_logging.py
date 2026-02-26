@@ -20,7 +20,10 @@ class TestR65StructuredLogging(unittest.TestCase):
         self.logger.handlers = []
 
     def test_json_formatter_emits_event_and_fields(self):
-        from services.structured_logging import OpenClawJsonFormatter, emit_structured_log
+        from services.structured_logging import (
+            OpenClawJsonFormatter,
+            emit_structured_log,
+        )
 
         self.logger.handlers[0].setFormatter(OpenClawJsonFormatter())
         with patch.dict(os.environ, {"OPENCLAW_LOG_FORMAT": "json"}, clear=False):
@@ -48,7 +51,10 @@ class TestR65StructuredLogging(unittest.TestCase):
         sl.reset_structured_logging_state_for_tests()
 
     def test_sanitize_fields_truncates_long_values(self):
-        from services.structured_logging import emit_structured_log, OpenClawJsonFormatter
+        from services.structured_logging import (
+            OpenClawJsonFormatter,
+            emit_structured_log,
+        )
 
         self.logger.handlers[0].setFormatter(OpenClawJsonFormatter())
         with patch.dict(os.environ, {"OPENCLAW_STRUCTURED_LOGS": "1"}, clear=False):

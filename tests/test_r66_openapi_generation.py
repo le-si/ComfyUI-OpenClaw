@@ -31,7 +31,7 @@ class TestR66OpenApiGeneration(unittest.TestCase):
             out = write_openapi_yaml(Path(td) / "openapi.yaml")
             self.assertTrue(out.exists())
             content = out.read_text(encoding="utf-8")
-            self.assertIn("openapi: \"3.0.3\"", content)
+            self.assertIn('openapi: "3.0.3"', content)
 
     def test_repo_openapi_yaml_is_current(self):
         from services.openapi_generation import generate_openapi_yaml

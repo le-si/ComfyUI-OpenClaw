@@ -44,15 +44,23 @@ def _is_separator_row(line: str) -> bool:
 
 
 def _join_base(base_path: str, path: str) -> str:
-    if path.startswith("/openclaw/") or path.startswith("/moltbot/") or path.startswith("/bridge/"):
+    if (
+        path.startswith("/openclaw/")
+        or path.startswith("/moltbot/")
+        or path.startswith("/bridge/")
+    ):
         return path
     if not path.startswith("/"):
         path = "/" + path
     return (base_path.rstrip("/") + "/" + path.lstrip("/")).rstrip()
 
 
-def parse_api_contract_markdown(path: Optional[str | Path] = None) -> List[ContractRoute]:
-    path = Path(path) if path else (_repo_root() / "docs" / "release" / "api_contract.md")
+def parse_api_contract_markdown(
+    path: Optional[str | Path] = None,
+) -> List[ContractRoute]:
+    path = (
+        Path(path) if path else (_repo_root() / "docs" / "release" / "api_contract.md")
+    )
     lines = path.read_text(encoding="utf-8").splitlines()
 
     routes: List[ContractRoute] = []
@@ -71,7 +79,11 @@ def parse_api_contract_markdown(path: Optional[str | Path] = None) -> List[Contr
 
         if line.strip().startswith("|"):
             header_cells = _split_md_row(line)
-            if idx + 1 < len(lines) and lines[idx + 1].strip().startswith("|") and _is_separator_row(lines[idx + 1]):
+            if (
+                idx + 1 < len(lines)
+                and lines[idx + 1].strip().startswith("|")
+                and _is_separator_row(lines[idx + 1])
+            ):
                 headers = _normalize_header_row(header_cells)
                 idx += 2
                 while idx < len(lines) and lines[idx].strip().startswith("|"):
@@ -92,10 +104,17 @@ def parse_api_contract_markdown(path: Optional[str | Path] = None) -> List[Contr
                     if "..." in raw_path:
                         idx += 1
                         continue
-                    if current_base_path and current_section in {"1.5 Schedules & Approvals", "1.6 Bridge (Sidecar)"}:
+                    if current_base_path and current_section in {
+                        "1.5 Schedules & Approvals",
+                        "1.6 Bridge (Sidecar)",
+                    }:
                         full_path = _join_base(current_base_path, raw_path)
                     else:
-                        full_path = raw_path if raw_path.startswith("/") else _join_base(current_base_path or "/openclaw/", raw_path)
+                        full_path = (
+                            raw_path
+                            if raw_path.startswith("/")
+                            else _join_base(current_base_path or "/openclaw/", raw_path)
+                        )
                     legacy_path = row_map.get("legacy path")
                     if legacy_path:
                         legacy_path = legacy_path.strip("` ")
@@ -160,7 +179,11 @@ def build_openapi_document(routes: Iterable[ContractRoute]) -> Dict[str, Any]:
             operation["x-openclaw-auth-tier"] = normalized_auth
         if security:
             operation["security"] = security
-        if route.path.endswith("/stream") or route.path.endswith("/planner/stream") or route.path.endswith("/refiner/stream"):
+        if (
+            route.path.endswith("/stream")
+            or route.path.endswith("/planner/stream")
+            or route.path.endswith("/refiner/stream")
+        ):
             operation["x-openclaw-streaming"] = True
         if "{" in route.path and "}" in route.path:
             params = []
@@ -260,7 +283,9 @@ def generate_openapi_yaml(path: Optional[str | Path] = None) -> str:
     return to_yaml(doc) + "\n"
 
 
-def write_openapi_yaml(output_path: str | Path, *, contract_path: Optional[str | Path] = None) -> Path:
+def write_openapi_yaml(
+    output_path: str | Path, *, contract_path: Optional[str | Path] = None
+) -> Path:
     out = Path(output_path)
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(generate_openapi_yaml(contract_path), encoding="utf-8")

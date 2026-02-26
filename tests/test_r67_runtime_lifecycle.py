@@ -34,7 +34,9 @@ class TestR67RuntimeLifecycle(unittest.TestCase):
                 )
             ]
             hist._loaded = True  # noqa: SLF001
-            with patch("services.scheduler.history._get_history_path", return_value=path):
+            with patch(
+                "services.scheduler.history._get_history_path", return_value=path
+            ):
                 with patch("services.scheduler.history.os.replace") as mock_replace:
                     ok = hist.flush()
                     self.assertTrue(ok)

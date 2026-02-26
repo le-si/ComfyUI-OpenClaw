@@ -20,17 +20,25 @@ _LOCK = threading.RLock()
 
 def is_structured_logging_enabled() -> bool:
     value = (
-        os.environ.get("OPENCLAW_LOG_FORMAT")
-        or os.environ.get("MOLTBOT_LOG_FORMAT")
-        or ""
-    ).strip().lower()
+        (
+            os.environ.get("OPENCLAW_LOG_FORMAT")
+            or os.environ.get("MOLTBOT_LOG_FORMAT")
+            or ""
+        )
+        .strip()
+        .lower()
+    )
     if value == "json":
         return True
     flag = (
-        os.environ.get("OPENCLAW_STRUCTURED_LOGS")
-        or os.environ.get("MOLTBOT_STRUCTURED_LOGS")
-        or ""
-    ).strip().lower()
+        (
+            os.environ.get("OPENCLAW_STRUCTURED_LOGS")
+            or os.environ.get("MOLTBOT_STRUCTURED_LOGS")
+            or ""
+        )
+        .strip()
+        .lower()
+    )
     return flag in {"1", "true", "yes", "on"}
 
 

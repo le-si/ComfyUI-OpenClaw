@@ -41,8 +41,14 @@ def flush_runtime_state(*, stop_scheduler_runner: bool = True) -> Dict[str, Any]
             lambda: _import_runner_module().stop_scheduler(),
         )
 
-    _step("scheduler.store.flush", lambda: _import_schedule_storage().get_schedule_store().flush())
-    _step("scheduler.history.flush", lambda: _import_scheduler_history().get_run_history().flush())
+    _step(
+        "scheduler.store.flush",
+        lambda: _import_schedule_storage().get_schedule_store().flush(),
+    )
+    _step(
+        "scheduler.history.flush",
+        lambda: _import_scheduler_history().get_run_history().flush(),
+    )
     _step("failover.flush", lambda: _import_failover().get_failover_state().flush())
 
     return report
@@ -61,10 +67,22 @@ def reset_runtime_state(*, flush_first: bool = True) -> Dict[str, Any]:
         report["ok"] = bool(report["flush"].get("ok", False))
 
     resets: List[tuple[str, Any]] = [
-        ("scheduler.runner.reset", lambda: _import_runner_module().reset_scheduler_runner(stop=False)),
-        ("scheduler.store.reset", lambda: _import_schedule_storage().reset_schedule_store(flush=False)),
-        ("scheduler.history.reset", lambda: _import_scheduler_history().reset_run_history(flush=False)),
-        ("failover.reset", lambda: _import_failover().reset_failover_state(flush=False)),
+        (
+            "scheduler.runner.reset",
+            lambda: _import_runner_module().reset_scheduler_runner(stop=False),
+        ),
+        (
+            "scheduler.store.reset",
+            lambda: _import_schedule_storage().reset_schedule_store(flush=False),
+        ),
+        (
+            "scheduler.history.reset",
+            lambda: _import_scheduler_history().reset_run_history(flush=False),
+        ),
+        (
+            "failover.reset",
+            lambda: _import_failover().reset_failover_state(flush=False),
+        ),
     ]
 
     for name, fn in resets:
