@@ -113,6 +113,98 @@ class TestAssistAPI(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(body["refined_positive"], "new_pos")
             self.assertEqual(body["rationale"], "Fixed hands")
 
+    async def test_planner_stream_success_emits_delta_and_final(self):
+        request = AsyncMock()
+        request.json = AsyncMock(
+            return_value={
+                "profile": "SDXL-v1",
+                "requirements": "cat",
+                "style_directives": "cinematic",
+                "seed": 123,
+            }
+        )
+
+        class FakeStreamResponse:
+            def __init__(self, status=200, headers=None):
+                self.status = status
+                self.headers = headers or {}
+                self.writes = []
+
+            async def prepare(self, _request):
+                return self
+
+            async def write(self, data):
+                self.writes.append(data)
+                return None
+
+        async def fake_run_in_thread(func, *args, **kwargs):
+            cb = kwargs.get("on_text_delta")
+            if callable(cb):
+                cb("partial-json ")
+                cb("preview")
+            return ("pos", "neg", {"width": 1024, "seed": 123})
+
+        with (
+            patch("api.assist.require_admin_token", return_value=(True, None)),
+            patch("api.assist.check_rate_limit", return_value=True),
+            patch("api.assist.web.StreamResponse", FakeStreamResponse),
+            patch("api.assist.run_in_thread", side_effect=fake_run_in_thread),
+        ):
+            resp = await self.handler.planner_stream_handler(request)
+
+        self.assertEqual(resp.status, 200)
+        text = b"".join(resp.writes).decode("utf-8", errors="replace")
+        self.assertIn("event: ready", text)
+        self.assertIn("event: delta", text)
+        self.assertIn("event: final", text)
+        self.assertIn('"positive":"pos"', text)
+        self.assertIn('"preview_chars"', text)
+
+    async def test_refiner_stream_unauthorized(self):
+        request = AsyncMock()
+        request.headers = {}
+        with patch("api.assist.require_admin_token", return_value=(False, "Denied")):
+            resp = await self.handler.refiner_stream_handler(request)
+            self.assertEqual(resp.status, 401)
+
+    async def test_planner_stream_internal_error_emits_error_event(self):
+        request = AsyncMock()
+        request.json = AsyncMock(
+            return_value={
+                "profile": "SDXL-v1",
+                "requirements": "cat",
+                "style_directives": "cinematic",
+            }
+        )
+
+        class FakeStreamResponse:
+            def __init__(self, status=200, headers=None):
+                self.status = status
+                self.headers = headers or {}
+                self.writes = []
+
+            async def prepare(self, _request):
+                return self
+
+            async def write(self, data):
+                self.writes.append(data)
+                return None
+
+        async def fake_run_in_thread(func, *args, **kwargs):
+            raise RuntimeError("boom")
+
+        with (
+            patch("api.assist.require_admin_token", return_value=(True, None)),
+            patch("api.assist.check_rate_limit", return_value=True),
+            patch("api.assist.web.StreamResponse", FakeStreamResponse),
+            patch("api.assist.run_in_thread", side_effect=fake_run_in_thread),
+        ):
+            resp = await self.handler.planner_stream_handler(request)
+
+        text = b"".join(resp.writes).decode("utf-8", errors="replace")
+        self.assertIn("event: error", text)
+        self.assertIn("Internal server error", text)
+
     async def test_compose_no_auth(self):
         """Test compose rejects unauthenticated requests."""
         request = AsyncMock()

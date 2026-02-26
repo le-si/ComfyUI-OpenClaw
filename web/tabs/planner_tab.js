@@ -43,6 +43,10 @@ export const PlannerTab = {
                                     <div id="planner-elapsed" style="font-size: 0.9em; opacity: 0.7;">Elapsed: 0s</div>
                                 </div>
                             </div>
+                            <div style="margin-top:8px;">
+                                <div style="font-size:0.85em; opacity:0.8; margin-bottom:4px;">Live Preview (best effort)</div>
+                                <textarea id="planner-stream-preview" class="openclaw-textarea openclaw-textarea moltbot-textarea" style="min-height:70px;" readonly></textarea>
+                            </div>
                             <button id="planner-cancel-btn" class="openclaw-btn openclaw-btn moltbot-btn" style="margin-top: 8px; width: 100%; background: var(--input-background); border: 1px solid var(--border-color);">Cancel</button>
                         </div>
 
@@ -90,9 +94,11 @@ export const PlannerTab = {
             const style = container.querySelector("#planner-style").value;
 
             const resDiv = container.querySelector("#planner-results");
+            const previewEl = container.querySelector("#planner-stream-preview");
 
             clearError(container);
             resDiv.style.display = "none";
+            if (previewEl) previewEl.value = "";
 
             const requestId = ++activeRequestId;
             const signal = lifecycle.begin("Preparing request...");
@@ -102,14 +108,35 @@ export const PlannerTab = {
                 await new Promise((resolve) => requestAnimationFrame(resolve));
                 lifecycle.setStage("Waiting for provider response...");
 
-                const res = await openclawApi.runPlanner(
-                    {
-                        profile,
-                        requirements: reqs,
-                        style_directives: style
-                    },
-                    signal
-                );
+                const payload = {
+                    profile,
+                    requirements: reqs,
+                    style_directives: style
+                };
+
+                let res;
+                const streamingSupported = await openclawApi.supportsAssistStreaming();
+                if (streamingSupported) {
+                    res = await openclawApi.runPlannerStream(payload, {
+                        signal,
+                        onEvent: (evt) => {
+                            if (requestId !== activeRequestId || !evt) return;
+                            if (evt.event === "stage" && evt.data?.message) {
+                                lifecycle.setStage(evt.data.message);
+                            } else if (evt.event === "delta" && typeof evt.data?.text === "string" && previewEl) {
+                                previewEl.value += evt.data.text;
+                                previewEl.scrollTop = previewEl.scrollHeight;
+                            }
+                        }
+                    });
+                    if (!res.ok && !["cancelled", "timeout"].includes(res.error || "")) {
+                        // Fallback to classic path if streaming transport/path degrades.
+                        lifecycle.setStage("Streaming unavailable, falling back...");
+                        res = await openclawApi.runPlanner(payload, signal);
+                    }
+                } else {
+                    res = await openclawApi.runPlanner(payload, signal);
+                }
 
                 if (requestId !== activeRequestId) {
                     return;

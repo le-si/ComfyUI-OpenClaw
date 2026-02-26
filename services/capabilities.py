@@ -68,6 +68,7 @@ def get_capabilities() -> dict:
             "approvals": True,
             "assist_planner": True,
             "assist_refiner": True,
+            "assist_streaming": True,  # R38 optional SSE-style assist streaming path
             "assist_automation_compose": True,
             "scheduler": True,
             "triggers": True,

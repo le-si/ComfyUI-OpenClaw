@@ -1,8 +1,8 @@
 # OpenClaw API Contract (v1)
 
 > **Status**: normative
-> **Version**: 1.0.0
-> **Date**: 2026-02-09
+> **Version**: 1.0.1
+> **Date**: 2026-02-26
 
 This document defines the public API contract for OpenClaw. It serves as the authoritative baseline for client compatibility and breaking change policies.
 
@@ -17,9 +17,11 @@ All new integrations should use the `/openclaw/` prefix. Use of `/moltbot/` is d
 | Method | Path | Legacy Path | Auth | Description |
 | :--- | :--- | :--- | :--- | :--- |
 | `GET` | `/health` | `/moltbot/health` | None | System status, uptime, and dependencies. |
-| `GET` | `/capabilities` | `/moltbot/capabilities` | None | Feature flags and supported extensions. |
+| `GET` | `/capabilities` | `/moltbot/capabilities` | None | Feature flags and supported extensions (includes optional UX/runtime features such as assist streaming support). |
 | `GET` | `/logs/tail` | `/moltbot/logs/tail` | Observability | Tail recent log lines (rate-limited). |
 | `GET` | `/trace/{prompt_id}` | `/moltbot/trace/{id}` | Observability | Get execution trace by prompt ID. |
+| `GET` | `/events` | `/moltbot/events` | Observability | List recent job lifecycle events (JSON polling fallback; includes pagination/scan diagnostics). |
+| `GET` | `/events/stream` | `/moltbot/events/stream` | Observability | SSE stream of job lifecycle events with resume support. |
 | `GET` | `/config` | `/moltbot/config` | Observability | Read-only view of sanitized provider config. |
 | `PUT` | `/config` | `/moltbot/config` | Admin | Update system configuration. |
 | `GET` | `/jobs` | `/moltbot/jobs` | Observability | List recent jobs (Stub/Not Implemented). |
@@ -35,9 +37,18 @@ All new integrations should use the `/openclaw/` prefix. Use of `/moltbot/` is d
 | `POST` | `/webhook/validate` | `/moltbot/webhook/validate` | Webhook Secret | Dry-run validation of webhook payload. |
 | `POST` | `/triggers/fire` | `/moltbot/triggers/fire` | Admin | Fire an ad-hoc workflow trigger from external system. |
 
-### 1.3 LLM & Chat
+### 1.3 Assist, LLM & Chat
 
-**Base Path**: `/openclaw/llm/`
+**Assist Base Path**: `/openclaw/assist/`
+
+| Method | Path | Legacy Path | Auth | Description |
+| :--- | :--- | :--- | :--- | :--- |
+| `POST` | `/assist/planner` | `/moltbot/assist/planner` | Admin/Local | Planner structured prompt generation. |
+| `POST` | `/assist/refiner` | `/moltbot/assist/refiner` | Admin/Local | Prompt refinement with optional image context. |
+| `POST` | `/assist/planner/stream` | `/moltbot/assist/planner/stream` | Admin/Local | Optional SSE-style planner streaming response (`text/event-stream`) with staged progress + final payload. |
+| `POST` | `/assist/refiner/stream` | `/moltbot/assist/refiner/stream` | Admin/Local | Optional SSE-style refiner streaming response (`text/event-stream`) with staged progress + final payload. |
+
+**LLM Base Path**: `/openclaw/llm/`
 
 | Method | Path | Legacy Path | Auth | Description |
 | :--- | :--- | :--- | :--- | :--- |
@@ -76,7 +87,7 @@ All new integrations should use the `/openclaw/` prefix. Use of `/moltbot/` is d
 | `DELETE` | `/schedules/{id}` | Delete a schedule. |
 | `POST` | `/schedules/{id}/run` | Manually trigger a schedule. |
 | `GET` | `/schedules/{id}/runs` | Get run history for a schedule. |
-| `GET` | `/approvals` | List pending approvals. |
+| `GET` | `/approvals` | List pending approvals (includes pagination/scan diagnostics; bounded serialization scan on malformed records). |
 | `POST` | `/approvals/{id}/approve` | Approve a pending request. |
 | `POST` | `/approvals/{id}/reject` | Reject a pending request. |
 
@@ -127,6 +138,31 @@ All JSON responses (success or error) share a common structure:
 | `429` | Too Many Requests | Rate limit or Execution Budget exceeded. |
 | `500` | Internal Error | Unhandled server exception. |
 | `503` | Unavailable | Feature disabled or service not wired. |
+
+### 2.3 SSE Endpoint Notes (Contractual Behavior)
+
+- SSE endpoints return `Content-Type: text/event-stream`.
+- Current SSE surfaces include:
+  - `/openclaw/events/stream` (job lifecycle events)
+  - optional `/openclaw/assist/planner/stream` and `/openclaw/assist/refiner/stream` (assist incremental preview path)
+- Assist streaming emits event types from the following set:
+  - `ready`
+  - `stage`
+  - `delta`
+  - `final`
+  - `error`
+  - `keepalive`
+- Clients MUST treat `final` as the source of truth for structured assist results. `delta` preview text is best-effort and may be truncated or differ from the final parsed payload.
+- Clients SHOULD gracefully fall back to non-streaming assist endpoints when streaming capability is absent or streaming transport fails.
+
+### 2.4 Pagination & Scan Diagnostics (Management Query Contract)
+
+- `GET /openclaw/events` and `GET /openclaw/approvals` include deterministic pagination normalization.
+- Responses may include `pagination` and `scan` diagnostic objects so clients/operators can detect:
+  - normalized limit/offset/cursor values
+  - stale/future cursor resets
+  - bounded scan truncation or malformed-record skips
+- Backend/runtime errors outside pagination normalization are still surfaced explicitly (not silently swallowed).
 
 ---
 

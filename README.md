@@ -39,6 +39,10 @@ This project is designed to make **ComfyUI a reliable automation target** with a
 - Adversarial verification is execution-gated (bounded fuzz + mutation smoke) in CI and local full-test/pre-push workflows with replayable artifacts
 - Wave E closeout hardening: deployment profile gates and critical flow parity are now enforced together with signed policy posture control, bounded anomaly telemetry, adversarial fuzz validation, and mutation-baseline regression sensitivity checks
 - Wave A/B/C closeout hardening: runtime/config/session stability contracts, strict outbound and supply-chain controls, and capability-aware operator guidance with bounded Parameter Lab/compare workflows
+- Runtime guardrails are enforced as a runtime-only contract with diagnostics, clamping, and reject-on-persist behavior for safety-critical limits (timeouts/retries/queue bounds/provider safety defaults)
+- Cryptographic lifecycle drills are automated with machine-readable evidence for rotation, revoke, key-loss recovery, and token-compromise fail-closed exercises
+- Management query paths now use deterministic pagination normalization and bounded scans to reduce malformed-input abuse and unbounded admin/list query cost
+- Compatibility matrix freshness/drift governance is operator-visible via Doctor checks and a repeatable refresh workflow with evidence output, reducing stale deployment assumptions before release
 
 Deployment profiles and hardening checklists:
 - [Security Deployment Guide](docs/security_deployment_guide.md) (local / LAN / public templates + self-check command)
@@ -47,6 +51,19 @@ Deployment profiles and hardening checklists:
 
 
 <details><summary><h2>Latest Updates - Click to expand</h2></summary>
+
+<details>
+
+<summary><strong>Assist streaming UX and frontend fetch-wrapper safety hardening</strong></summary>
+
+- Completed a focused assist UX + frontend transport reliability batch with full SOP verification:
+  - added optional streaming assist paths for Planner/Refiner with incremental preview updates and staged progress events
+  - added backend streaming endpoints for planner/refiner assist flows with capability-gated frontend enablement and safe fallback to the existing non-stream path
+  - added frontend live preview rendering for Planner/Refiner while preserving cancel/stale-response safety behavior
+  - added idempotent fetch-wrapper composition guards to prevent duplicate wrapper stacking during repeated frontend bootstrap/setup
+  - added backend/parser/frontend regression coverage for streaming assist behavior and fetch-wrapper idempotence, plus full verification gate pass (detect-secrets, pre-commit, backend unit suites, and frontend Playwright E2E)
+
+</details>
 
 <details>
 
@@ -518,6 +535,7 @@ Use `/api/...` from browsers and extension JS.
 - `GET /openclaw/logs/tail?n=50` - log tail (supports `trace_id` / `prompt_id` filters)
 - `GET /openclaw/trace/{prompt_id}` -trace timeline (redacted)
 - `GET /openclaw/capabilities` -feature/capability probe for frontend compatibility
+  - includes feature flags such as `assist_planner`, `assist_refiner`, and optional `assist_streaming` (when incremental assist preview is available)
 - `GET /openclaw/jobs` -currently a stub (returns an empty list)
 
 Access control:
@@ -532,10 +550,15 @@ Access control:
 - `POST /openclaw/llm/test` -test connectivity (admin boundary)
 - `POST /openclaw/llm/chat` -connector chat completion path (admin boundary)
 - `GET /openclaw/llm/models` -fetch model list for selected provider/base URL
+- `POST /openclaw/assist/planner` -planner structured prompt generation (admin boundary)
+- `POST /openclaw/assist/refiner` -prompt refinement with optional image context (admin boundary)
+- `POST /openclaw/assist/planner/stream` -optional SSE-style planner streaming path (`text/event-stream`, admin boundary)
+- `POST /openclaw/assist/refiner/stream` -optional SSE-style refiner streaming path (`text/event-stream`, admin boundary)
 
 Notes:
 
 - Queue submission uses `OPENCLAW_COMFYUI_URL` (default `http://127.0.0.1:8188`).
+- Planner/Refiner UI uses capability-gated assist streaming when available and falls back to the non-stream endpoints automatically.
 - `PUT /openclaw/config` now returns apply metadata so callers can reason about what actually took effect:
   - `apply.ok`, `apply.requires_restart`, `apply.applied_keys`
   - `apply.effective_provider`, `apply.effective_model`

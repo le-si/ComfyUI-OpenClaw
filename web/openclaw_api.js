@@ -5,12 +5,33 @@
 import { OpenClawSession } from "./openclaw_session.js";
 import { fetchApi, apiURL, fileURL } from "./openclaw_comfy_api.js";
 import { isAbortError, linkAbortSignal, parseJsonSafe } from "./openclaw_utils.js";
+import {
+    composeFetchWrappersOnce,
+    withAbortPassthrough,
+    withGetRetry,
+    withPreconnectHint,
+} from "./openclaw_fetch_wrappers.js";
 
 export class OpenClawAPI {
     constructor() {
         // baseUrl is handled by ComfyUI shim provided via fetchApi
         this.prefix = "/openclaw";
         this.legacyPrefix = "/moltbot";
+        this._capabilitiesCache = null;
+        this._capabilitiesCacheTs = 0;
+
+        // R96: Compose fetch wrappers exactly once per fetch instance to avoid
+        // duplicate retry/preconnect/abort decoration on repeated bootstrap.
+        this._decoratedFetchApi = composeFetchWrappersOnce(fetchApi, [
+            withAbortPassthrough(),
+            withPreconnectHint(),
+            withGetRetry({ retries: 1 }),
+        ]);
+        this._decoratedNativeFetch = composeFetchWrappersOnce(fetch.bind(window), [
+            withAbortPassthrough(),
+            withPreconnectHint(),
+            withGetRetry({ retries: 1 }),
+        ]);
     }
 
     /**
@@ -22,6 +43,43 @@ export class OpenClawAPI {
 
     _path(suffix) {
         return `${this.prefix}${suffix}`;
+    }
+
+    _candidatePaths(url) {
+        const candidates = [];
+        if (typeof url === "string") {
+            candidates.push(url);
+            if (url.startsWith(this.prefix + "/")) {
+                candidates.push(url.replace(this.prefix, this.legacyPrefix));
+            } else if (url.startsWith(this.legacyPrefix + "/")) {
+                candidates.push(url.replace(this.legacyPrefix, this.prefix));
+            }
+        } else {
+            candidates.push(url);
+        }
+        return candidates;
+    }
+
+    async _fetchWithCandidates(url, options = {}) {
+        let response = null;
+        const candidates = this._candidatePaths(url);
+
+        for (const candidate of candidates) {
+            response = await this._decoratedFetchApi(candidate, options);
+            if (response.status !== 404) break;
+        }
+
+        if (response && response.status === 404 && typeof url === "string") {
+            for (const candidate of candidates) {
+                try {
+                    response = await this._decoratedNativeFetch(fileURL(candidate), options);
+                    if (response.status !== 404) break;
+                } catch {
+                    // ignore and continue fallback probes
+                }
+            }
+        }
+        return response;
     }
 
     _adminTokenHeaders(token) {
@@ -62,43 +120,10 @@ export class OpenClawAPI {
 
         try {
             // R26: Use ComfyUI shim (fetchApi) which handles base path automatically
-            let response = null;
-
-            const candidates = [];
-            if (typeof url === "string") {
-                candidates.push(url);
-                if (url.startsWith(this.prefix + "/")) {
-                    candidates.push(url.replace(this.prefix, this.legacyPrefix));
-                } else if (url.startsWith(this.legacyPrefix + "/")) {
-                    candidates.push(url.replace(this.legacyPrefix, this.prefix));
-                }
-            } else {
-                candidates.push(url);
-            }
-
-            // 1) Try fetchApi (preferred)
-            for (const candidate of candidates) {
-                response = await fetchApi(candidate, {
-                    ...fetchOptions,
-                    signal: controller.signal,
-                });
-                if (response.status !== 404) break;
-            }
-
-            // 2) Try direct non-/api route as a hardened fallback (legacy loader / routing order issues)
-            if (response && response.status === 404 && typeof url === "string") {
-                for (const candidate of candidates) {
-                    try {
-                        response = await fetch(fileURL(candidate), {
-                            ...fetchOptions,
-                            signal: controller.signal,
-                        });
-                        if (response.status !== 404) break;
-                    } catch {
-                        // ignore and keep trying
-                    }
-                }
-            }
+            const response = await this._fetchWithCandidates(url, {
+                ...fetchOptions,
+                signal: controller.signal,
+            });
 
             clearTimeout(timeoutId);
 
@@ -176,7 +201,21 @@ export class OpenClawAPI {
 
     // R19: Capabilities
     async getCapabilities() {
-        return this.fetch(this._path("/capabilities"));
+        const now = Date.now();
+        if (this._capabilitiesCache && (now - this._capabilitiesCacheTs) < 5000) {
+            return this._capabilitiesCache;
+        }
+        const res = await this.fetch(this._path("/capabilities"));
+        if (res?.ok) {
+            this._capabilitiesCache = res;
+            this._capabilitiesCacheTs = now;
+        }
+        return res;
+    }
+
+    async supportsAssistStreaming() {
+        const caps = await this.getCapabilities();
+        return !!caps?.ok && !!caps?.data?.features?.assist_streaming;
     }
 
     // F17: ComfyUI History
@@ -321,6 +360,152 @@ export class OpenClawAPI {
 
     // --- Assist Endpoints (F8/F21) ---
 
+    _parseSSEChunk(rawChunk) {
+        const lines = rawChunk.split(/\r?\n/);
+        let event = "message";
+        const dataLines = [];
+        for (const line of lines) {
+            if (!line) continue;
+            if (line.startsWith("event:")) {
+                event = line.slice(6).trim() || "message";
+            } else if (line.startsWith("data:")) {
+                dataLines.push(line.slice(5).trim());
+            }
+        }
+        if (!dataLines.length) return null;
+        const joined = dataLines.join("\n");
+        let data = null;
+        try {
+            data = JSON.parse(joined);
+        } catch {
+            data = { raw: joined };
+        }
+        return { event, data };
+    }
+
+    async streamSSEPost(url, payload, { signal = null, timeout = 60000, onEvent = null } = {}) {
+        const controller = new AbortController();
+        let timedOut = false;
+        let cancelledByCaller = false;
+        const timeoutId = setTimeout(() => {
+            timedOut = true;
+            controller.abort();
+        }, timeout);
+
+        if (signal) {
+            if (signal.aborted) {
+                cancelledByCaller = true;
+                controller.abort();
+            } else {
+                signal.addEventListener("abort", () => {
+                    cancelledByCaller = true;
+                    controller.abort();
+                }, { once: true });
+            }
+        }
+
+        try {
+            const response = await this._fetchWithCandidates(url, {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json",
+                    "Accept": "text/event-stream",
+                    ...this._adminTokenHeaders(),
+                },
+                body: JSON.stringify(payload),
+                signal: controller.signal,
+            });
+
+            if (!response || !response.ok) {
+                clearTimeout(timeoutId);
+                let data = null;
+                try {
+                    data = await response?.json?.();
+                } catch {
+                    try { data = await response?.text?.(); } catch { }
+                }
+                return {
+                    ok: false,
+                    status: response ? response.status : 0,
+                    error: (data && data.error) || response?.statusText || "request_failed",
+                    data,
+                };
+            }
+
+            const finalEnvelope = { value: null };
+            const dispatchEvent = (evt) => {
+                if (!evt) return;
+                if (evt.event === "final") {
+                    finalEnvelope.value = evt.data;
+                }
+                if (typeof onEvent === "function") onEvent(evt);
+            };
+
+            if (!response.body || typeof response.body.getReader !== "function") {
+                const text = await response.text();
+                const chunks = text.split(/\r?\n\r?\n/);
+                for (const chunk of chunks) dispatchEvent(this._parseSSEChunk(chunk));
+            } else {
+                const reader = response.body.getReader();
+                const decoder = new TextDecoder();
+                let buffer = "";
+                const findBoundary = (text) => {
+                    const idxCRLF = text.indexOf("\r\n\r\n");
+                    const idxLF = text.indexOf("\n\n");
+                    if (idxCRLF === -1) return { index: idxLF, len: 2 };
+                    if (idxLF === -1) return { index: idxCRLF, len: 4 };
+                    return idxCRLF < idxLF ? { index: idxCRLF, len: 4 } : { index: idxLF, len: 2 };
+                };
+                while (true) {
+                    const { done, value } = await reader.read();
+                    if (done) break;
+                    buffer += decoder.decode(value, { stream: true });
+                    let boundary = findBoundary(buffer);
+                    while (boundary.index >= 0) {
+                        const rawChunk = buffer.slice(0, boundary.index);
+                        buffer = buffer.slice(boundary.index + boundary.len);
+                        dispatchEvent(this._parseSSEChunk(rawChunk));
+                        boundary = findBoundary(buffer);
+                    }
+                }
+                buffer += decoder.decode();
+                if (buffer.trim()) {
+                    dispatchEvent(this._parseSSEChunk(buffer));
+                }
+            }
+
+            clearTimeout(timeoutId);
+            if (finalEnvelope.value?.ok) {
+                return {
+                    ok: true,
+                    status: 200,
+                    data: finalEnvelope.value.result,
+                    stream: finalEnvelope.value.streaming || {},
+                    envelope: finalEnvelope.value,
+                };
+            }
+            if (finalEnvelope.value && finalEnvelope.value.ok === false) {
+                return {
+                    ok: false,
+                    status: 500,
+                    error: finalEnvelope.value.error || "stream_failed",
+                    data: finalEnvelope.value,
+                };
+            }
+            return { ok: false, status: 0, error: "stream_incomplete" };
+        } catch (err) {
+            clearTimeout(timeoutId);
+            const isAbort = err?.name === "AbortError";
+            const abortKind = cancelledByCaller ? "cancelled" : (timedOut ? "timeout" : "cancelled");
+            return {
+                ok: false,
+                status: 0,
+                error: isAbort ? abortKind : "network_error",
+                detail: err?.message,
+            };
+        }
+    }
+
     /**
      * Run Prompt Planner.
      * @param {object} params - { profile, requirements, style_directives, seed }
@@ -339,6 +524,14 @@ export class OpenClawAPI {
         });
     }
 
+    async runPlannerStream(params, { signal = null, onEvent = null } = {}) {
+        return this.streamSSEPost(this._path("/assist/planner/stream"), params, {
+            signal,
+            timeout: 60000,
+            onEvent,
+        });
+    }
+
     /**
      * Run Prompt Refiner.
      * @param {object} params - { image_b64, orig_positive, orig_negative, issue, params_json, goal }
@@ -354,6 +547,14 @@ export class OpenClawAPI {
             body: JSON.stringify(params),
             timeout: 60000,
             signal, // R38-Lite: Pass signal
+        });
+    }
+
+    async runRefinerStream(params, { signal = null, onEvent = null } = {}) {
+        return this.streamSSEPost(this._path("/assist/refiner/stream"), params, {
+            signal,
+            timeout: 60000,
+            onEvent,
         });
     }
 

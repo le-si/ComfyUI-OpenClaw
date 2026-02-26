@@ -22,6 +22,13 @@
       parseJsonOrThrow,
       parseJsonSafe,
     } from '../openclaw_utils.js';
+    import {
+      composeFetchWrappersOnce,
+      getFetchWrapperMeta,
+      withAbortPassthrough,
+      withGetRetry,
+      withPreconnectHint,
+    } from '../openclaw_fetch_wrappers.js';
 
     const logEl = document.getElementById('log');
     const mount = document.getElementById('mount');
@@ -160,6 +167,29 @@
         assert(isAbortError(new Error('x')) === false, 'isAbortError false-positive');
 
         detach();
+      });
+
+      await run('R96 fetch wrapper composition is idempotent', async () => {
+        let calls = 0;
+        const baseFetch = async () => {
+          calls += 1;
+          if (calls === 1) throw new Error('transient');
+          return new Response('{}', { status: 200, headers: { 'Content-Type': 'application/json' } });
+        };
+
+        const decorators = [withAbortPassthrough(), withPreconnectHint(), withGetRetry({ retries: 1 })];
+        const wrapped1 = composeFetchWrappersOnce(baseFetch, decorators);
+        const wrapped2 = composeFetchWrappersOnce(wrapped1, decorators);
+
+        assert(wrapped1 === wrapped2, 'expected idempotent wrapper reuse on repeated composition');
+
+        const res = await wrapped2('https://example.com/health', { method: 'GET' });
+        assert(res.status === 200, 'wrapped fetch did not return response');
+        assert(calls === 2, `expected single retry path (2 calls), got ${calls}`);
+
+        const meta = getFetchWrapperMeta(wrapped2);
+        assert(meta && Array.isArray(meta.chainIds), 'missing wrapper metadata');
+        assert(meta.chainIds.length === 3, 'unexpected decorator chain metadata');
       });
 
       setDone();

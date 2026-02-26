@@ -7,7 +7,7 @@ import logging
 import os
 import re
 import time
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Callable, Dict, List, Optional, Tuple
 
 try:
     from ..config import setup_logger
@@ -353,6 +353,8 @@ class LLMClient:
         max_tokens: int,
         tools: Optional[List[Dict[str, Any]]] = None,
         tool_choice: Optional[str] = None,
+        streaming: bool = False,
+        on_text_delta: Optional[Callable[[str], None]] = None,
     ) -> Dict[str, Any]:
         """Execute a single request attempt (factored out for failover)."""
         api_type = self._get_api_type()
@@ -380,6 +382,8 @@ class LLMClient:
                 max_tokens,
                 tools=tools,
                 tool_choice=tool_choice,
+                streaming=streaming,
+                on_text_delta=on_text_delta,
             )
 
     def complete(
@@ -395,6 +399,8 @@ class LLMClient:
         ] = None,  # F25: Optional tool calling schemas
         tool_choice: Optional[str] = None,  # F25: Optional tool_choice (OpenAI-compat)
         trace_id: Optional[str] = None,  # R25: Trace context
+        streaming: bool = False,  # R38: optional provider streaming path
+        on_text_delta: Optional[Callable[[str], None]] = None,  # R38 callback
     ) -> Dict[str, Any]:
         """
         Send a completion request to the configured provider.
@@ -657,6 +663,8 @@ class LLMClient:
                             max_tokens,
                             tools=tools,
                             tool_choice=tool_choice,
+                            streaming=streaming,
+                            on_text_delta=on_text_delta,
                         )
 
                         # R37: Update health score on success
@@ -787,6 +795,8 @@ class LLMClient:
         *,
         tools: Optional[List[Dict[str, Any]]] = None,
         tool_choice: Optional[str] = None,
+        streaming: bool = False,
+        on_text_delta: Optional[Callable[[str], None]] = None,
     ) -> Dict[str, Any]:
         """Complete using OpenAI-compatible API."""
         egress_controls = self._get_egress_controls(self.provider, self.base_url)
@@ -800,6 +810,31 @@ class LLMClient:
             )
         else:
             messages.append({"role": "user", "content": user_message})
+
+        # R38: Streaming is optional and currently only enabled for non-tool
+        # OpenAI-compatible text paths. Tool-call streaming deltas are not parsed yet.
+        if streaming and not tools and not tool_choice:
+            try:
+                return openai_compat.make_request_stream(
+                    base_url=self.base_url,
+                    api_key=self.api_key,
+                    messages=messages,
+                    model=self.model,
+                    temperature=temperature,
+                    max_tokens=max_tokens,
+                    timeout=self.timeout,
+                    allow_hosts=egress_controls.get("allow_hosts"),
+                    allow_any_public_host=bool(
+                        egress_controls.get("allow_any_public_host")
+                    ),
+                    allow_loopback_hosts=egress_controls.get("allow_loopback_hosts"),
+                    on_text_delta=on_text_delta,
+                )
+            except Exception as e:
+                logger.info(
+                    "R38: Streaming request unavailable/failed; falling back to non-streaming request: %s",
+                    e,
+                )
 
         return openai_compat.make_request(
             base_url=self.base_url,

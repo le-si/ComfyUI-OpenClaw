@@ -1,7 +1,7 @@
 import json
 import logging
 import os
-from typing import Any, Dict, Optional, Tuple
+from typing import Any, Callable, Dict, Optional, Tuple
 
 from .llm_client import LLMClient
 from .llm_output import extract_json_object, filter_allowed_keys, sanitize_string
@@ -52,6 +52,7 @@ class RefinerService:
         issue: str,
         params_json: str = "{}",
         goal: str = "Fix the issues",
+        on_text_delta: Optional[Callable[[str], None]] = None,
     ) -> Tuple[str, str, Dict[str, Any], str]:
         """
         Refine prompt based on image + issue.
@@ -178,6 +179,8 @@ Issue: {issue}
                     system=system_prompt,
                     user_message=user_message,
                     image_base64=image_b64,
+                    streaming=on_text_delta is not None,
+                    on_text_delta=on_text_delta,
                 )
 
                 content = response.get("text", "")

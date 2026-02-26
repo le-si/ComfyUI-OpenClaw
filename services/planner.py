@@ -1,7 +1,6 @@
-import json
 import logging
 import os
-from typing import Any, Dict, Optional, Tuple
+from typing import Any, Callable, Dict, Optional, Tuple
 
 from .llm_client import LLMClient
 from .llm_output import extract_json_object, sanitize_string
@@ -55,7 +54,12 @@ class PlannerService:
         self.llm_client = LLMClient()
 
     def plan_generation(
-        self, profile_id: str, requirements: str, style_directives: str, seed: int = 0
+        self,
+        profile_id: str,
+        requirements: str,
+        style_directives: str,
+        seed: int = 0,
+        on_text_delta: Optional[Callable[[str], None]] = None,
     ) -> Tuple[str, str, Dict[str, Any]]:
         """
         Plan prompt and params via LLM.
@@ -165,7 +169,12 @@ Style: {style_directives}
             else:
                 # Traditional mode: Call LLM normally
                 logger.info(f"Sending request to LLM for profile {profile_id}...")
-                response = self.llm_client.complete(system_prompt, user_message)
+                response = self.llm_client.complete(
+                    system_prompt,
+                    user_message,
+                    streaming=on_text_delta is not None,
+                    on_text_delta=on_text_delta,
+                )
 
             # Traditional JSON extraction (fallback or default path)
             content = response.get("text", "")

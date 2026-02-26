@@ -113,4 +113,50 @@ test.describe('R38 Lite UX lifecycle', () => {
 
         expect(pageErrors).toEqual([]);
     });
+
+    test('Planner streaming path renders live preview and final result', async ({ page }) => {
+        const pageErrors = [];
+        page.on('pageerror', (e) => pageErrors.push(e.message));
+
+        await page.route('**/openclaw/assist/planner/stream', async (route) => {
+            await route.fulfill({
+                status: 200,
+                contentType: 'text/event-stream',
+                body:
+                    'event: ready\n' +
+                    'data: {"ok":true,"kind":"planner","mode":"sse"}\n\n' +
+                    'event: stage\n' +
+                    'data: {"phase":"dispatch","message":"Dispatching assist request"}\n\n' +
+                    'event: delta\n' +
+                    'data: {"text":"{\\"positive_prompt\\":\\"foggy ","preview_chars":28}\n\n' +
+                    'event: delta\n' +
+                    'data: {"text":"mountain\\"}","preview_chars":38}\n\n' +
+                    'event: final\n' +
+                    'data: {"ok":true,"kind":"planner","result":{"positive":"A foggy mountain valley","negative":"lowres, blurry","params":{"width":1024,"height":1024}},"streaming":{"preview_chars":38,"preview_truncated":false}}\n\n',
+            });
+        });
+
+        // Force streaming capability in the shared API instance cache for this page.
+        await page.evaluate(async () => {
+            const mod = await import('/web/openclaw_api.js');
+            mod.openclawApi._capabilitiesCache = {
+                ok: true,
+                data: { features: { assist_streaming: true } },
+            };
+            mod.openclawApi._capabilitiesCacheTs = Date.now();
+        });
+
+        await clickTab(page, 'Planner');
+        await page.locator('#planner-run-btn').click();
+
+        await expect(page.locator('#planner-loading')).toBeVisible();
+        await expect(page.locator('#planner-stream-preview')).toHaveValue(/foggy/, { timeout: 2000 });
+        await expect(page.locator('#planner-stage')).toHaveText(
+            /Dispatching assist request|Parsing and validating output\.\.\./,
+        );
+        await expect(page.locator('#planner-out-pos')).toHaveValue('A foggy mountain valley');
+        await expect(page.locator('#planner-out-neg')).toHaveValue('lowres, blurry');
+
+        expect(pageErrors).toEqual([]);
+    });
 });

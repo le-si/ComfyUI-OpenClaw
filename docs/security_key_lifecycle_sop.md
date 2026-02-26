@@ -156,7 +156,44 @@ PY
 2. If integrity is uncertain, revoke all active tokens and re-issue per device.
 3. Validate with `tests.test_s58_bridge_token_lifecycle` and `tests.test_s58_bridge_auth_integration`.
 
-## 6. Validation Gate After Any Lifecycle Change
+## 6. Drill Automation (Evidence-Generating, Optional but Recommended)
+
+In addition to the manual procedures above, OpenClaw provides a local/CI-safe drill runner that simulates lifecycle incidents and emits machine-readable evidence.
+
+Script:
+- `scripts/run_crypto_lifecycle_drills.py`
+
+Supported scenarios:
+- `planned_rotation`
+- `emergency_revoke`
+- `key_loss_recovery`
+- `token_compromise`
+
+Example commands:
+
+```bash
+python scripts/run_crypto_lifecycle_drills.py --pretty
+python scripts/run_crypto_lifecycle_drills.py --scenarios planned_rotation,emergency_revoke --output .planning/logs/crypto_drills.json --pretty
+```
+
+Evidence bundle contract (JSON):
+- top-level fields include `schema_version`, `bundle`, `state_dir`, and `drills`
+- each drill record includes:
+  - `operation`
+  - `scenario`
+  - `precheck`
+  - `result`
+  - `rollback_status`
+  - `artifacts`
+  - `decision_codes`
+  - `fail_closed_assertions`
+
+Operational notes:
+- This drill runner is for verification/training/evidence collection and does not replace maintenance-window production rotation procedures.
+- Use an isolated or temporary state directory unless you intentionally want artifacts written to a specific test state path.
+- Store drill evidence alongside change tickets or implementation records when lifecycle readiness is part of acceptance criteria.
+
+## 7. Validation Gate After Any Lifecycle Change
 
 Run at minimum:
 

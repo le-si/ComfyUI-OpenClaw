@@ -49,6 +49,10 @@ export const RefinerTab = {
                                     <div id="refiner-elapsed" style="font-size: 0.9em; opacity: 0.7;">Elapsed: 0s</div>
                                 </div>
                             </div>
+                            <div style="margin-top:8px;">
+                                <div style="font-size:0.85em; opacity:0.8; margin-bottom:4px;">Live Preview (best effort)</div>
+                                <textarea id="refiner-stream-preview" class="openclaw-textarea openclaw-textarea moltbot-textarea" style="min-height:70px;" readonly></textarea>
+                            </div>
                             <button id="refiner-cancel-btn" class="openclaw-btn openclaw-btn moltbot-btn" style="margin-top: 8px; width: 100%; background: var(--input-background); border: 1px solid var(--border-color);">Cancel</button>
                         </div>
 
@@ -112,7 +116,9 @@ export const RefinerTab = {
         container.querySelector("#refiner-run-btn").onclick = async () => {
             clearError(container);
             const resDiv = container.querySelector("#refiner-results");
+            const previewEl = container.querySelector("#refiner-stream-preview");
             resDiv.style.display = "none";
+            if (previewEl) previewEl.value = "";
 
             const requestId = ++activeRequestId;
             const signal = lifecycle.begin("Preparing request...");
@@ -122,15 +128,35 @@ export const RefinerTab = {
                 await new Promise((resolve) => requestAnimationFrame(resolve));
                 lifecycle.setStage("Waiting for provider response...");
 
-                const res = await openclawApi.runRefiner(
-                    {
-                        image_b64: currentImgB64,
-                        orig_positive: container.querySelector("#refiner-orig-pos").value,
-                        orig_negative: container.querySelector("#refiner-orig-neg").value,
-                        issue: container.querySelector("#refiner-issue").value
-                    },
-                    signal
-                );
+                const payload = {
+                    image_b64: currentImgB64,
+                    orig_positive: container.querySelector("#refiner-orig-pos").value,
+                    orig_negative: container.querySelector("#refiner-orig-neg").value,
+                    issue: container.querySelector("#refiner-issue").value
+                };
+
+                let res;
+                const streamingSupported = await openclawApi.supportsAssistStreaming();
+                if (streamingSupported) {
+                    res = await openclawApi.runRefinerStream(payload, {
+                        signal,
+                        onEvent: (evt) => {
+                            if (requestId !== activeRequestId || !evt) return;
+                            if (evt.event === "stage" && evt.data?.message) {
+                                lifecycle.setStage(evt.data.message);
+                            } else if (evt.event === "delta" && typeof evt.data?.text === "string" && previewEl) {
+                                previewEl.value += evt.data.text;
+                                previewEl.scrollTop = previewEl.scrollHeight;
+                            }
+                        }
+                    });
+                    if (!res.ok && !["cancelled", "timeout"].includes(res.error || "")) {
+                        lifecycle.setStage("Streaming unavailable, falling back...");
+                        res = await openclawApi.runRefiner(payload, signal);
+                    }
+                } else {
+                    res = await openclawApi.runRefiner(payload, signal);
+                }
 
                 if (requestId !== activeRequestId) {
                     return;

@@ -641,3 +641,111 @@ def safe_request_json(
             if isinstance(e.reason, SSRFError):
                 raise e.reason
             raise RuntimeError(f"Request failed: {e}")
+
+
+def safe_request_text_stream(
+    method: str,
+    url: str,
+    json_body: Any = None,
+    *,
+    allow_hosts: Optional[Set[str]] = None,
+    allow_any_public_host: bool = False,
+    allow_loopback_hosts: Optional[Set[str]] = None,
+    headers: Optional[dict] = None,
+    timeout_sec: int = 10,
+    max_line_bytes: int = 64 * 1024,
+    max_redirects: int = 0,
+    policy: Optional[OutboundPolicy] = None,
+):
+    """
+    Perform a safe HTTP request and yield response lines as UTF-8 text.
+
+    Intended for SSE/event-stream style provider responses.
+    """
+    import json
+    import urllib.error
+    import urllib.parse
+
+    current_url = url
+    current_method = method
+    current_body = json.dumps(json_body).encode("utf-8") if json_body else None
+    redirects_followed = 0
+
+    while True:
+        _scheme, _host, _port, pinned_ips = validate_outbound_url(
+            current_url,
+            allow_hosts=allow_hosts,
+            allow_any_public_host=allow_any_public_host,
+            allow_loopback_hosts=allow_loopback_hosts,
+            policy=policy,
+        )
+
+        request = urllib.request.Request(
+            current_url, data=current_body, method=current_method
+        )
+        try:
+            from ..config import PACK_VERSION
+        except ImportError:  # pragma: no cover
+            try:
+                from config import PACK_VERSION  # type: ignore
+            except ImportError:
+                PACK_VERSION = "0.0.0"
+
+        request.add_header("User-Agent", f"ComfyUI-OpenClaw/{PACK_VERSION}")
+        request.add_header("Content-Type", "application/json")
+
+        ALLOWED_HEADER_PREFIXES = ("x-", "content-type", "authorization", "accept")
+        if headers:
+            for key, value in headers.items():
+                key_lower = key.lower()
+                if any(key_lower.startswith(p) for p in ALLOWED_HEADER_PREFIXES):
+                    request.add_header(key, value)
+                else:
+                    logger.debug(f"Skipping disallowed header: {key}")
+
+        opener = _build_pinned_opener(pinned_ips)
+
+        try:
+            response = opener.open(request, timeout=timeout_sec)
+            code = response.getcode()
+
+            if code in (301, 302, 303, 307, 308):
+                try:
+                    response.close()
+                except Exception:
+                    pass
+                if max_redirects > 0 and redirects_followed < max_redirects:
+                    redirects_followed += 1
+                    new_loc = getattr(response, "headers", {}).get("Location")
+                    if not new_loc:
+                        raise RuntimeError(f"Redirect without Location: {code}")
+                    current_url = urllib.parse.urljoin(current_url, new_loc)
+                    if code in (301, 302, 303):
+                        current_method = "GET"
+                        current_body = None
+                    continue
+                raise RuntimeError(f"Too many redirects: {max_redirects}")
+
+            try:
+                while True:
+                    line = response.readline(max_line_bytes + 1)
+                    if not line:
+                        break
+                    if len(line) > max_line_bytes:
+                        raise RuntimeError(
+                            f"Stream line exceeds max_line_bytes ({max_line_bytes})"
+                        )
+                    yield line.decode("utf-8", errors="replace")
+            finally:
+                try:
+                    response.close()
+                except Exception:
+                    pass
+            return
+
+        except urllib.error.HTTPError as e:
+            raise RuntimeError(f"HTTP error {e.code}: {e.reason}")
+        except urllib.error.URLError as e:
+            if isinstance(e.reason, SSRFError):
+                raise e.reason
+            raise RuntimeError(f"Request failed: {e}")

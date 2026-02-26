@@ -1,8 +1,8 @@
 # OpenClaw Config & Secrets Contract (v1)
 
 > **Status**: normative
-> **Version**: 1.0.1
-> **Date**: 2026-02-19
+> **Version**: 1.0.2
+> **Date**: 2026-02-26
 
 This document defines the authoritative configuration contract for OpenClaw. It enumerates all supported environment variables, their precedence rules, and security classifications.
 
@@ -101,6 +101,11 @@ Contractual limits to prevent resource exhaustion.
 | `OPENCLAW_DIAGNOSTICS` | Comma-separated list of subsystems to enable debug logging for (e.g. `webhook.*,templates`). Safe-redacted. |
 | `OPENCLAW_CONNECTOR_DEBUG` | Set `1` to enable verbose debug logging in Connector. |
 
+Runtime guardrails contract (ENV-driven, runtime-only):
+- `GET /openclaw/config` may include a `runtime_guardrails` diagnostics object describing effective runtime caps, sources, and degraded status.
+- Runtime guardrails are evaluated at runtime (deployment/runtime profile aware) and are not part of the persisted user config contract.
+- `PUT /openclaw/config` rejects attempts to persist `runtime_guardrails` / legacy guardrail payloads; callers must change the underlying environment variables instead.
+
 ---
 
 ## 3. Secret Rotation & Migration
@@ -126,3 +131,7 @@ If multiple keys are configured for the same purpose, the following order applie
 ### 3.3 Persistence
 
 Non-secret configuration (such as enabled/disabled flags, feature toggles) may be persisted in the `OPENCLAW_STATE_DIR/config.json` via the Settings API. However, **environment variables always override persisted settings**.
+
+Persistence guardrails:
+- Runtime-only guardrail fields (for example `runtime_guardrails` and legacy guardrail aliases) are stripped/ignored when loading persisted config and rejected on `/config` write requests.
+- This prevents runtime safety caps (timeouts/retries/provider safety clamps) from being silently converted into mutable persisted settings.

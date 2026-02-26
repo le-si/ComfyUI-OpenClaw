@@ -834,7 +834,19 @@ def register_routes(server) -> None:
                 server, "POST", f"{prefix}/assist/planner", assist.planner_handler
             )
             register_dual_route(
+                server,
+                "POST",
+                f"{prefix}/assist/planner/stream",
+                assist.planner_stream_handler,
+            )
+            register_dual_route(
                 server, "POST", f"{prefix}/assist/refiner", assist.refiner_handler
+            )
+            register_dual_route(
+                server,
+                "POST",
+                f"{prefix}/assist/refiner/stream",
+                assist.refiner_stream_handler,
             )
             register_dual_route(
                 server,
