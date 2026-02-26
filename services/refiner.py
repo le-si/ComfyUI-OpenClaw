@@ -44,6 +44,15 @@ class RefinerService:
     def __init__(self):
         self.llm_client = LLMClient()
 
+    def _get_request_llm_client(self):
+        # CRITICAL: refresh the default LLMClient per request.
+        # Refiner shares the same long-lived assist handler lifecycle as Planner; keeping
+        # the startup client causes stale provider/key state after UI Save.
+        # Preserve injected fakes by only rotating real LLMClient instances.
+        if isinstance(self.llm_client, LLMClient):
+            self.llm_client = LLMClient()
+        return self.llm_client
+
     def refine_prompt(
         self,
         image_b64: str,
@@ -107,6 +116,9 @@ Issue: {issue}
 """
 
         try:
+            # IMPORTANT: resolve client at request time so UI-saved provider/key changes
+            # apply without restarting ComfyUI.
+            llm_client = self._get_request_llm_client()
             # F25: Optional tool calling (OpenAI-compat only; fallback to JSON parsing)
             use_tool_calling = (
                 TOOL_CALLING_AVAILABLE
@@ -124,7 +136,7 @@ Issue: {issue}
                 except ImportError:
                     tools = [REFINER_TOOL_SCHEMA]
 
-                response = self.llm_client.complete(
+                response = llm_client.complete(
                     system=system_prompt,
                     user_message=user_message,
                     image_base64=image_b64,
@@ -175,7 +187,7 @@ Issue: {issue}
                 data = extract_json_object(content)
             else:
                 # 5. Call Vision LLM (traditional JSON)
-                response = self.llm_client.complete(
+                response = llm_client.complete(
                     system=system_prompt,
                     user_message=user_message,
                     image_base64=image_b64,

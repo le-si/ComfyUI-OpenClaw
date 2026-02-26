@@ -27,7 +27,14 @@ class AuditLogPlugin:
         """Hook: llm.audit_request (PARALLEL)."""
         try:
             # R28: Build structured audit event
-            from services.audit_events import build_audit_event, emit_audit_event
+            # CRITICAL: keep package-relative import first for ComfyUI custom-node loaders.
+            # Some runtime contexts do not expose a top-level `services` package, which
+            # produces noisy non-fatal audit errors (`No module named 'services.audit_events'`).
+            # Fallback to `services.*` only for test/direct-import contexts.
+            try:
+                from ...audit_events import build_audit_event, emit_audit_event
+            except ImportError:
+                from services.audit_events import build_audit_event, emit_audit_event
 
             event = build_audit_event(
                 event_type="llm.request",

@@ -45,6 +45,14 @@ class MoltbotImageToPrompt:
     def __init__(self):
         self.llm_client = LLMClient()
 
+    def _get_request_llm_client(self):
+        # CRITICAL: this node instance can persist across multiple UI runs.
+        # Refresh the default LLMClient per call so provider/key changes from Settings/UI
+        # apply without restarting ComfyUI. Preserve injected mocks/fakes for tests.
+        if isinstance(self.llm_client, LLMClient):
+            self.llm_client = LLMClient()
+        return self.llm_client
+
     @classmethod
     def INPUT_TYPES(cls):
         return {
@@ -147,9 +155,11 @@ Do not use markdown blocks.
         try:
             # 4. Call Vision LLM
             logger.info("Sending vision request to LLM...")
+            # IMPORTANT: resolve client at call time to avoid stale provider/key state.
+            llm_client = self._get_request_llm_client()
 
             # Using updated client signature
-            response = self.llm_client.complete(
+            response = llm_client.complete(
                 system=system_prompt, user_message=user_message, image_base64=image_b64
             )
 

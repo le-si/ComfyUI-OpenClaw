@@ -53,6 +53,15 @@ class PlannerService:
     def __init__(self):
         self.llm_client = LLMClient()
 
+    def _get_request_llm_client(self):
+        # CRITICAL: refresh the default LLMClient per request.
+        # Assist handlers are long-lived singletons, so caching the startup client here
+        # causes stale provider/key state after UI Save (requires backend restart).
+        # Keep custom test fakes/injected clients intact by only rotating real LLMClient.
+        if isinstance(self.llm_client, LLMClient):
+            self.llm_client = LLMClient()
+        return self.llm_client
+
     def plan_generation(
         self,
         profile_id: str,
@@ -110,6 +119,9 @@ Style: {style_directives}
 """
 
         try:
+            # IMPORTANT: resolve client at request time (not service init time).
+            # This keeps Planner aligned with the latest runtime config + server-side key store.
+            llm_client = self._get_request_llm_client()
             # F25: Check if tool calling is enabled
             use_tool_calling = (
                 TOOL_CALLING_AVAILABLE
@@ -131,7 +143,7 @@ Style: {style_directives}
                     tools = [PLANNER_TOOL_SCHEMA]
 
                 # Call LLM with tool
-                response = self.llm_client.complete(
+                response = llm_client.complete(
                     system_prompt, user_message, tools=tools, tool_choice="auto"
                 )
 
@@ -169,7 +181,7 @@ Style: {style_directives}
             else:
                 # Traditional mode: Call LLM normally
                 logger.info(f"Sending request to LLM for profile {profile_id}...")
-                response = self.llm_client.complete(
+                response = llm_client.complete(
                     system_prompt,
                     user_message,
                     streaming=on_text_delta is not None,

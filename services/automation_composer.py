@@ -40,6 +40,14 @@ class AutomationComposerService:
     def __init__(self):
         self.llm_client = LLMClient()
 
+    def _get_request_llm_client(self):
+        # CRITICAL: Assist compose service is held by long-lived route handlers.
+        # Refresh the default LLMClient per request so UI-saved provider/key updates
+        # take effect without backend restart. Keep injected fakes intact for tests.
+        if isinstance(self.llm_client, LLMClient):
+            self.llm_client = LLMClient()
+        return self.llm_client
+
     def compose_payload(
         self,
         *,
@@ -184,8 +192,10 @@ class AutomationComposerService:
 
             system = self._build_system_prompt(kind, template_id, profile_id)
             user = self._build_user_prompt(intent, inputs_hint)
+            # IMPORTANT: resolve client at request time to avoid stale provider/key.
+            llm_client = self._get_request_llm_client()
 
-            response = self.llm_client.complete(
+            response = llm_client.complete(
                 system=system,
                 user_message=user,
                 tools=tools,
