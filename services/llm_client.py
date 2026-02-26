@@ -22,8 +22,13 @@ from .providers.catalog import (
     get_provider_info,
 )
 from .providers.keys import get_api_key_for_provider, mask_api_key, requires_api_key
+from .structured_logging import (
+    configure_logger_for_structured_output,
+    emit_structured_log,
+)
 
 logger = setup_logger("openclaw.LLMClient")
+configure_logger_for_structured_output(logger)
 
 # R23: Plugin system integration
 import asyncio
@@ -624,6 +629,18 @@ class LLMClient:
                 # Log failover attempt (only if not primary)
                 if candidate_idx > 0:
                     logger.info(f"Trying failover candidate: {provider}/{self.model}")
+                emit_structured_log(
+                    logger,
+                    level=logging.INFO,
+                    event="llm.candidate.attempt",
+                    fields={
+                        "provider": provider,
+                        "model": self.model,
+                        "candidate_index": candidate_idx,
+                        "streaming": bool(streaming),
+                        "trace_id": trace_id,
+                    },
+                )
 
                 # Per-candidate retry loop
                 # R37: Check throttle before attempting candidate (best-effort).
@@ -650,6 +667,19 @@ class LLMClient:
                         logger.info(
                             f"Retrying {provider}/{self.model} "
                             f"(attempt {attempt}/{self.max_retries}) in {sleep_time}s..."
+                        )
+                        emit_structured_log(
+                            logger,
+                            level=logging.INFO,
+                            event="llm.candidate.retry",
+                            fields={
+                                "provider": provider,
+                                "model": self.model,
+                                "attempt": attempt,
+                                "max_retries": self.max_retries,
+                                "sleep_sec": sleep_time,
+                                "trace_id": trace_id,
+                            },
                         )
                         time.sleep(sleep_time)
 
@@ -680,6 +710,29 @@ class LLMClient:
                             logger.info(
                                 f"Failover successful to {provider}/{self.model}"
                             )
+                            emit_structured_log(
+                                logger,
+                                level=logging.INFO,
+                                event="llm.failover.success",
+                                fields={
+                                    "provider": provider,
+                                    "model": self.model,
+                                    "candidate_index": candidate_idx,
+                                    "trace_id": trace_id,
+                                },
+                            )
+                        else:
+                            emit_structured_log(
+                                logger,
+                                level=logging.INFO,
+                                event="llm.request.success",
+                                fields={
+                                    "provider": provider,
+                                    "model": self.model,
+                                    "candidate_index": candidate_idx,
+                                    "trace_id": trace_id,
+                                },
+                            )
 
                         return result
 
@@ -690,6 +743,20 @@ class LLMClient:
                         logger.error(
                             f"Request failed for {provider}/{self.model}: {e} "
                             f"(category: {error_category.value}, status: {status_code})"
+                        )
+                        emit_structured_log(
+                            logger,
+                            level=logging.ERROR,
+                            event="llm.request.failure",
+                            fields={
+                                "provider": provider,
+                                "model": self.model,
+                                "candidate_index": candidate_idx,
+                                "category": error_category.value,
+                                "status_code": status_code,
+                                "error_type": type(e).__name__,
+                                "trace_id": trace_id,
+                            },
                         )
 
                         # R37: Update health score on failure (before dedupe check)
@@ -724,6 +791,18 @@ class LLMClient:
                                     f"Failover triggered for {provider}/{model}: "
                                     f"{error_category.value} (cooldown: {duration}s)"
                                 )
+                                emit_structured_log(
+                                    logger,
+                                    level=logging.WARNING,
+                                    event="llm.failover.triggered",
+                                    fields={
+                                        "provider": provider,
+                                        "model": model,
+                                        "category": error_category.value,
+                                        "cooldown_sec": duration,
+                                        "trace_id": trace_id,
+                                    },
+                                )
 
                             last_error = e
                             break  # Exit retry loop, try next candidate
@@ -747,6 +826,17 @@ class LLMClient:
             self.provider_info = original_provider_info
 
         # All candidates exhausted
+        emit_structured_log(
+            logger,
+            level=logging.ERROR,
+            event="llm.failover.exhausted",
+            fields={
+                "provider": original_provider,
+                "model": original_model,
+                "candidates_tried": candidates_tried,
+                "trace_id": trace_id,
+            },
+        )
         raise last_error or RuntimeError(
             f"All {candidates_tried} failover candidates exhausted"
         )

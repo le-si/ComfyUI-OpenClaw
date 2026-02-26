@@ -52,7 +52,10 @@ def _register_routes_once():
     # This needs to happen regardless of PromptServer availability, as plugins might register other things.
     try:
         from .services.plugins.builtin import register_all
+        from .services.runtime_lifecycle import register_shutdown_hooks
 
+        # R67: Best-effort process shutdown hook for scheduler/failover flush.
+        register_shutdown_hooks()
         register_all()
     except Exception as e:
         logging.getLogger("ComfyUI-OpenClaw").error(f"Failed to register plugins: {e}")

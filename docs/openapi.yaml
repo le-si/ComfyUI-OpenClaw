@@ -1,0 +1,602 @@
+openapi: "3.0.3"
+info:
+  title: "ComfyUI-OpenClaw API"
+  version: "1.0.0"
+  description: "Generated from docs/release/api_contract.md (R66 baseline)."
+servers:
+  - url: "/openclaw"
+    description: "Direct OpenClaw prefix"
+  - url: "/api/openclaw"
+    description: "ComfyUI /api shim"
+paths:
+  /health:
+    get:
+      operationId: "get_health"
+      summary: "System status, uptime, and dependencies."
+      responses:
+        200:
+          description: "OK"
+      x-openclaw-auth: "None"
+      x-openclaw-section: "1.1 Core Observability & System"
+      x-openclaw-legacy-path: "/moltbot/health"
+      x-openclaw-auth-tier: "none"
+  /capabilities:
+    get:
+      operationId: "get_capabilities"
+      summary: "Feature flags and supported extensions (includes optional UX/runtime features such as assist streaming support)."
+      responses:
+        200:
+          description: "OK"
+      x-openclaw-auth: "None"
+      x-openclaw-section: "1.1 Core Observability & System"
+      x-openclaw-legacy-path: "/moltbot/capabilities"
+      x-openclaw-auth-tier: "none"
+  /logs/tail:
+    get:
+      operationId: "get_logs_tail"
+      summary: "Tail recent log lines (rate-limited)."
+      responses:
+        200:
+          description: "OK"
+      x-openclaw-auth: "Observability"
+      x-openclaw-section: "1.1 Core Observability & System"
+      x-openclaw-legacy-path: "/moltbot/logs/tail"
+      x-openclaw-auth-tier: "observability"
+      security:
+        - OpenClawObservabilityToken:
+            []
+  /trace/{prompt_id}:
+    get:
+      operationId: "get_trace_prompt_id"
+      summary: "Get execution trace by prompt ID."
+      responses:
+        200:
+          description: "OK"
+      x-openclaw-auth: "Observability"
+      x-openclaw-section: "1.1 Core Observability & System"
+      x-openclaw-legacy-path: "/moltbot/trace/{id}"
+      x-openclaw-auth-tier: "observability"
+      security:
+        - OpenClawObservabilityToken:
+            []
+      parameters:
+        - name: "prompt_id"
+          in: "path"
+          required: true
+          schema:
+            type: "string"
+  /events:
+    get:
+      operationId: "get_events"
+      summary: "List recent job lifecycle events (JSON polling fallback; includes pagination/scan diagnostics)."
+      responses:
+        200:
+          description: "OK"
+      x-openclaw-auth: "Observability"
+      x-openclaw-section: "1.1 Core Observability & System"
+      x-openclaw-legacy-path: "/moltbot/events"
+      x-openclaw-auth-tier: "observability"
+      security:
+        - OpenClawObservabilityToken:
+            []
+  /events/stream:
+    get:
+      operationId: "get_events_stream"
+      summary: "SSE stream of job lifecycle events with resume support."
+      responses:
+        200:
+          description: "OK"
+      x-openclaw-auth: "Observability"
+      x-openclaw-section: "1.1 Core Observability & System"
+      x-openclaw-legacy-path: "/moltbot/events/stream"
+      x-openclaw-auth-tier: "observability"
+      security:
+        - OpenClawObservabilityToken:
+            []
+      x-openclaw-streaming: true
+  /config:
+    get:
+      operationId: "get_config"
+      summary: "Read-only view of sanitized provider config."
+      responses:
+        200:
+          description: "OK"
+      x-openclaw-auth: "Observability"
+      x-openclaw-section: "1.1 Core Observability & System"
+      x-openclaw-legacy-path: "/moltbot/config"
+      x-openclaw-auth-tier: "observability"
+      security:
+        - OpenClawObservabilityToken:
+            []
+    put:
+      operationId: "put_config"
+      summary: "Update system configuration."
+      responses:
+        200:
+          description: "OK"
+      x-openclaw-auth: "Admin"
+      x-openclaw-section: "1.1 Core Observability & System"
+      x-openclaw-legacy-path: "/moltbot/config"
+      x-openclaw-auth-tier: "admin"
+      security:
+        - OpenClawAdminToken:
+            []
+  /jobs:
+    get:
+      operationId: "get_jobs"
+      summary: "List recent jobs (Stub/Not Implemented)."
+      responses:
+        200:
+          description: "OK"
+      x-openclaw-auth: "Observability"
+      x-openclaw-section: "1.1 Core Observability & System"
+      x-openclaw-legacy-path: "/moltbot/jobs"
+      x-openclaw-auth-tier: "observability"
+      security:
+        - OpenClawObservabilityToken:
+            []
+  /webhook:
+    post:
+      operationId: "post_webhook"
+      summary: "Receive external alerts (schema validation only)."
+      responses:
+        200:
+          description: "OK"
+      x-openclaw-auth: "Webhook Secret"
+      x-openclaw-section: "1.2 Webhooks & Triggers"
+      x-openclaw-legacy-path: "/moltbot/webhook"
+      x-openclaw-auth-tier: "webhook"
+      security:
+        - OpenClawWebhookAuth:
+            []
+  /webhook/submit:
+    post:
+      operationId: "post_webhook_submit"
+      summary: "Validate and submit job from webhook payload."
+      responses:
+        200:
+          description: "OK"
+      x-openclaw-auth: "Webhook Secret"
+      x-openclaw-section: "1.2 Webhooks & Triggers"
+      x-openclaw-legacy-path: "/moltbot/webhook/submit"
+      x-openclaw-auth-tier: "webhook"
+      security:
+        - OpenClawWebhookAuth:
+            []
+  /webhook/validate:
+    post:
+      operationId: "post_webhook_validate"
+      summary: "Dry-run validation of webhook payload."
+      responses:
+        200:
+          description: "OK"
+      x-openclaw-auth: "Webhook Secret"
+      x-openclaw-section: "1.2 Webhooks & Triggers"
+      x-openclaw-legacy-path: "/moltbot/webhook/validate"
+      x-openclaw-auth-tier: "webhook"
+      security:
+        - OpenClawWebhookAuth:
+            []
+  /triggers/fire:
+    post:
+      operationId: "post_triggers_fire"
+      summary: "Fire an ad-hoc workflow trigger from external system."
+      responses:
+        200:
+          description: "OK"
+      x-openclaw-auth: "Admin"
+      x-openclaw-section: "1.2 Webhooks & Triggers"
+      x-openclaw-legacy-path: "/moltbot/triggers/fire"
+      x-openclaw-auth-tier: "admin"
+      security:
+        - OpenClawAdminToken:
+            []
+  /assist/planner:
+    post:
+      operationId: "post_assist_planner"
+      summary: "Planner structured prompt generation."
+      responses:
+        200:
+          description: "OK"
+      x-openclaw-auth: "Admin/Local"
+      x-openclaw-section: "1.3 Assist, LLM & Chat"
+      x-openclaw-legacy-path: "/moltbot/assist/planner"
+      x-openclaw-auth-tier: "admin"
+      security:
+        - OpenClawAdminToken:
+            []
+  /assist/refiner:
+    post:
+      operationId: "post_assist_refiner"
+      summary: "Prompt refinement with optional image context."
+      responses:
+        200:
+          description: "OK"
+      x-openclaw-auth: "Admin/Local"
+      x-openclaw-section: "1.3 Assist, LLM & Chat"
+      x-openclaw-legacy-path: "/moltbot/assist/refiner"
+      x-openclaw-auth-tier: "admin"
+      security:
+        - OpenClawAdminToken:
+            []
+  /assist/planner/stream:
+    post:
+      operationId: "post_assist_planner_stream"
+      summary: "Optional SSE-style planner streaming response (`text/event-stream`) with staged progress + final payload."
+      responses:
+        200:
+          description: "OK"
+      x-openclaw-auth: "Admin/Local"
+      x-openclaw-section: "1.3 Assist, LLM & Chat"
+      x-openclaw-legacy-path: "/moltbot/assist/planner/stream"
+      x-openclaw-auth-tier: "admin"
+      security:
+        - OpenClawAdminToken:
+            []
+      x-openclaw-streaming: true
+  /assist/refiner/stream:
+    post:
+      operationId: "post_assist_refiner_stream"
+      summary: "Optional SSE-style refiner streaming response (`text/event-stream`) with staged progress + final payload."
+      responses:
+        200:
+          description: "OK"
+      x-openclaw-auth: "Admin/Local"
+      x-openclaw-section: "1.3 Assist, LLM & Chat"
+      x-openclaw-legacy-path: "/moltbot/assist/refiner/stream"
+      x-openclaw-auth-tier: "admin"
+      security:
+        - OpenClawAdminToken:
+            []
+      x-openclaw-streaming: true
+  /chat:
+    post:
+      operationId: "post_chat"
+      summary: "Unified chat interface for assistant interactions."
+      responses:
+        200:
+          description: "OK"
+      x-openclaw-auth: "Admin/Local"
+      x-openclaw-section: "1.3 Assist, LLM & Chat"
+      x-openclaw-legacy-path: "/moltbot/llm/chat"
+      x-openclaw-auth-tier: "admin"
+      security:
+        - OpenClawAdminToken:
+            []
+  /test:
+    post:
+      operationId: "post_test"
+      summary: "Test LLM connectivity and configuration."
+      responses:
+        200:
+          description: "OK"
+      x-openclaw-auth: "Admin"
+      x-openclaw-section: "1.3 Assist, LLM & Chat"
+      x-openclaw-legacy-path: "/moltbot/llm/test"
+      x-openclaw-auth-tier: "admin"
+      security:
+        - OpenClawAdminToken:
+            []
+  /models:
+    get:
+      operationId: "get_models"
+      summary: "List available models from configured provider."
+      responses:
+        200:
+          description: "OK"
+      x-openclaw-auth: "Admin"
+      x-openclaw-section: "1.3 Assist, LLM & Chat"
+      x-openclaw-legacy-path: "/moltbot/llm/models"
+      x-openclaw-auth-tier: "admin"
+      security:
+        - OpenClawAdminToken:
+            []
+  /templates:
+    get:
+      operationId: "get_templates"
+      summary: "List discovered template IDs and metadata."
+      responses:
+        200:
+          description: "OK"
+      x-openclaw-auth: "Observability"
+      x-openclaw-section: "1.4 Templates & Assets"
+      x-openclaw-legacy-path: "/moltbot/templates"
+      x-openclaw-auth-tier: "observability"
+      security:
+        - OpenClawObservabilityToken:
+            []
+  /presets:
+    get:
+      operationId: "get_presets"
+      summary: "List local presets (*depends on `OPENCLAW_PRESETS_PUBLIC_READ`)."
+      responses:
+        200:
+          description: "OK"
+      x-openclaw-auth: "Public/Admin*"
+      x-openclaw-section: "1.4 Templates & Assets"
+      x-openclaw-legacy-path: "/moltbot/presets"
+      x-openclaw-auth-tier: "admin"
+      security:
+        - OpenClawAdminToken:
+            []
+    post:
+      operationId: "post_presets"
+      summary: "Create a new preset."
+      responses:
+        200:
+          description: "OK"
+      x-openclaw-auth: "Admin"
+      x-openclaw-section: "1.4 Templates & Assets"
+      x-openclaw-legacy-path: "/moltbot/presets"
+      x-openclaw-auth-tier: "admin"
+      security:
+        - OpenClawAdminToken:
+            []
+  /presets/{id}:
+    put:
+      operationId: "put_presets_id"
+      summary: "Update an existing preset."
+      responses:
+        200:
+          description: "OK"
+      x-openclaw-auth: "Admin"
+      x-openclaw-section: "1.4 Templates & Assets"
+      x-openclaw-legacy-path: "/moltbot/presets/{id}"
+      x-openclaw-auth-tier: "admin"
+      security:
+        - OpenClawAdminToken:
+            []
+      parameters:
+        - name: "id"
+          in: "path"
+          required: true
+          schema:
+            type: "string"
+    delete:
+      operationId: "delete_presets_id"
+      summary: "Delete a preset."
+      responses:
+        200:
+          description: "OK"
+      x-openclaw-auth: "Admin"
+      x-openclaw-section: "1.4 Templates & Assets"
+      x-openclaw-legacy-path: "/moltbot/presets/{id}"
+      x-openclaw-auth-tier: "admin"
+      security:
+        - OpenClawAdminToken:
+            []
+      parameters:
+        - name: "id"
+          in: "path"
+          required: true
+          schema:
+            type: "string"
+  /checkpoints:
+    get:
+      operationId: "get_checkpoints"
+      summary: "List model checkpoints."
+      responses:
+        200:
+          description: "OK"
+      x-openclaw-auth: "Observability"
+      x-openclaw-section: "1.4 Templates & Assets"
+      x-openclaw-legacy-path: "/moltbot/checkpoints"
+      x-openclaw-auth-tier: "observability"
+      security:
+        - OpenClawObservabilityToken:
+            []
+    post:
+      operationId: "post_checkpoints"
+      summary: "Create/copy a checkpoint."
+      responses:
+        200:
+          description: "OK"
+      x-openclaw-auth: "Admin"
+      x-openclaw-section: "1.4 Templates & Assets"
+      x-openclaw-legacy-path: "/moltbot/checkpoints"
+      x-openclaw-auth-tier: "admin"
+      security:
+        - OpenClawAdminToken:
+            []
+  /packs:
+    get:
+      operationId: "get_packs"
+      summary: "List installed asset packs."
+      responses:
+        200:
+          description: "OK"
+      x-openclaw-auth: "Admin"
+      x-openclaw-section: "1.4 Templates & Assets"
+      x-openclaw-legacy-path: "/moltbot/packs"
+      x-openclaw-auth-tier: "admin"
+      security:
+        - OpenClawAdminToken:
+            []
+  /packs/import:
+    post:
+      operationId: "post_packs_import"
+      summary: "Import an asset pack (.zip)."
+      responses:
+        200:
+          description: "OK"
+      x-openclaw-auth: "Admin"
+      x-openclaw-section: "1.4 Templates & Assets"
+      x-openclaw-legacy-path: "/moltbot/packs/import"
+      x-openclaw-auth-tier: "admin"
+      security:
+        - OpenClawAdminToken:
+            []
+  /openclaw/schedules:
+    get:
+      operationId: "get_openclaw_schedules"
+      summary: "List all schedules."
+      responses:
+        200:
+          description: "OK"
+      x-openclaw-auth: "Unknown"
+      x-openclaw-section: "1.5 Schedules & Approvals"
+    post:
+      operationId: "post_openclaw_schedules"
+      summary: "Create a new schedule."
+      responses:
+        200:
+          description: "OK"
+      x-openclaw-auth: "Unknown"
+      x-openclaw-section: "1.5 Schedules & Approvals"
+  /openclaw/schedules/{id}:
+    get:
+      operationId: "get_openclaw_schedules_id"
+      summary: "Get schedule details."
+      responses:
+        200:
+          description: "OK"
+      x-openclaw-auth: "Unknown"
+      x-openclaw-section: "1.5 Schedules & Approvals"
+      parameters:
+        - name: "id"
+          in: "path"
+          required: true
+          schema:
+            type: "string"
+    put:
+      operationId: "put_openclaw_schedules_id"
+      summary: "Update a schedule."
+      responses:
+        200:
+          description: "OK"
+      x-openclaw-auth: "Unknown"
+      x-openclaw-section: "1.5 Schedules & Approvals"
+      parameters:
+        - name: "id"
+          in: "path"
+          required: true
+          schema:
+            type: "string"
+    delete:
+      operationId: "delete_openclaw_schedules_id"
+      summary: "Delete a schedule."
+      responses:
+        200:
+          description: "OK"
+      x-openclaw-auth: "Unknown"
+      x-openclaw-section: "1.5 Schedules & Approvals"
+      parameters:
+        - name: "id"
+          in: "path"
+          required: true
+          schema:
+            type: "string"
+  /openclaw/schedules/{id}/run:
+    post:
+      operationId: "post_openclaw_schedules_id_run"
+      summary: "Manually trigger a schedule."
+      responses:
+        200:
+          description: "OK"
+      x-openclaw-auth: "Unknown"
+      x-openclaw-section: "1.5 Schedules & Approvals"
+      parameters:
+        - name: "id"
+          in: "path"
+          required: true
+          schema:
+            type: "string"
+  /openclaw/schedules/{id}/runs:
+    get:
+      operationId: "get_openclaw_schedules_id_runs"
+      summary: "Get run history for a schedule."
+      responses:
+        200:
+          description: "OK"
+      x-openclaw-auth: "Unknown"
+      x-openclaw-section: "1.5 Schedules & Approvals"
+      parameters:
+        - name: "id"
+          in: "path"
+          required: true
+          schema:
+            type: "string"
+  /openclaw/approvals:
+    get:
+      operationId: "get_openclaw_approvals"
+      summary: "List pending approvals (includes pagination/scan diagnostics; bounded serialization scan on malformed records)."
+      responses:
+        200:
+          description: "OK"
+      x-openclaw-auth: "Unknown"
+      x-openclaw-section: "1.5 Schedules & Approvals"
+  /openclaw/approvals/{id}/approve:
+    post:
+      operationId: "post_openclaw_approvals_id_approve"
+      summary: "Approve a pending request."
+      responses:
+        200:
+          description: "OK"
+      x-openclaw-auth: "Unknown"
+      x-openclaw-section: "1.5 Schedules & Approvals"
+      parameters:
+        - name: "id"
+          in: "path"
+          required: true
+          schema:
+            type: "string"
+  /openclaw/approvals/{id}/reject:
+    post:
+      operationId: "post_openclaw_approvals_id_reject"
+      summary: "Reject a pending request."
+      responses:
+        200:
+          description: "OK"
+      x-openclaw-auth: "Unknown"
+      x-openclaw-section: "1.5 Schedules & Approvals"
+      parameters:
+        - name: "id"
+          in: "path"
+          required: true
+          schema:
+            type: "string"
+  /bridge/health:
+    get:
+      operationId: "get_bridge_health"
+      summary: "Bridge status and connectivity check."
+      responses:
+        200:
+          description: "OK"
+      x-openclaw-auth: "Unknown"
+      x-openclaw-section: "1.6 Bridge (Sidecar)"
+  /bridge/submit:
+    post:
+      operationId: "post_bridge_submit"
+      summary: "Submit job from sidecar to core."
+      responses:
+        200:
+          description: "OK"
+      x-openclaw-auth: "Unknown"
+      x-openclaw-section: "1.6 Bridge (Sidecar)"
+  /bridge/deliver:
+    post:
+      operationId: "post_bridge_deliver"
+      summary: "Outbound delivery from core to sidecar (via callback)."
+      responses:
+        200:
+          description: "OK"
+      x-openclaw-auth: "Unknown"
+      x-openclaw-section: "1.6 Bridge (Sidecar)"
+components:
+  securitySchemes:
+    OpenClawAdminToken:
+      type: "apiKey"
+      in: "header"
+      name: "X-OpenClaw-Admin-Token"
+    OpenClawObservabilityToken:
+      type: "apiKey"
+      in: "header"
+      name: "X-OpenClaw-Obs-Token"
+    OpenClawWebhookAuth:
+      type: "http"
+      scheme: "bearer"
+      description: "Webhook bearer or HMAC-based auth (see release API contract)."
+    OpenClawBridgeAuth:
+      type: "apiKey"
+      in: "header"
+      name: "X-OpenClaw-Bridge-Token"

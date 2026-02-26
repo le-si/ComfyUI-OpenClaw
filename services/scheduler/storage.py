@@ -192,6 +192,13 @@ class ScheduleStore:
             self._schedules = load_schedules()
             self._loaded = True
 
+    def flush(self) -> bool:
+        """Persist loaded schedules immediately (best effort)."""
+        with self._lock:
+            if not self._loaded:
+                return True
+            return save_schedules(self._schedules)
+
 
 # Singleton instance
 _schedule_store: Optional[ScheduleStore] = None
@@ -203,3 +210,14 @@ def get_schedule_store() -> ScheduleStore:
     if _schedule_store is None:
         _schedule_store = ScheduleStore()
     return _schedule_store
+
+
+def reset_schedule_store(*, flush: bool = False) -> None:
+    """Reset global schedule store singleton (tests / controlled reset helper)."""
+    global _schedule_store
+    if _schedule_store is not None and flush:
+        try:
+            _schedule_store.flush()
+        except Exception:
+            logger.exception("R67: schedule store flush during reset failed")
+    _schedule_store = None

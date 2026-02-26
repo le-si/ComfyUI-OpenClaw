@@ -6,6 +6,7 @@ Append-only run log with cursor/resume semantics.
 import json
 import logging
 import os
+import tempfile
 import threading
 import time
 from dataclasses import asdict, dataclass
@@ -124,12 +125,32 @@ class RunHistory:
         path = _get_history_path()
         try:
             data = [r.to_dict() for r in self._runs]
-            with open(path, "w", encoding="utf-8") as f:
-                json.dump(data, f, indent=2, ensure_ascii=False)
+            history_dir = os.path.dirname(path) or "."
+            fd, temp_path = tempfile.mkstemp(
+                suffix=".json", dir=history_dir, prefix="runs_"
+            )
+            try:
+                with os.fdopen(fd, "w", encoding="utf-8") as f:
+                    json.dump(data, f, indent=2, ensure_ascii=False)
+                os.replace(temp_path, path)
+            except Exception:
+                try:
+                    if os.path.exists(temp_path):
+                        os.remove(temp_path)
+                except Exception:
+                    pass
+                raise
             return True
         except (OSError, TypeError) as e:
             logger.error(f"Failed to save run history: {e}")
             return False
+
+    def flush(self) -> bool:
+        """Persist loaded state immediately (best effort)."""
+        with self._lock:
+            if not self._loaded:
+                return True
+            return self._save()
 
     def _enforce_retention(self) -> None:
         """Apply retention limits."""
@@ -249,3 +270,14 @@ def get_run_history() -> RunHistory:
     if _run_history is None:
         _run_history = RunHistory()
     return _run_history
+
+
+def reset_run_history(*, flush: bool = False) -> None:
+    """Reset global run history singleton (tests / controlled reset helper)."""
+    global _run_history
+    if _run_history is not None and flush:
+        try:
+            _run_history.flush()
+        except Exception:
+            logger.exception("R67: run history flush during reset failed")
+    _run_history = None

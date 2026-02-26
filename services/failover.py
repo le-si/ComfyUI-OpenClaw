@@ -10,6 +10,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import tempfile
 import time
 from dataclasses import asdict, dataclass
 from enum import Enum
@@ -113,7 +114,8 @@ class FailoverState:
         """Save cooldown state to disk (no secrets)."""
         try:
             # Ensure directory exists
-            os.makedirs(os.path.dirname(self.state_file), exist_ok=True)
+            state_dir = os.path.dirname(self.state_file) or "."
+            os.makedirs(state_dir, exist_ok=True)
 
             # Serialize active cooldowns only
             data = {
@@ -122,11 +124,29 @@ class FailoverState:
                 if entry.is_active()
             }
 
-            with open(self.state_file, "w") as f:
-                json.dump(data, f, indent=2)
+            # R67: atomic write (.tmp + replace) to reduce partial-file corruption on
+            # process interruption and keep reset/shutdown flows consistent.
+            fd, temp_path = tempfile.mkstemp(
+                suffix=".json", dir=state_dir, prefix="failover_"
+            )
+            try:
+                with os.fdopen(fd, "w", encoding="utf-8") as f:
+                    json.dump(data, f, indent=2, ensure_ascii=False)
+                os.replace(temp_path, self.state_file)
+            except Exception:
+                try:
+                    if os.path.exists(temp_path):
+                        os.remove(temp_path)
+                except Exception:
+                    pass
+                raise
 
         except Exception as e:
             logger.error(f"Failed to save failover state: {e}")
+
+    def flush(self) -> None:
+        """Persist active cooldown state immediately (best effort)."""
+        self._save()
 
     def _get_key(self, provider: str, model: Optional[str]) -> str:
         """Generate a unique key for provider/model combination."""
@@ -281,6 +301,17 @@ def get_failover_state() -> FailoverState:
     if _failover_state is None:
         _failover_state = FailoverState()
     return _failover_state
+
+
+def reset_failover_state(*, flush: bool = False) -> None:
+    """Reset global failover state singleton (tests / controlled reset helper)."""
+    global _failover_state
+    if _failover_state is not None and flush:
+        try:
+            _failover_state.flush()
+        except Exception:
+            logger.exception("R67: failover flush during reset failed")
+    _failover_state = None
 
 
 def classify_error(

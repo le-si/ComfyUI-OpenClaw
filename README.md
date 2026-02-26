@@ -54,6 +54,19 @@ Deployment profiles and hardening checklists:
 
 <details>
 
+<summary><strong>Runtime lifecycle consistency, structured logging opt-in, and generated OpenAPI spec</strong></summary>
+
+- Completed a focused runtime operability and contract maturity batch with full SOP verification:
+  - added graceful shutdown/reset consistency hooks so scheduler/failover runtime state flushes and resets are deterministic
+  - added opt-in structured JSON logging for core execution paths (including queue submit and LLM client) with bounded metadata events
+  - added machine-readable OpenAPI spec generation and committed `docs/openapi.yaml` for integrator/review tooling use
+  - added regression coverage for runtime lifecycle state handling, structured logging behavior, and OpenAPI generation drift
+  - completed full verification gate pass (detect-secrets, pre-commit, backend unit suites, and frontend Playwright E2E)
+
+</details>
+
+<details>
+
 <summary><strong>Assist streaming UX and frontend fetch-wrapper safety hardening</strong></summary>
 
 - Completed a focused assist UX + frontend transport reliability batch with full SOP verification:
@@ -529,6 +542,10 @@ And both:
 
 Use `/api/...` from browsers and extension JS.
 
+Machine-readable API spec:
+
+- Generated OpenAPI spec: `docs/openapi.yaml` (derived from `docs/release/api_contract.md`; regenerate with `python scripts/generate_openapi_spec.py`)
+
 ### Observability (read-only)
 
 - `GET /openclaw/health` -pack status, key presence, and basic metrics
@@ -814,6 +831,9 @@ Override:
 Logs:
 
 - `openclaw.log` (legacy `moltbot.log` is still supported)
+- Optional structured JSON logs for selected core paths:
+  - set `OPENCLAW_LOG_FORMAT=json` (or `OPENCLAW_STRUCTURED_LOGS=1`) before startup
+  - default behavior remains plain text logs (no structured log emission unless opt-in)
 
 ## Troubleshooting
 

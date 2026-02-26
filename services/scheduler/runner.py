@@ -564,3 +564,14 @@ def stop_scheduler() -> None:
     """Stop the background scheduler."""
     if _scheduler_runner:
         _scheduler_runner.stop()
+
+
+def reset_scheduler_runner(*, stop: bool = True) -> None:
+    """Reset singleton scheduler runner (tests / controlled reset helper)."""
+    global _scheduler_runner
+    if _scheduler_runner is not None and stop:
+        try:
+            _scheduler_runner.stop()
+        except Exception:
+            logger.exception("R67: scheduler stop during reset failed")
+    _scheduler_runner = None

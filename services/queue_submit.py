@@ -31,6 +31,18 @@ except ImportError:
 
 
 logger = logging.getLogger("ComfyUI-OpenClaw.services.queue")
+try:
+    from .structured_logging import (
+        configure_logger_for_structured_output,
+        emit_structured_log,
+    )
+except ImportError:
+    from services.structured_logging import (  # type: ignore
+        configure_logger_for_structured_output,
+        emit_structured_log,
+    )
+
+configure_logger_for_structured_output(logger)
 
 import os
 
@@ -65,6 +77,16 @@ async def submit_prompt(
     Raises:
         BudgetExceededError: If concurrency or size budgets are exceeded
     """
+    emit_structured_log(
+        logger,
+        level=logging.INFO,
+        event="queue.submit.start",
+        fields={
+            "source": source,
+            "trace_id": trace_id,
+            "has_extra_data": bool(extra_data),
+        },
+    )
     # NOTE: Must try relative import first. In ComfyUI runtime, `services` is not a top-level module.
     # Keeping this order prevents "No module named 'services.execution_budgets'" during queue submit.
     try:
@@ -149,11 +171,32 @@ async def submit_prompt(
                         logger.info(
                             f"Queued prompt: {data.get('prompt_id')} (source={source}, trace_id={trace_id})"
                         )
+                        emit_structured_log(
+                            logger,
+                            level=logging.INFO,
+                            event="queue.submit.success",
+                            fields={
+                                "source": source,
+                                "trace_id": trace_id,
+                                "prompt_id": data.get("prompt_id"),
+                                "queue_number": data.get("number"),
+                            },
+                        )
                         return data
                     else:
                         text = await resp.text()
                         logger.error(
                             f"Failed to queue prompt: {resp.status} - {text} (source={source}, trace_id={trace_id})"
+                        )
+                        emit_structured_log(
+                            logger,
+                            level=logging.ERROR,
+                            event="queue.submit.upstream_error",
+                            fields={
+                                "source": source,
+                                "trace_id": trace_id,
+                                "upstream_status": resp.status,
+                            },
                         )
                         # R61: Use APIError for queue failure
                         raise APIError(
@@ -170,6 +213,16 @@ async def submit_prompt(
         except Exception as e:
             logger.error(
                 f"Error submitting to queue: {e} (source={source}, trace_id={trace_id})"
+            )
+            emit_structured_log(
+                logger,
+                level=logging.ERROR,
+                event="queue.submit.error",
+                fields={
+                    "source": source,
+                    "trace_id": trace_id,
+                    "error_type": type(e).__name__,
+                },
             )
             # R61: Wrap generic exceptions too
             raise APIError(
