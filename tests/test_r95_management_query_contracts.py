@@ -124,12 +124,16 @@ class TestR95EventsApi(unittest.IsolatedAsyncioTestCase):
                 }
 
         store = StubStore()
-        fake_web = SimpleNamespace(json_response=MagicMock(return_value=SimpleNamespace(status=200)))
+        fake_web = SimpleNamespace(
+            json_response=MagicMock(return_value=SimpleNamespace(status=200))
+        )
 
         with (
             patch.object(api.events, "web", fake_web),
             patch.object(api.events, "check_rate_limit", return_value=True),
-            patch.object(api.events, "require_observability_access", return_value=(True, None)),
+            patch.object(
+                api.events, "require_observability_access", return_value=(True, None)
+            ),
             patch.object(api.events, "get_job_event_store", return_value=store),
         ):
             resp = await api.events.events_poll_handler(req)
@@ -161,11 +165,15 @@ class TestR95EventsApi(unittest.IsolatedAsyncioTestCase):
                     "latest_retained_seq": 10,
                 }
 
-        fake_web = SimpleNamespace(json_response=MagicMock(return_value=SimpleNamespace(status=200)))
+        fake_web = SimpleNamespace(
+            json_response=MagicMock(return_value=SimpleNamespace(status=200))
+        )
         with (
             patch.object(api.events, "web", fake_web),
             patch.object(api.events, "check_rate_limit", return_value=True),
-            patch.object(api.events, "require_observability_access", return_value=(True, None)),
+            patch.object(
+                api.events, "require_observability_access", return_value=(True, None)
+            ),
             patch.object(api.events, "get_job_event_store", return_value=StubStore()),
         ):
             await api.events.events_poll_handler(req)
@@ -191,7 +199,9 @@ class TestR95EventsApi(unittest.IsolatedAsyncioTestCase):
 
         with (
             patch.object(api.events, "check_rate_limit", return_value=True),
-            patch.object(api.events, "require_observability_access", return_value=(True, None)),
+            patch.object(
+                api.events, "require_observability_access", return_value=(True, None)
+            ),
             patch.object(api.events, "get_job_event_store", return_value=StubStore()),
         ):
             with self.assertRaises(RuntimeError):
@@ -203,7 +213,9 @@ class TestR95ApprovalsApi(unittest.IsolatedAsyncioTestCase):
         req = MagicMock()
         req.query = {"limit": "9999", "offset": "-7"}
 
-        handler = api.approvals.ApprovalHandlers(require_admin_token_fn=lambda _r: (True, None))
+        handler = api.approvals.ApprovalHandlers(
+            require_admin_token_fn=lambda _r: (True, None)
+        )
         handler._service = MagicMock()
         handler._service.list_all.return_value = [
             _DummyApproval("a1"),
@@ -212,7 +224,9 @@ class TestR95ApprovalsApi(unittest.IsolatedAsyncioTestCase):
         ]
         handler._service.count_pending.return_value = 1
 
-        fake_web = SimpleNamespace(json_response=MagicMock(return_value=SimpleNamespace(status=200)))
+        fake_web = SimpleNamespace(
+            json_response=MagicMock(return_value=SimpleNamespace(status=200))
+        )
         with patch.object(api.approvals, "web", fake_web):
             resp = await handler.list_approvals(req)
             self.assertEqual(resp.status, 200)
@@ -231,7 +245,9 @@ class TestR95ApprovalsApi(unittest.IsolatedAsyncioTestCase):
         req = MagicMock()
         req.query = {"status": "not-a-status"}
 
-        handler = api.approvals.ApprovalHandlers(require_admin_token_fn=lambda _r: (True, None))
+        handler = api.approvals.ApprovalHandlers(
+            require_admin_token_fn=lambda _r: (True, None)
+        )
         fake_web = SimpleNamespace(
             json_response=MagicMock(return_value=SimpleNamespace(status=400))
         )
@@ -243,7 +259,9 @@ class TestR95ApprovalsApi(unittest.IsolatedAsyncioTestCase):
         req = MagicMock()
         req.query = {}
 
-        handler = api.approvals.ApprovalHandlers(require_admin_token_fn=lambda _r: (True, None))
+        handler = api.approvals.ApprovalHandlers(
+            require_admin_token_fn=lambda _r: (True, None)
+        )
         handler._service = MagicMock()
         handler._service.list_all.side_effect = RuntimeError("db failed")
 
@@ -253,4 +271,3 @@ class TestR95ApprovalsApi(unittest.IsolatedAsyncioTestCase):
 
 if __name__ == "__main__":
     unittest.main()
-

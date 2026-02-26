@@ -73,7 +73,9 @@ def normalize_limit_offset(
     limit = _parse_int(raw_limit)
     if limit is None:
         if raw_limit is not None:
-            warnings.append(_warn("R95_INVALID_LIMIT", "limit", raw_limit, default_limit))
+            warnings.append(
+                _warn("R95_INVALID_LIMIT", "limit", raw_limit, default_limit)
+            )
         limit = default_limit
     if limit < 1:
         warnings.append(_warn("R95_LIMIT_BELOW_MIN", "limit", raw_limit, 1))
@@ -129,7 +131,9 @@ def normalize_cursor_limit(
             )
         cursor = default_cursor
     if cursor < min_cursor:
-        page.warnings.append(_warn("R95_CURSOR_BELOW_MIN", cursor_key, raw_cursor, min_cursor))
+        page.warnings.append(
+            _warn("R95_CURSOR_BELOW_MIN", cursor_key, raw_cursor, min_cursor)
+        )
         cursor = min_cursor
     page.cursor = cursor
     return page
@@ -176,4 +180,3 @@ def bounded_scan_collect(
         skipped_malformed=skipped_malformed,
         truncated=truncated,
     )
-

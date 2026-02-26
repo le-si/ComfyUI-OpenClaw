@@ -74,7 +74,9 @@ def format_metadata_block(metadata: Dict[str, Any]) -> str:
     )
 
 
-def extract_metadata_block(text: str) -> Tuple[Optional[Dict[str, Any]], List[str], Optional[str]]:
+def extract_metadata_block(
+    text: str,
+) -> Tuple[Optional[Dict[str, Any]], List[str], Optional[str]]:
     """
     Extract JSON metadata block.
 
@@ -121,12 +123,16 @@ def read_matrix_document(path: Path | str) -> Dict[str, Any]:
         "metadata": metadata,
         "issues": issues,
         "raw_metadata": raw,
-        "body_sha256": hashlib.sha256(_body_without_meta(text).encode("utf-8")).hexdigest(),
+        "body_sha256": hashlib.sha256(
+            _body_without_meta(text).encode("utf-8")
+        ).hexdigest(),
         "has_meta": metadata is not None,
     }
 
 
-def validate_metadata(metadata: Optional[Dict[str, Any]], *, today: Optional[date] = None) -> Dict[str, Any]:
+def validate_metadata(
+    metadata: Optional[Dict[str, Any]], *, today: Optional[date] = None
+) -> Dict[str, Any]:
     today = today or _utc_now().date()
     violations: List[Dict[str, Any]] = []
     if not isinstance(metadata, dict):
@@ -148,7 +154,9 @@ def validate_metadata(metadata: Optional[Dict[str, Any]], *, today: Optional[dat
         )
 
     last_validated = metadata.get("last_validated_date")
-    parsed_last = _parse_date(last_validated) if isinstance(last_validated, str) else None
+    parsed_last = (
+        _parse_date(last_validated) if isinstance(last_validated, str) else None
+    )
     if parsed_last is None:
         violations.append(
             {
@@ -160,7 +168,9 @@ def validate_metadata(metadata: Optional[Dict[str, Any]], *, today: Optional[dat
     policy = metadata.get("policy")
     if not isinstance(policy, dict):
         policy = {}
-        violations.append({"code": "R90_META_POLICY", "message": "Missing policy object"})
+        violations.append(
+            {"code": "R90_META_POLICY", "message": "Missing policy object"}
+        )
 
     try:
         warn_age_days = int(policy.get("warn_age_days", DEFAULT_WARN_AGE_DAYS))
@@ -187,12 +197,17 @@ def validate_metadata(metadata: Optional[Dict[str, Any]], *, today: Optional[dat
     anchors = metadata.get("anchors")
     if not isinstance(anchors, dict):
         anchors = {}
-        violations.append({"code": "R90_META_ANCHORS", "message": "Missing anchors object"})
+        violations.append(
+            {"code": "R90_META_ANCHORS", "message": "Missing anchors object"}
+        )
     else:
         for key in ANCHOR_KEYS:
             if key not in anchors:
                 violations.append(
-                    {"code": "R90_META_ANCHOR_MISSING", "message": f"Missing anchors.{key}"}
+                    {
+                        "code": "R90_META_ANCHOR_MISSING",
+                        "message": f"Missing anchors.{key}",
+                    }
                 )
 
     age_days: Optional[int] = None
@@ -314,7 +329,9 @@ def run_refresh_workflow(
     observed = dict(observed_anchors or normalize_observed_anchors())
 
     doc = read_matrix_document(p)
-    metadata = copy.deepcopy(doc["metadata"]) if isinstance(doc["metadata"], dict) else None
+    metadata = (
+        copy.deepcopy(doc["metadata"]) if isinstance(doc["metadata"], dict) else None
+    )
     if metadata is None:
         metadata = _default_metadata()
         # Preserve compatibility for first adoption while making missing metadata visible.
@@ -333,7 +350,9 @@ def run_refresh_workflow(
         "doc_issues": list(doc["issues"]),
     }
     diff_stage = {
-        "metadata_hash_before": _json_hash(doc["metadata"]) if doc["metadata"] is not None else None,
+        "metadata_hash_before": (
+            _json_hash(doc["metadata"]) if doc["metadata"] is not None else None
+        ),
         "drift": drift_before,
         "bootstrap_metadata": bootstrap_mode,
     }
@@ -352,9 +371,9 @@ def run_refresh_workflow(
         metadata_after["anchors"][key] = observed.get(key, "unknown")
     metadata_after["evidence"]["updated_by"] = updated_by
     metadata_after["evidence"]["updated_at"] = _utc_now().isoformat()
-    metadata_after["evidence"]["evidence_id"] = (
-        f"compat-matrix-refresh-{today.strftime('%Y%m%d')}"
-    )
+    metadata_after["evidence"][
+        "evidence_id"
+    ] = f"compat-matrix-refresh-{today.strftime('%Y%m%d')}"
 
     validate_after = validate_metadata(metadata_after, today=today)
     drift_after = detect_anchor_drift(metadata_after.get("anchors"), observed)

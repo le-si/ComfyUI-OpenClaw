@@ -19,13 +19,14 @@ from services.compatibility_matrix_governance import (
 )
 from services.operator_doctor import DoctorReport, check_compatibility_matrix_governance
 
-
 REPO_ROOT = Path(__file__).resolve().parents[1]
 
 
 class TestR90CompatMatrixGovernance(unittest.TestCase):
     def test_repo_matrix_has_valid_metadata(self):
-        doc = read_matrix_document(REPO_ROOT / "docs" / "release" / "compatibility_matrix.md")
+        doc = read_matrix_document(
+            REPO_ROOT / "docs" / "release" / "compatibility_matrix.md"
+        )
         self.assertTrue(doc["has_meta"], msg=doc["issues"])
         validation = validate_metadata(doc["metadata"])
         self.assertTrue(validation["ok"], msg=validation)
@@ -129,7 +130,9 @@ class TestR90CompatMatrixGovernance(unittest.TestCase):
             checks = {c.name: c for c in report.checks}
             self.assertIn("compatibility_matrix_governance", checks)
             self.assertEqual(checks["compatibility_matrix_governance"].severity, "warn")
-            self.assertEqual(report.environment["compat_matrix_validation_code"], "R90_MATRIX_STALE")
+            self.assertEqual(
+                report.environment["compat_matrix_validation_code"], "R90_MATRIX_STALE"
+            )
 
     def test_script_smoke_emits_evidence(self):
         with tempfile.TemporaryDirectory() as td:
@@ -170,4 +173,3 @@ class TestR90CompatMatrixGovernance(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
-
