@@ -244,6 +244,12 @@ class LLMClient:
             fallback_providers=fallback_providers if fallback_providers else None,
         )
 
+        return self._resolve_candidate_base_urls(candidates_2d)
+
+    def _resolve_candidate_base_urls(
+        self, candidates_2d: List[Tuple[str, Optional[str]]]
+    ) -> List[Tuple[str, Optional[str], Optional[str]]]:
+        """Convert (provider, model) candidates into (provider, model, base_url)."""
         # Convert to (provider, model, base_url) tuples
         candidates_3d = []
         for provider, model in candidates_2d:
@@ -258,6 +264,76 @@ class LLMClient:
                 candidates_3d.append((provider, model, base_url))
 
         return candidates_3d
+
+    def _sort_candidates_3d_by_health(
+        self,
+        candidates: List[Tuple[str, Optional[str], Optional[str]]],
+        failover_state,
+    ) -> List[Tuple[str, Optional[str], Optional[str]]]:
+        """R130: 3D candidate sort preserving original stable order tiebreak."""
+        indexed = list(enumerate(candidates))
+        indexed.sort(
+            key=lambda item: (
+                failover_state.get_health_score(item[1][0], item[1][1]),
+                -item[0],
+            ),
+            reverse=True,
+        )
+        return [cand for _, cand in indexed]
+
+    def _prepare_failover_execution(self) -> Dict[str, Any]:
+        """R130 phase 1: prepare failover dependencies and candidate list."""
+        try:
+            from ..services.runtime_config import get_effective_config
+        except ImportError:
+            from services.runtime_config import get_effective_config
+
+        try:
+            from ..services.failover import (
+                ErrorCategory,
+                classify_error,
+                get_cooldown_duration,
+                get_failover_state,
+                should_failover,
+                should_retry,
+            )
+        except ImportError:
+            from services.failover import (
+                ErrorCategory,
+                classify_error,
+                get_cooldown_duration,
+                get_failover_state,
+                should_failover,
+                should_retry,
+            )
+
+        eff_config, _ = get_effective_config()
+        max_failover_candidates = eff_config.get("max_failover_candidates", 3)
+        # NOTE: Keep at least 1 candidate; zero yields empty attempts and opaque errors.
+        # CRITICAL: Do not remove this guard. It prevents "All 0 failover candidates exhausted".
+        try:
+            max_failover_candidates = int(max_failover_candidates)
+        except (TypeError, ValueError):
+            max_failover_candidates = 3
+        if max_failover_candidates < 1:
+            max_failover_candidates = 1
+
+        failover_state = get_failover_state()
+        raw_candidates_3d = self._get_failover_candidates()
+        ordered_candidates_3d = self._sort_candidates_3d_by_health(
+            raw_candidates_3d, failover_state
+        )
+        candidates_to_try = ordered_candidates_3d[:max_failover_candidates]
+
+        return {
+            "ErrorCategory": ErrorCategory,
+            "classify_error": classify_error,
+            "get_cooldown_duration": get_cooldown_duration,
+            "should_failover": should_failover,
+            "should_retry": should_retry,
+            "failover_state": failover_state,
+            "candidates_to_try": candidates_to_try,
+        }
 
     def _get_egress_controls(
         self, provider: str, base_url: Optional[str]
@@ -333,21 +409,6 @@ class LLMClient:
         match = re.search(r"\b([45]\d{2})\b", error_str)
         return int(match.group(1)) if match else None
 
-    def _sort_candidates_by_health(
-        self, candidates: List[Tuple[str, Optional[str]]], failover_state
-    ) -> List[Tuple[str, Optional[str]]]:
-        """R37: Sort candidates by health score, prioritizing healthy ones."""
-        # Sort by health score (higher score first), then by original order (stable).
-        indexed = list(enumerate(candidates))
-        indexed.sort(
-            key=lambda item: (
-                failover_state.get_health_score(item[1][0], item[1][1]),
-                -item[0],
-            ),
-            reverse=True,
-        )
-        return [cand for _, cand in indexed]
-
     def _execute_request(
         self,
         system: str,
@@ -391,194 +452,30 @@ class LLMClient:
                 on_text_delta=on_text_delta,
             )
 
-    def complete(
+    def _execute_failover_candidates(
         self,
+        *,
+        phase: Dict[str, Any],
         system: str,
         user_message: str,
-        image_base64: Optional[str] = None,
-        image_media_type: str = "image/png",
-        temperature: float = 0.7,
-        max_tokens: int = 4096,
-        tools: Optional[
-            List[Dict[str, Any]]
-        ] = None,  # F25: Optional tool calling schemas
-        tool_choice: Optional[str] = None,  # F25: Optional tool_choice (OpenAI-compat)
-        trace_id: Optional[str] = None,  # R25: Trace context
-        streaming: bool = False,  # R38: optional provider streaming path
-        on_text_delta: Optional[Callable[[str], None]] = None,  # R38 callback
+        image_base64: Optional[str],
+        image_media_type: str,
+        temperature: float,
+        max_tokens: int,
+        tools: Optional[List[Dict[str, Any]]],
+        tool_choice: Optional[str],
+        trace_id: Optional[str],
+        streaming: bool,
+        on_text_delta: Optional[Callable[[str], None]],
     ) -> Dict[str, Any]:
-        """
-        Send a completion request to the configured provider.
-
-        Args:
-            system: System prompt
-            user_message: User message text
-            image_base64: Optional base64-encoded image
-            image_media_type: MIME type of image
-            temperature: Sampling temperature
-            max_tokens: Maximum tokens in response
-
-        Returns:
-            {"text": str, "raw": dict}
-        """
-        if requires_api_key(self.provider) and not self.api_key:
-            raise ValueError(f"API key not configured for provider '{self.provider}'")
-
-        # R23: Param transforms + audit via plugins
-        # Default safe bounds
-        SAFE_BOUNDS = {
-            "temperature": (0.0, 2.0, 0.7),  # (min, max, default)
-            "max_tokens": (1, 128000, 4096),
-        }
-
-        # Initial params
-        params = {
-            "temperature": temperature,
-            "max_tokens": max_tokens,
-        }
-        run_async_in_sync_context = None
-        ctx = None
-
-        if PLUGINS_AVAILABLE:
-            try:
-                from .plugins.async_bridge import (
-                    run_async_in_sync_context as _run_async_in_sync_context,
-                )
-
-                run_async_in_sync_context = _run_async_in_sync_context
-                ctx = RequestContext(
-                    provider=self.provider,
-                    model=self.model,
-                    trace_id=trace_id or "unknown",
-                )
-
-                # Apply parameter transforms (params clamping, etc.)
-                transformed = run_async_in_sync_context(
-                    plugin_manager.execute_sequential("llm.params", ctx, params)
-                )
-
-                if transformed and isinstance(transformed, dict):
-                    params = transformed
-                else:
-                    logger.warning(
-                        f"Plugin transform returned invalid data: {transformed}, reverting to input"
-                    )
-            except Exception as e:
-                logger.warning(f"Plugin param transform failed (non-fatal): {e}")
-
-        # Enforce hard safety bounds (True Fail-Closed)
-        # Regardless of whether plugin succeeded, failed, or returned garbage,
-        # we ALWAYS clamp to safe ranges before proceeding.
-
-        # Clamp Temperature
-        t_min, t_max, t_def = SAFE_BOUNDS["temperature"]
-        t_val = params.get("temperature", temperature)
-        if not isinstance(t_val, (int, float)):
-            t_val = t_def
-        temperature = max(t_min, min(t_val, t_max))
-
-        # Clamp Max Tokens
-        m_min, m_max, m_def = SAFE_BOUNDS["max_tokens"]
-        m_val = params.get("max_tokens", max_tokens)
-        if not isinstance(m_val, int):
-            m_val = m_def
-        max_tokens = max(m_min, min(m_val, m_max))
-
-        # Re-sync params for audit
-        audit_params = {"temperature": temperature, "max_tokens": max_tokens}
-        if PLUGINS_AVAILABLE and run_async_in_sync_context and ctx:
-            # Audit request (fire-and-forget, never fails request)
-            try:
-                audit_payload = {
-                    "provider": self.provider,
-                    "model": self.model,
-                    "params": audit_params,
-                    "has_image": image_base64 is not None,
-                }
-                run_async_in_sync_context(
-                    plugin_manager.execute_parallel(
-                        "llm.audit_request", ctx, audit_payload
-                    )
-                )
-            except Exception:
-                pass  # Audit failures are non-fatal
-
-        # R14: Failover + retry logic
-        try:
-            from ..services.runtime_config import get_effective_config
-        except ImportError:
-            from services.runtime_config import get_effective_config
-
-        try:
-            from ..services.failover import (  # R37: Added ErrorCategory import; R37: Added for candidate ordering
-                ErrorCategory,
-                classify_error,
-                get_cooldown_duration,
-                get_failover_candidates,
-                get_failover_state,
-                should_failover,
-                should_retry,
-            )
-        except ImportError:
-            from services.failover import (  # R37: Added ErrorCategory import; R37: Added for candidate ordering
-                ErrorCategory,
-                classify_error,
-                get_cooldown_duration,
-                get_failover_candidates,
-                get_failover_state,
-                should_failover,
-                should_retry,
-            )
-
-        eff_config, _ = get_effective_config()
-        max_failover_candidates = eff_config.get("max_failover_candidates", 3)
-        # NOTE: Keep at least 1 candidate; zero yields empty attempts and opaque errors.
-        # CRITICAL: Do not remove this guard. It prevents "All 0 failover candidates exhausted".
-        try:
-            max_failover_candidates = int(max_failover_candidates)
-        except (TypeError, ValueError):
-            max_failover_candidates = 3
-        if max_failover_candidates < 1:
-            max_failover_candidates = 1
-
-        # Get failover config
-        self.fallback_models = eff_config.get(
-            "fallback_models", []
-        )  # R37: Store for _sort_candidates_by_health
-        self.fallback_providers = eff_config.get(
-            "fallback_providers", []
-        )  # R37: Store for _sort_candidates_by_health
-
-        failover_state = get_failover_state()
-
-        # Get ordered candidates (provider, model)
-        raw_candidates = get_failover_candidates(
-            primary_provider=self.provider,
-            primary_model=self.model,
-            fallback_models=self.fallback_models if self.fallback_models else None,
-            fallback_providers=(
-                self.fallback_providers if self.fallback_providers else None
-            ),
-        )
-
-        # R37: Sort candidates by health score
-        candidates_2d = self._sort_candidates_by_health(raw_candidates, failover_state)
-
-        # Convert to (provider, model, base_url) tuples
-        candidates_3d = []
-        for provider, model in candidates_2d:
-            # Resolve base_url for each candidate
-            if provider == self.provider:
-                # Same as primary, use configured base_url
-                candidates_3d.append((provider, model, self.base_url))
-            else:
-                # Different provider, get default base_url
-                info = get_provider_info(provider)
-                base_url = info.base_url if info else None
-                candidates_3d.append((provider, model, base_url))
-
-        # Limit total candidates tried
-        candidates_to_try = candidates_3d[:max_failover_candidates]
+        """R130 phase 2: execute failover/retry loop against prepared candidates."""
+        ErrorCategory = phase["ErrorCategory"]
+        classify_error = phase["classify_error"]
+        get_cooldown_duration = phase["get_cooldown_duration"]
+        should_failover = phase["should_failover"]
+        should_retry = phase["should_retry"]
+        failover_state = phase["failover_state"]
+        candidates_to_try = phase["candidates_to_try"]
 
         last_error = None
         candidates_tried = 0
@@ -816,7 +713,6 @@ class LLMClient:
 
                 # If we exhausted all retries for this candidate, continue to next
                 last_error = candidate_last_error or last_error
-
         finally:
             # Always restore original configuration
             self.provider = original_provider
@@ -839,6 +735,134 @@ class LLMClient:
         )
         raise last_error or RuntimeError(
             f"All {candidates_tried} failover candidates exhausted"
+        )
+
+    def complete(
+        self,
+        system: str,
+        user_message: str,
+        image_base64: Optional[str] = None,
+        image_media_type: str = "image/png",
+        temperature: float = 0.7,
+        max_tokens: int = 4096,
+        tools: Optional[
+            List[Dict[str, Any]]
+        ] = None,  # F25: Optional tool calling schemas
+        tool_choice: Optional[str] = None,  # F25: Optional tool_choice (OpenAI-compat)
+        trace_id: Optional[str] = None,  # R25: Trace context
+        streaming: bool = False,  # R38: optional provider streaming path
+        on_text_delta: Optional[Callable[[str], None]] = None,  # R38 callback
+    ) -> Dict[str, Any]:
+        """
+        Send a completion request to the configured provider.
+
+        Args:
+            system: System prompt
+            user_message: User message text
+            image_base64: Optional base64-encoded image
+            image_media_type: MIME type of image
+            temperature: Sampling temperature
+            max_tokens: Maximum tokens in response
+
+        Returns:
+            {"text": str, "raw": dict}
+        """
+        if requires_api_key(self.provider) and not self.api_key:
+            raise ValueError(f"API key not configured for provider '{self.provider}'")
+
+        # R23: Param transforms + audit via plugins
+        # Default safe bounds
+        SAFE_BOUNDS = {
+            "temperature": (0.0, 2.0, 0.7),  # (min, max, default)
+            "max_tokens": (1, 128000, 4096),
+        }
+
+        # Initial params
+        params = {
+            "temperature": temperature,
+            "max_tokens": max_tokens,
+        }
+        run_async_in_sync_context = None
+        ctx = None
+
+        if PLUGINS_AVAILABLE:
+            try:
+                from .plugins.async_bridge import (
+                    run_async_in_sync_context as _run_async_in_sync_context,
+                )
+
+                run_async_in_sync_context = _run_async_in_sync_context
+                ctx = RequestContext(
+                    provider=self.provider,
+                    model=self.model,
+                    trace_id=trace_id or "unknown",
+                )
+
+                # Apply parameter transforms (params clamping, etc.)
+                transformed = run_async_in_sync_context(
+                    plugin_manager.execute_sequential("llm.params", ctx, params)
+                )
+
+                if transformed and isinstance(transformed, dict):
+                    params = transformed
+                else:
+                    logger.warning(
+                        f"Plugin transform returned invalid data: {transformed}, reverting to input"
+                    )
+            except Exception as e:
+                logger.warning(f"Plugin param transform failed (non-fatal): {e}")
+
+        # Enforce hard safety bounds (True Fail-Closed)
+        # Regardless of whether plugin succeeded, failed, or returned garbage,
+        # we ALWAYS clamp to safe ranges before proceeding.
+
+        # Clamp Temperature
+        t_min, t_max, t_def = SAFE_BOUNDS["temperature"]
+        t_val = params.get("temperature", temperature)
+        if not isinstance(t_val, (int, float)):
+            t_val = t_def
+        temperature = max(t_min, min(t_val, t_max))
+
+        # Clamp Max Tokens
+        m_min, m_max, m_def = SAFE_BOUNDS["max_tokens"]
+        m_val = params.get("max_tokens", max_tokens)
+        if not isinstance(m_val, int):
+            m_val = m_def
+        max_tokens = max(m_min, min(m_val, m_max))
+
+        # Re-sync params for audit
+        audit_params = {"temperature": temperature, "max_tokens": max_tokens}
+        if PLUGINS_AVAILABLE and run_async_in_sync_context and ctx:
+            # Audit request (fire-and-forget, never fails request)
+            try:
+                audit_payload = {
+                    "provider": self.provider,
+                    "model": self.model,
+                    "params": audit_params,
+                    "has_image": image_base64 is not None,
+                }
+                run_async_in_sync_context(
+                    plugin_manager.execute_parallel(
+                        "llm.audit_request", ctx, audit_payload
+                    )
+                )
+            except Exception:
+                pass  # Audit failures are non-fatal
+
+        phase = self._prepare_failover_execution()
+        return self._execute_failover_candidates(
+            phase=phase,
+            system=system,
+            user_message=user_message,
+            image_base64=image_base64,
+            image_media_type=image_media_type,
+            temperature=temperature,
+            max_tokens=max_tokens,
+            tools=tools,
+            tool_choice=tool_choice,
+            trace_id=trace_id,
+            streaming=streaming,
+            on_text_delta=on_text_delta,
         )
 
     def _complete_anthropic(
