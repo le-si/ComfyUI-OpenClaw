@@ -95,4 +95,3 @@ class TestR129ExecutorLaneSplit(unittest.IsolatedAsyncioTestCase):
         self.assertIn("submitted", diag["llm"])
         self.assertIn("workers", diag["io"])
         self.assertIn("submitted", diag["io"])
-
