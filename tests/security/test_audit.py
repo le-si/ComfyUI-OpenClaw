@@ -1,7 +1,7 @@
 import json
 import os
 import unittest
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 from services.access_control import AuthTier, TokenInfo
 from services.audit import (
@@ -94,3 +94,14 @@ class TestAudit(unittest.TestCase):
         self.assertIn("secrets.write", actions)
         self.assertIn("settings.secret_delete", actions)
         self.assertIn("secrets.delete", actions)
+
+    def test_write_path_uses_atomic_lock(self):
+        lock = MagicMock()
+        lock.__enter__ = MagicMock(return_value=lock)
+        lock.__exit__ = MagicMock(return_value=False)
+
+        with patch("services.audit._AUDIT_WRITE_LOCK", lock):
+            emit_audit_event("settings.config_write", "127.0.0.1", True)
+
+        lock.__enter__.assert_called_once()
+        lock.__exit__.assert_called_once()

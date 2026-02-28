@@ -7,6 +7,7 @@ import hashlib
 import json
 import logging
 import os
+import threading
 import time
 import uuid
 from typing import Any, Dict, Iterable, Optional, Tuple
@@ -193,6 +194,7 @@ def _read_last_entry_hash(path: str) -> str:
 
 
 _LAST_HASH: Optional[str] = None
+_AUDIT_WRITE_LOCK = threading.Lock()
 
 
 def _write_audit_entry(entry: Dict[str, Any]) -> None:
@@ -203,23 +205,25 @@ def _write_audit_entry(entry: Dict[str, Any]) -> None:
         # Path may be relative to CWD with no parent folder.
         pass
 
-    _rotate_if_needed(AUDIT_LOG_PATH)
-    if _LAST_HASH is None:
-        _LAST_HASH = _read_last_entry_hash(AUDIT_LOG_PATH)
+    # CRITICAL: keep read->chain->append->state update atomic to avoid hash-chain forks.
+    with _AUDIT_WRITE_LOCK:
+        _rotate_if_needed(AUDIT_LOG_PATH)
+        if _LAST_HASH is None:
+            _LAST_HASH = _read_last_entry_hash(AUDIT_LOG_PATH)
 
-    prev_hash = _LAST_HASH or "GENESIS"
-    event_hash = _chain_hash(prev_hash, entry)
-    wrapped = dict(entry)
-    wrapped["prev_hash"] = prev_hash
-    wrapped["entry_hash"] = event_hash
+        prev_hash = _LAST_HASH or "GENESIS"
+        event_hash = _chain_hash(prev_hash, entry)
+        wrapped = dict(entry)
+        wrapped["prev_hash"] = prev_hash
+        wrapped["entry_hash"] = event_hash
 
-    line = json.dumps(wrapped, sort_keys=True, ensure_ascii=True) + "\n"
-    try:
-        with open(AUDIT_LOG_PATH, "a", encoding="utf-8") as f:
-            f.write(line)
-        _LAST_HASH = event_hash
-    except Exception as exc:
-        logger.error("Failed to write audit entry: %s", exc)
+        line = json.dumps(wrapped, sort_keys=True, ensure_ascii=True) + "\n"
+        try:
+            with open(AUDIT_LOG_PATH, "a", encoding="utf-8") as f:
+                f.write(line)
+            _LAST_HASH = event_hash
+        except Exception as exc:
+            logger.error("Failed to write audit entry: %s", exc)
 
 
 def _emit_modern(
