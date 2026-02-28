@@ -39,6 +39,17 @@ class Metrics:
                         "budget_denied_scheduler": 0,
                         "budget_denied_bridge": 0,
                         "budget_denied_unknown": 0,
+                        # R129: executor-lane saturation diagnostics
+                        "executor_llm_submitted": 0,
+                        "executor_llm_started": 0,
+                        "executor_llm_completed": 0,
+                        "executor_llm_wait_ms_total": 0,
+                        "executor_llm_wait_over_250ms": 0,
+                        "executor_io_submitted": 0,
+                        "executor_io_started": 0,
+                        "executor_io_completed": 0,
+                        "executor_io_wait_ms_total": 0,
+                        "executor_io_wait_over_250ms": 0,
                     }
                     cls._instance._counter_lock = threading.Lock()
         return cls._instance

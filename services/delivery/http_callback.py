@@ -9,7 +9,7 @@ import logging
 import os
 from typing import Optional, Set
 
-from ..async_utils import run_in_thread
+from ..async_utils import run_io_in_thread
 from ..chatops.transport_contract import DeliveryMessage, DeliveryTarget, TransportType
 from ..safe_io import STANDARD_OUTBOUND_POLICY, SSRFError, safe_request_json
 
@@ -74,7 +74,9 @@ class HttpCallbackAdapter:
 
         # Use safe_io.safe_request_json (sync) via thread
         try:
-            await run_in_thread(
+            # CRITICAL (R129): callback delivery should stay in the IO lane so
+            # LLM spikes do not starve outbound delivery.
+            await run_io_in_thread(
                 safe_request_json,
                 method="POST",
                 url=callback_url,

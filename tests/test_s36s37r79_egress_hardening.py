@@ -306,6 +306,9 @@ class TestR79EgressCompliance(unittest.TestCase):
             "node_modules",
             "scripts",
             "REFERENCE",
+            # CRITICAL: local setups may contain lower-case `reference/` mirrors.
+            # Keep both forms skipped to avoid false-positive R79 violations.
+            "reference",
             ".agent",
             ".planning",
         ]

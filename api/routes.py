@@ -37,6 +37,7 @@ except ModuleNotFoundError:  # pragma: no cover (optional for unit tests)
 
 PACK_NAME = PACK_VERSION = PACK_START_TIME = LOG_FILE = get_api_key = None  # type: ignore
 metrics = tail_log = require_observability_access = check_rate_limit = trace_store = None  # type: ignore
+get_executor_diagnostics = None  # type: ignore
 webhook_handler = webhook_submit_handler = webhook_validate_handler = capabilities_handler = preflight_handler = None  # type: ignore
 config_get_handler = config_put_handler = llm_test_handler = llm_models_handler = llm_chat_handler = None  # type: ignore
 security_doctor_handler = None  # type: ignore  # S30
@@ -176,6 +177,12 @@ if web is not None:
         "..services.metrics",
         "services.metrics",
         ("metrics",),
+    )
+    (get_executor_diagnostics,) = import_attrs_dual(
+        __package__,
+        "..services.async_utils",
+        "services.async_utils",
+        ("get_executor_diagnostics",),
     )
     (
         create_compare_handler,
@@ -328,6 +335,10 @@ async def health_handler(request: web.Request) -> web.Response:
         m_snapshot = metrics.get_snapshot()
     except Exception:
         m_snapshot = {"errors_captured": 0, "logs_processed": 0}
+    try:
+        executor_snapshot = get_executor_diagnostics() or {}
+    except Exception:
+        executor_snapshot = {}
 
     # Job Event Store Stats (Backpressure)
     job_stats = {}
@@ -377,6 +388,7 @@ async def health_handler(request: web.Request) -> web.Response:
             "stats": {
                 "errors_captured": m_snapshot["errors_captured"],
                 "logs_processed": m_snapshot["logs_processed"],
+                "executors": executor_snapshot,  # R129
                 "observability": job_stats,  # R87
             },
             # S15: Exposure Detection

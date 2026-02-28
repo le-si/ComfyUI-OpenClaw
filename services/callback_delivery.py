@@ -8,7 +8,7 @@ import logging
 import os
 from typing import Any, Dict, Optional, Set
 
-from .async_utils import run_in_thread
+from .async_utils import run_io_in_thread
 from .comfyui_history import extract_images, fetch_history, get_job_status
 from .job_events import JobEventType, get_job_event_store  # R71
 from .metrics import metrics
@@ -86,7 +86,9 @@ async def _watch_and_deliver(
         attempts += 1
 
         # Use thread to avoid blocking event loop
-        history_item = await run_in_thread(fetch_history, prompt_id)
+        # IMPORTANT (R129): history polling is network/disk-bound I/O and must not
+        # compete with long LLM calls in the default lane.
+        history_item = await run_io_in_thread(fetch_history, prompt_id)
         status = get_job_status(history_item)
 
         if status in ("completed", "error"):
@@ -151,7 +153,7 @@ async def _watch_and_deliver(
 
     for attempt in range(max_total_attempts):
         try:
-            await run_in_thread(
+            await run_io_in_thread(
                 safe_request_json,
                 method,
                 url,
