@@ -6,6 +6,7 @@ ComfyUI-OpenClaw is a **security-first orchestration layer** for ComfyUI that co
 
 - **LLM-assisted nodes** (planner/refiner/vision/batch variants)
 - **A built-in extension UI** (`OpenClaw` panel)
+- **A standalone Remote Admin Console** (`/openclaw/admin`) for mobile/remote browser operations
 - **A secure-by-default HTTP API** for automation (webhooks, triggers, schedules, approvals, presets)
 - **Public-ready control-plane split architecture** (embedded UX + externalized high-risk control surfaces)
 - **Verification-first hardening lanes** (route drift, real-backend E2E, adversarial fuzz/mutation gates)
@@ -51,6 +52,35 @@ Deployment profiles and hardening checklists:
 
 
 <details><summary><h2>Latest Updates - Click to expand</h2></summary>
+
+<details>
+
+<summary><strong>Standalone remote admin mobile console for phone/desktop operations</strong></summary>
+
+- Added an independent remote admin entry page at `/openclaw/admin` (legacy `/moltbot/admin`), separate from the ComfyUI side panel.
+- Added a mobile-first admin console layout for operational flows:
+  - dashboard (health, provider/key state, scheduler/runs summary, recent error lines)
+  - jobs/events (recent runs + SSE connect/poll fallback)
+  - approvals (approve/reject)
+  - schedules/triggers (toggle/run/fire)
+  - config (read + guarded write)
+  - doctor/diagnostics and quick actions (retry/model refresh/drill via existing policy gates)
+- Preserved backend security boundaries: remote write actions still require explicit admin-token and remote-admin policy conditions.
+- Completed full verification gate pass (detect-secrets, pre-commit, backend unit suites, and frontend Playwright E2E).
+
+</details>
+
+<details>
+
+<summary><strong>Executor lane split and callback I/O isolation for better saturation resilience</strong></summary>
+
+- Added dedicated executor lanes for LLM vs I/O workloads with bounded worker controls.
+- Migrated callback delivery and outbound HTTP callback paths to the I/O lane, reducing interference with LLM execution paths.
+- Added queue/saturation diagnostics and executor metrics exposure in health/stat telemetry.
+- Added targeted regression coverage for lane split behavior and callback I/O lane migration.
+- Completed full verification gate pass (detect-secrets, pre-commit, backend unit suites, and frontend Playwright E2E).
+
+</details>
 
 <details>
 
@@ -353,6 +383,11 @@ Deployment profiles and hardening checklists:
   - [Configure an LLM key](#1-configure-an-llm-key-for-plannerrefinervision-helpers)
   - [Configure webhook auth](#2-configure-webhook-auth-required-for-webhook)
   - [Set an Admin Token](#3-optional-recommended-set-an-admin-token)
+- [Remote Admin Console (Mobile UI)](#remote-admin-console-mobile-ui)
+  - [Environment variables for remote admin](#environment-variables-for-remote-admin)
+  - [Connection from phone or other devices](#connection-from-phone-or-other-devices)
+  - [Basic operations](#basic-operations)
+  - [Reverse proxy and exposure notes](#reverse-proxy-and-exposure-notes)
 - [Nodes](#nodes)
 - [Extension UI](#extension-ui)
   - [Sidebar Modules](#sidebar-modules)
@@ -446,6 +481,72 @@ Remote admin actions are denied by default. If you understand the risk and need 
 - CMD (current session only): `set OPENCLAW_LLM_API_KEY=<YOUR_API_KEY>`
 - Portable `.bat` launchers: add `set OPENCLAW_LLM_API_KEY=...` / `set OPENCLAW_ADMIN_TOKEN=...` before launching ComfyUI.
 - ComfyUI Desktop: if env vars are not passed through reliably, prefer the Settings UI key store for localhost-only convenience, or set system-wide env vars.
+
+## Remote Admin Console (Mobile UI)
+
+The project now includes a standalone admin UI endpoint for mobile/remote operations:
+
+- primary: `/openclaw/admin`
+- legacy alias: `/moltbot/admin`
+
+This page is independent from the embedded ComfyUI side panel and is intended for phone/desktop browsers.
+
+### Environment variables for remote admin
+
+Recommended baseline before enabling remote administration:
+
+- `OPENCLAW_ADMIN_TOKEN=<strong-secret>`
+  - required for authenticated write/admin operations from remote devices
+- `OPENCLAW_ALLOW_REMOTE_ADMIN=1`
+  - explicit opt-in for remote admin write paths
+- `OPENCLAW_OBSERVABILITY_TOKEN=<strong-secret>` (recommended)
+  - tokenized read access for observability routes in non-localhost scenarios
+
+Optional but commonly used with planner/refiner workflows:
+
+- `OPENCLAW_LLM_API_KEY=<provider-key>` (or provider-specific key vars)
+
+### Connection from phone or other devices
+
+1. Start ComfyUI with external listen enabled (example):
+   - `python main.py --listen 0.0.0.0 --port 8200`
+2. Use your host LAN IP (for example `192.168.x.x`) and open:
+   - `http://<HOST_LAN_IP>:<PORT>/openclaw/admin`
+3. Enter the admin token in the page input and click `Save`.
+4. Click `Refresh All` to verify health and API reachability.
+
+Notes:
+
+- On Windows, if a port fails with bind errors (for example WinError 10013), choose a different port outside excluded ranges.
+- If write actions are denied remotely, verify both `OPENCLAW_ADMIN_TOKEN` and `OPENCLAW_ALLOW_REMOTE_ADMIN=1`.
+
+### Basic operations
+
+After token save, typical flow is:
+
+- `Dashboard`: confirm provider/model/key status and recent errors
+- `Jobs / Events`: refresh runs, connect SSE stream, verify event updates
+- `Approvals`: approve/reject pending items
+- `Schedules / Triggers`: toggle schedules, run now, or fire manual trigger
+- `Config`: reload and safely update provider/model/base URL/retry/timeout
+- `Doctor / Diagnostics`: inspect security doctor + preflight inventory output
+- `Quick Actions`: retry failed schedule, refresh model list, or run drill (subject to existing policy/tool availability)
+
+### Reverse proxy and exposure notes
+
+Do **not** expose ComfyUI/OpenClaw admin endpoints directly to the public internet without a hardened edge.
+
+Minimum recommendations:
+
+- terminate TLS at reverse proxy (HTTPS only)
+- add authentication at edge (in addition to OpenClaw admin token)
+- restrict source IP ranges when possible
+- apply request-rate limits and connection limits
+- keep server and node package on current patched versions
+
+For internet-facing deployment templates and hardening checklist, follow:
+
+- `docs/security_deployment_guide.md`
 
 ## Nodes
 
@@ -545,6 +646,7 @@ Use `/api/...` from browsers and extension JS.
 Machine-readable API spec:
 
 - Generated OpenAPI spec: `docs/openapi.yaml` (derived from `docs/release/api_contract.md`; regenerate with `python scripts/generate_openapi_spec.py`)
+- UI entry route: `GET /openclaw/admin` (legacy `GET /moltbot/admin`) serves the standalone remote admin console HTML shell; backend write actions still enforce admin-token and remote-admin policy.
 
 ### Observability (read-only)
 

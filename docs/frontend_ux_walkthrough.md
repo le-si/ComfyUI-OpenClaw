@@ -25,6 +25,29 @@ This document summarizes the current OpenClaw sidebar UI structure and how to ve
 If capabilities are unavailable, the full tab set is registered to surface actionable errors (instead of “missing tabs”).
 If `assist_streaming` is unavailable or the stream transport degrades, Planner/Refiner automatically fall back to the existing non-stream request path.
 
+## Standalone Remote Admin Console
+
+- Entry route: `GET /openclaw/admin` (legacy `GET /moltbot/admin` still works).
+- HTML shell: `web/admin_console.html`
+- Purpose: mobile-friendly standalone operations UI for non-sidebar workflows.
+- Security model:
+  - The page itself is a static shell and can render without authentication.
+  - All write APIs still enforce backend admin policy (`X-OpenClaw-Admin-Token` and remote policy such as `OPENCLAW_ALLOW_REMOTE_ADMIN`).
+- Runtime behaviors:
+  - Dashboard summary + health/config snapshots
+  - Jobs/Events polling + SSE stream connect/fallback
+  - Approvals/Schedules/Triggers control actions
+  - Config read/partial write and diagnostics access
+  - Quick Actions (retry/refresh/drill) remain backend-authorized
+
+## Remote Console Manual Checks
+
+1. Open `http://<host>:<port>/openclaw/admin` from desktop and phone browsers.
+2. Save an admin token via the console and verify protected actions succeed.
+3. Clear token and verify write actions fail with explicit auth/policy errors.
+4. Connect SSE, then trigger a run; verify event stream updates and fallback polling still works.
+5. Confirm there is no blank/overflow breakage on narrow mobile widths.
+
 ## Quick Manual Checks
 
 1. Open ComfyUI and confirm OpenClaw appears in the sidebar.

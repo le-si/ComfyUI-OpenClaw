@@ -118,6 +118,7 @@ OPENCLAW_SECURITY_DANGEROUS_BIND_OVERRIDE=0
    - `python scripts/check_deployment_profile.py --profile lan`
 5. Run the security diagnostics endpoint before production use:
    - `GET /openclaw/security/doctor` (admin boundary).
+6. If using mobile/remote admin UI, expose `/openclaw/admin` only inside trusted LAN/VPN boundaries.
 
 ## 5. Public (Internet + Reverse Proxy)
 
@@ -170,6 +171,7 @@ OPENCLAW_SECURITY_DANGEROUS_BIND_OVERRIDE=0
 7. Validate with project test and release gates before rollout:
     - `tests/TEST_SOP.md`
     - `RELEASE_CHECKLIST.md`
+8. Ensure `/openclaw/admin` is blocked at public edge unless a separately hardened private admin plane is in place.
 
 ## 6. Bridge in Public Profile (only when absolutely required)
 

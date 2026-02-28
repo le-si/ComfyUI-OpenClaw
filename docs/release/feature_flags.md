@@ -19,7 +19,7 @@ Users should audit these flags before deploying to a public or untrusted network
 | Flag | Default | Risk | Description |
 | :--- | :--- | :--- | :--- |
 | `OPENCLAW_CONNECTOR_ADMIN_TOKEN` | *None* | **Medium** | Required for admin commands (stop/approve/trace) if server auth is enabled. If missing, admin commands fail safe. |
-| `OPENCLAW_ALLOW_REMOTE_ADMIN` | `0` | **High** | Be careful! Allows admin actions from non-loopback IPs if token is present. Default is loopback-only for admin. |
+| `OPENCLAW_ALLOW_REMOTE_ADMIN` | `0` | **High** | Be careful! Allows admin actions from non-loopback IPs if token is present (including writes from `/openclaw/admin` remote console). Default is loopback-only for admin. |
 | `OPENCLAW_BRIDGE_ENABLED` | `0` | **High** | Enables the sidecar bridge for remote orchestration. Requires `OPENCLAW_BRIDGE_DEVICE_TOKEN` (and in public posture also mTLS + device allowlist controls). |
 | `OPENCLAW_ALLOW_ANY_PUBLIC_LLM_HOST` | `0` | **High** | Bypasses the known-host allowlist for LLM `base_url`. Allows SSRF to public IPs. |
 | `OPENCLAW_ALLOW_INSECURE_BASE_URL` | `0` | **Critical** | Allows HTTP (non-HTTPS) or private IP `base_url` for LLM. Risk of internal network scanning (SSRF). |

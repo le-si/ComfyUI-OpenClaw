@@ -1,14 +1,24 @@
 # OpenClaw API Contract (v1)
 
 > **Status**: normative
-> **Version**: 1.0.1
-> **Date**: 2026-02-26
+> **Version**: 1.0.2
+> **Date**: 2026-02-28
 
 This document defines the public API contract for OpenClaw. It serves as the authoritative baseline for client compatibility and breaking change policies.
 
 ## 1. Route Inventory
 
 All new integrations should use the `/openclaw/` prefix. Use of `/moltbot/` is deprecated.
+
+### 1.0 UI Entry Points
+
+**Base Path**: `/openclaw/`
+
+| Method | Path | Legacy Path | Auth | Description |
+| :--- | :--- | :--- | :--- | :--- |
+| `GET` | `/admin` | `/moltbot/admin` | None* | Standalone remote admin console HTML shell (mobile-friendly). |
+
+`*` The page shell can be loaded directly, but all backend write operations from the console still enforce Admin token and remote-admin policy.
 
 ### 1.1 Core Observability & System
 

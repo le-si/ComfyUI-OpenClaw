@@ -8,6 +8,7 @@ This adds limits, TLS, and header management.
 1. **Block Sensitive Paths**: Prevent external access to admin/debug endpoints if not needed.
     - Block `/openclaw/logs/*`
     - Block `/openclaw/config`
+    - Block `/openclaw/admin` and legacy `/moltbot/admin` when remote admin UI is not required
 2. **Timeouts**: ComfyUI generation can take time. Increase timeouts.
     - `proxy_read_timeout 600s;` (Nginx)
 3. **Websockets**: ComfyUI requires WS support.
@@ -25,7 +26,7 @@ comfyui.local {
     }
 
     # Security: Block sensitive OpenClaw paths from external access
-    @sensitive path /openclaw/logs* /openclaw/config
+    @sensitive path /openclaw/logs* /openclaw/config /openclaw/admin /moltbot/admin
     respond @sensitive 403
 }
 ```
@@ -56,5 +57,31 @@ server {
     location /openclaw/logs {
         deny all;
     }
+
+    location = /openclaw/admin {
+        deny all;
+    }
+}
+```
+
+## If You Intentionally Expose Remote Admin Console
+
+Only do this on trusted/private access planes and keep backend protection enabled:
+
+- `OPENCLAW_ADMIN_TOKEN=<strong-secret>`
+- `OPENCLAW_ALLOW_REMOTE_ADMIN=1`
+
+Use one more auth boundary at proxy layer (IP allowlist, SSO, or basic auth), for example:
+
+```nginx
+location = /openclaw/admin {
+    allow 10.0.0.0/8;
+    allow 192.168.0.0/16;
+    deny all;
+
+    auth_basic "Restricted";
+    auth_basic_user_file /etc/nginx/.htpasswd;
+
+    proxy_pass http://127.0.0.1:8188/openclaw/admin;
 }
 ```

@@ -1,8 +1,8 @@
 openapi: "3.0.3"
 info:
   title: "ComfyUI-OpenClaw API"
-  version: "1.0.0"
-  description: "Generated from docs/release/api_contract.md (R66 baseline)."
+  version: "1.0.2"
+  description: "Generated from docs/release/api_contract.md (v1.0.2 baseline)."
 servers:
   - url: "/openclaw"
     description: "Direct OpenClaw prefix"
@@ -30,6 +30,17 @@ paths:
       x-openclaw-auth: "None"
       x-openclaw-section: "1.1 Core Observability & System"
       x-openclaw-legacy-path: "/moltbot/capabilities"
+      x-openclaw-auth-tier: "none"
+  /admin:
+    get:
+      operationId: "get_admin_console"
+      summary: "Standalone remote admin console HTML shell (mobile-friendly)."
+      responses:
+        200:
+          description: "OK"
+      x-openclaw-auth: "None*"
+      x-openclaw-section: "1.0 UI Entry Points"
+      x-openclaw-legacy-path: "/moltbot/admin"
       x-openclaw-auth-tier: "none"
   /logs/tail:
     get:
@@ -249,7 +260,7 @@ paths:
         - OpenClawAdminToken:
             []
       x-openclaw-streaming: true
-  /chat:
+  /llm/chat:
     post:
       operationId: "post_chat"
       summary: "Unified chat interface for assistant interactions."
@@ -263,7 +274,7 @@ paths:
       security:
         - OpenClawAdminToken:
             []
-  /test:
+  /llm/test:
     post:
       operationId: "post_test"
       summary: "Test LLM connectivity and configuration."
@@ -277,7 +288,7 @@ paths:
       security:
         - OpenClawAdminToken:
             []
-  /models:
+  /llm/models:
     get:
       operationId: "get_models"
       summary: "List available models from configured provider."
@@ -426,32 +437,44 @@ paths:
       security:
         - OpenClawAdminToken:
             []
-  /openclaw/schedules:
+  /schedules:
     get:
-      operationId: "get_openclaw_schedules"
+      operationId: "get_schedules"
       summary: "List all schedules."
       responses:
         200:
           description: "OK"
-      x-openclaw-auth: "Unknown"
+      x-openclaw-auth: "Admin"
       x-openclaw-section: "1.5 Schedules & Approvals"
+      x-openclaw-auth-tier: "admin"
+      security:
+        - OpenClawAdminToken:
+            []
     post:
-      operationId: "post_openclaw_schedules"
+      operationId: "post_schedules"
       summary: "Create a new schedule."
       responses:
         200:
           description: "OK"
-      x-openclaw-auth: "Unknown"
+      x-openclaw-auth: "Admin"
       x-openclaw-section: "1.5 Schedules & Approvals"
-  /openclaw/schedules/{id}:
+      x-openclaw-auth-tier: "admin"
+      security:
+        - OpenClawAdminToken:
+            []
+  /schedules/{id}:
     get:
-      operationId: "get_openclaw_schedules_id"
+      operationId: "get_schedules_id"
       summary: "Get schedule details."
       responses:
         200:
           description: "OK"
-      x-openclaw-auth: "Unknown"
+      x-openclaw-auth: "Admin"
       x-openclaw-section: "1.5 Schedules & Approvals"
+      x-openclaw-auth-tier: "admin"
+      security:
+        - OpenClawAdminToken:
+            []
       parameters:
         - name: "id"
           in: "path"
@@ -459,13 +482,17 @@ paths:
           schema:
             type: "string"
     put:
-      operationId: "put_openclaw_schedules_id"
+      operationId: "put_schedules_id"
       summary: "Update a schedule."
       responses:
         200:
           description: "OK"
-      x-openclaw-auth: "Unknown"
+      x-openclaw-auth: "Admin"
       x-openclaw-section: "1.5 Schedules & Approvals"
+      x-openclaw-auth-tier: "admin"
+      security:
+        - OpenClawAdminToken:
+            []
       parameters:
         - name: "id"
           in: "path"
@@ -473,82 +500,106 @@ paths:
           schema:
             type: "string"
     delete:
-      operationId: "delete_openclaw_schedules_id"
+      operationId: "delete_schedules_id"
       summary: "Delete a schedule."
       responses:
         200:
           description: "OK"
-      x-openclaw-auth: "Unknown"
+      x-openclaw-auth: "Admin"
       x-openclaw-section: "1.5 Schedules & Approvals"
+      x-openclaw-auth-tier: "admin"
+      security:
+        - OpenClawAdminToken:
+            []
       parameters:
         - name: "id"
           in: "path"
           required: true
           schema:
             type: "string"
-  /openclaw/schedules/{id}/run:
+  /schedules/{id}/run:
     post:
-      operationId: "post_openclaw_schedules_id_run"
+      operationId: "post_schedules_id_run"
       summary: "Manually trigger a schedule."
       responses:
         200:
           description: "OK"
-      x-openclaw-auth: "Unknown"
+      x-openclaw-auth: "Admin"
       x-openclaw-section: "1.5 Schedules & Approvals"
+      x-openclaw-auth-tier: "admin"
+      security:
+        - OpenClawAdminToken:
+            []
       parameters:
         - name: "id"
           in: "path"
           required: true
           schema:
             type: "string"
-  /openclaw/schedules/{id}/runs:
+  /schedules/{id}/runs:
     get:
-      operationId: "get_openclaw_schedules_id_runs"
+      operationId: "get_schedules_id_runs"
       summary: "Get run history for a schedule."
       responses:
         200:
           description: "OK"
-      x-openclaw-auth: "Unknown"
+      x-openclaw-auth: "Admin"
       x-openclaw-section: "1.5 Schedules & Approvals"
+      x-openclaw-auth-tier: "admin"
+      security:
+        - OpenClawAdminToken:
+            []
       parameters:
         - name: "id"
           in: "path"
           required: true
           schema:
             type: "string"
-  /openclaw/approvals:
+  /approvals:
     get:
-      operationId: "get_openclaw_approvals"
+      operationId: "get_approvals"
       summary: "List pending approvals (includes pagination/scan diagnostics; bounded serialization scan on malformed records)."
       responses:
         200:
           description: "OK"
-      x-openclaw-auth: "Unknown"
+      x-openclaw-auth: "Admin"
       x-openclaw-section: "1.5 Schedules & Approvals"
-  /openclaw/approvals/{id}/approve:
+      x-openclaw-auth-tier: "admin"
+      security:
+        - OpenClawAdminToken:
+            []
+  /approvals/{id}/approve:
     post:
-      operationId: "post_openclaw_approvals_id_approve"
+      operationId: "post_approvals_id_approve"
       summary: "Approve a pending request."
       responses:
         200:
           description: "OK"
-      x-openclaw-auth: "Unknown"
+      x-openclaw-auth: "Admin"
       x-openclaw-section: "1.5 Schedules & Approvals"
+      x-openclaw-auth-tier: "admin"
+      security:
+        - OpenClawAdminToken:
+            []
       parameters:
         - name: "id"
           in: "path"
           required: true
           schema:
             type: "string"
-  /openclaw/approvals/{id}/reject:
+  /approvals/{id}/reject:
     post:
-      operationId: "post_openclaw_approvals_id_reject"
+      operationId: "post_approvals_id_reject"
       summary: "Reject a pending request."
       responses:
         200:
           description: "OK"
-      x-openclaw-auth: "Unknown"
+      x-openclaw-auth: "Admin"
       x-openclaw-section: "1.5 Schedules & Approvals"
+      x-openclaw-auth-tier: "admin"
+      security:
+        - OpenClawAdminToken:
+            []
       parameters:
         - name: "id"
           in: "path"
@@ -562,8 +613,12 @@ paths:
       responses:
         200:
           description: "OK"
-      x-openclaw-auth: "Unknown"
+      x-openclaw-auth: "Bridge Auth (Device Check)"
       x-openclaw-section: "1.6 Bridge (Sidecar)"
+      x-openclaw-auth-tier: "bridge"
+      security:
+        - OpenClawBridgeAuth:
+            []
   /bridge/submit:
     post:
       operationId: "post_bridge_submit"
@@ -571,8 +626,12 @@ paths:
       responses:
         200:
           description: "OK"
-      x-openclaw-auth: "Unknown"
+      x-openclaw-auth: "Bridge Auth (Device Check)"
       x-openclaw-section: "1.6 Bridge (Sidecar)"
+      x-openclaw-auth-tier: "bridge"
+      security:
+        - OpenClawBridgeAuth:
+            []
   /bridge/deliver:
     post:
       operationId: "post_bridge_deliver"
@@ -580,8 +639,12 @@ paths:
       responses:
         200:
           description: "OK"
-      x-openclaw-auth: "Unknown"
+      x-openclaw-auth: "Bridge Auth (Device Check)"
       x-openclaw-section: "1.6 Bridge (Sidecar)"
+      x-openclaw-auth-tier: "bridge"
+      security:
+        - OpenClawBridgeAuth:
+            []
 components:
   securitySchemes:
     OpenClawAdminToken:

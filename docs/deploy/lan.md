@@ -35,6 +35,9 @@ Set these Environment Variables:
 # Require a token for admin actions (Stop/Approve)
 OPENCLAW_ADMIN_TOKEN=your-strong-secret-token
 
+# Explicitly allow admin write actions from non-loopback LAN clients
+OPENCLAW_ALLOW_REMOTE_ADMIN=1
+
 # Require a token for Logs/Config viewing
 OPENCLAW_OBSERVABILITY_TOKEN=observability-secret
 ```
@@ -65,6 +68,7 @@ sudo ufw allow from 192.168.1.0/24 to any port 8188
 ## Testing
 
 1. Find your host IP (e.g., `192.168.1.10`).
-2. From another device on WiFi, visit `http://192.168.1.10:8188`.
-3. Open OpenClaw Settings.
-4. Try to view logs. It should challenge you for the `OPENCLAW_OBSERVABILITY_TOKEN` or deny access.
+2. From another device on WiFi, open the remote admin page: `http://192.168.1.10:8188/openclaw/admin`.
+3. Enter `X-OpenClaw-Admin-Token` in the page and click **Save**.
+4. Verify admin write actions (for example refresh runs, approval actions) are no longer denied by remote policy.
+5. Open OpenClaw Settings in ComfyUI and try to view logs. It should challenge you for the `OPENCLAW_OBSERVABILITY_TOKEN` or deny access when missing.
