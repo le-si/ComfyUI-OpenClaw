@@ -232,19 +232,5 @@ def enforce_startup_gate() -> None:
     logger.critical(error_msg)
     logger.critical("FATAL: Security controls failed. Startup aborted.")
 
-    # S41/S45 Fail-Closed (Always raise for fatal errors)
+    # CRITICAL: S41/S45 fatal gate failures must remain fail-closed in all profiles.
     raise RuntimeError(error_msg)
-
-    if is_hardened:
-        logger.critical(error_msg)
-        logger.critical(
-            "FATAL: Hardened profile requires all controls to pass. Startup aborted."
-        )
-        # S41 Fail-Closed
-        raise RuntimeError(error_msg)
-    else:
-        # Minimal mode: Warning only
-        logger.warning(error_msg)
-        logger.warning(
-            "Continuing startup in MINIMAL mode (Security warnings present)."
-        )
