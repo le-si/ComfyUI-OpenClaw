@@ -36,6 +36,9 @@ Operators should use this to understand the risks of deployment.
 
 * **HTTP API**: `/openclaw/*`, `/moltbot/*`.
   * *Mitigation*: Loopback-only by default. Token auth for remote admin/observability.
+* **Shared listener surface (OpenClaw + ComfyUI)**:
+  * *Risk*: protecting `/openclaw/*` alone may still leave ComfyUI-native routes reachable when public proxy policy is broad.
+  * *Mitigation*: enforce reverse-proxy path allowlist + network ACL; in public profile set `OPENCLAW_PUBLIC_SHARED_SURFACE_BOUNDARY_ACK=1` only after those controls are verified.
 * **Webhooks**: `/openclaw/webhook/*`.
   * *Mitigation*: Signature verification (HMAC) + Replay protection + Auth Token.
 

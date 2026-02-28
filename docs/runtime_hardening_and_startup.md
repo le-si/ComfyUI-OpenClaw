@@ -40,6 +40,29 @@ Current mandatory checks:
 
 In `minimal` mode, the same checks emit warnings but do not block startup.
 
+### Bootstrap fail-closed propagation
+
+Startup bootstrap no longer swallows fatal security-gate errors.
+If a critical startup gate fails, initialization aborts deterministically instead of continuing with partial route registration.
+
+## Public deployment shared-surface acknowledgement
+
+When running deployment profile checks for public posture (`OPENCLAW_DEPLOYMENT_PROFILE=public`),
+you must explicitly acknowledge that upstream boundary controls are in place:
+
+- `OPENCLAW_PUBLIC_SHARED_SURFACE_BOUNDARY_ACK=1`
+
+Why this exists:
+
+- OpenClaw shares ComfyUI's listener/port.
+- Route auth on `/openclaw/*` does not automatically protect ComfyUI-native high-risk routes.
+- Public posture requires reverse-proxy path allowlist + network ACL boundaries.
+
+Gate behavior:
+
+- missing ack in public profile: deployment profile check fails (`DP-PUBLIC-008`)
+- ack present: this boundary contract check passes
+
 ## Localhost no-origin override posture
 
 `OPENCLAW_LOCALHOST_ALLOW_NO_ORIGIN` controls a localhost convenience escape hatch for clients

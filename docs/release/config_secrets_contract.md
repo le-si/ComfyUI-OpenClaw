@@ -51,6 +51,7 @@ Controls access to APIs and administrative features.
 | :--- | :--- | :--- |
 | `OPENCLAW_ADMIN_TOKEN` | **Critical** | Bearer token for Admin Write actions (Config, Presets, Schedules). <br>*If unset, admin writes are loopback-only with strict checks.* |
 | `OPENCLAW_OBSERVABILITY_TOKEN` | **High** | Token for Read-Only observability (Logs, Traces, Health). <br>*If unset, Remote observability is denied.* |
+| `OPENCLAW_PUBLIC_SHARED_SURFACE_BOUNDARY_ACK` | **High** | Public-profile explicit ack that reverse-proxy path allowlist + network ACL controls are in place for shared ComfyUI/OpenClaw surface. Required by deployment-profile gate in `public` mode. |
 | `OPENCLAW_WEBHOOK_AUTH_MODE` | **High** | Webhook auth mode (`bearer`, `hmac`, `bearer_or_hmac`). |
 | `OPENCLAW_WEBHOOK_BEARER_TOKEN` | **High** | Bearer secret for inbound webhook auth when bearer mode is enabled. |
 | `OPENCLAW_WEBHOOK_HMAC_SECRET` | **High** | HMAC secret for inbound webhook auth when hmac mode is enabled. |

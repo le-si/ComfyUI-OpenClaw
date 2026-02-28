@@ -110,6 +110,7 @@ Only do this on trusted/private access planes and keep backend protection enable
 
 - `OPENCLAW_ADMIN_TOKEN=<strong-secret>`
 - `OPENCLAW_ALLOW_REMOTE_ADMIN=1`
+- `OPENCLAW_PUBLIC_SHARED_SURFACE_BOUNDARY_ACK=1` (when `OPENCLAW_DEPLOYMENT_PROFILE=public`, set only after proxy allowlist + network ACL boundary controls are enforced)
 - `OPENCLAW_LOCALHOST_ALLOW_NO_ORIGIN=0` (keep strict no-origin posture on shared/remote planes)
 - `OPENCLAW_LOG_TRUNCATE_ON_START=1` (optional, startup log hygiene)
 

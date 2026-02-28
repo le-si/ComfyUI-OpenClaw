@@ -35,6 +35,7 @@
 - [ ] If exposing to LAN/Internet: set `OPENCLAW_ADMIN_TOKEN` environment variable.
 - [ ] Never expose admin endpoints without token.
 - [ ] For shared/LAN/public exposure, keep `OPENCLAW_LOCALHOST_ALLOW_NO_ORIGIN=0` (or unset).
+- [ ] For `OPENCLAW_DEPLOYMENT_PROFILE=public`, set `OPENCLAW_PUBLIC_SHARED_SURFACE_BOUNDARY_ACK=1` only after reverse-proxy path allowlist + network ACL explicitly block ComfyUI-native high-risk routes.
 - [ ] Run `GET /openclaw/security/doctor` and verify no `csrf_no_origin_override` warning before exposure.
 
 ### 6. Debug Mode

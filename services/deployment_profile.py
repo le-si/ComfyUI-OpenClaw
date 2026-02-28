@@ -15,6 +15,8 @@ from typing import Dict, Iterable, Mapping, Optional
 
 TRUTHY = {"1", "true", "yes", "on"}
 FALSY = {"0", "false", "no", "off"}
+_PUBLIC_BOUNDARY_ACK_ENV = "OPENCLAW_PUBLIC_SHARED_SURFACE_BOUNDARY_ACK"
+_PUBLIC_BOUNDARY_ACK_LEGACY_ENV = "MOLTBOT_PUBLIC_SHARED_SURFACE_BOUNDARY_ACK"
 
 
 @dataclass
@@ -125,6 +127,16 @@ def _has_value(
     env: Mapping[str, str], primary: str, legacy: Optional[str] = None
 ) -> bool:
     return bool(_env_get(env, primary, legacy, "").strip())
+
+
+def _has_public_shared_surface_boundary_ack(env: Mapping[str, str]) -> bool:
+    raw = _env_get(
+        env,
+        _PUBLIC_BOUNDARY_ACK_ENV,
+        _PUBLIC_BOUNDARY_ACK_LEGACY_ENV,
+        "",
+    ).strip()
+    return raw.lower() in TRUTHY
 
 
 def _check_webhook_auth(
@@ -477,5 +489,26 @@ def evaluate_deployment_profile(
                 "Bridge is enabled but allowed device ID list is missing.",
                 "Set OPENCLAW_BRIDGE_ALLOWED_DEVICE_IDS with explicit device IDs.",
             )
+
+    # CRITICAL: OpenClaw shares ComfyUI listener/port. Public posture cannot
+    # infer reverse-proxy path policy automatically; require explicit operator
+    # ack that upstream boundary controls are actually enforced.
+    if not _has_public_shared_surface_boundary_ack(env):
+        report.add(
+            "fail",
+            "DP-PUBLIC-008",
+            "Public profile requires explicit shared-surface boundary acknowledgement.",
+            (
+                "Set OPENCLAW_PUBLIC_SHARED_SURFACE_BOUNDARY_ACK=1 only after "
+                "reverse proxy path allowlist and network ACL deny ComfyUI-native "
+                "high-risk routes."
+            ),
+        )
+    else:
+        report.add(
+            "pass",
+            "DP-PUBLIC-008",
+            "Shared-surface boundary acknowledgement is enabled for public profile.",
+        )
 
     return report

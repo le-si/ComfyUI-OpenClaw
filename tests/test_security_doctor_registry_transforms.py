@@ -209,6 +209,87 @@ class TestSecurityDoctor(unittest.TestCase):
             else:
                 os.environ["OPENCLAW_LOCALHOST_ALLOW_NO_ORIGIN"] = old
 
+    def test_public_shared_surface_boundary_warns_without_ack(self):
+        """S69: public profile warns when shared-surface boundary ack is missing."""
+        from services.security_doctor import (
+            SecurityReport,
+            check_public_shared_surface_boundary,
+        )
+
+        keys = (
+            "OPENCLAW_DEPLOYMENT_PROFILE",
+            "OPENCLAW_PUBLIC_SHARED_SURFACE_BOUNDARY_ACK",
+            "MOLTBOT_PUBLIC_SHARED_SURFACE_BOUNDARY_ACK",
+        )
+        old_env = {k: os.environ.get(k) for k in keys}
+        try:
+            os.environ["OPENCLAW_DEPLOYMENT_PROFILE"] = "public"
+            os.environ.pop("OPENCLAW_PUBLIC_SHARED_SURFACE_BOUNDARY_ACK", None)
+            os.environ.pop("MOLTBOT_PUBLIC_SHARED_SURFACE_BOUNDARY_ACK", None)
+
+            report = SecurityReport()
+            check_public_shared_surface_boundary(report)
+            check = next(
+                (
+                    c
+                    for c in report.checks
+                    if c.name == "public_shared_surface_boundary"
+                ),
+                None,
+            )
+            self.assertIsNotNone(check)
+            self.assertEqual(check.severity, "warn")
+            self.assertEqual(
+                report.environment.get("public_shared_surface_boundary_ack"),
+                "off",
+            )
+        finally:
+            for key, val in old_env.items():
+                if val is None:
+                    os.environ.pop(key, None)
+                else:
+                    os.environ[key] = val
+
+    def test_public_shared_surface_boundary_passes_with_ack(self):
+        """S69: public profile passes boundary check when ack is enabled."""
+        from services.security_doctor import (
+            SecurityReport,
+            check_public_shared_surface_boundary,
+        )
+
+        keys = (
+            "OPENCLAW_DEPLOYMENT_PROFILE",
+            "OPENCLAW_PUBLIC_SHARED_SURFACE_BOUNDARY_ACK",
+            "MOLTBOT_PUBLIC_SHARED_SURFACE_BOUNDARY_ACK",
+        )
+        old_env = {k: os.environ.get(k) for k in keys}
+        try:
+            os.environ["OPENCLAW_DEPLOYMENT_PROFILE"] = "public"
+            os.environ["OPENCLAW_PUBLIC_SHARED_SURFACE_BOUNDARY_ACK"] = "1"
+
+            report = SecurityReport()
+            check_public_shared_surface_boundary(report)
+            check = next(
+                (
+                    c
+                    for c in report.checks
+                    if c.name == "public_shared_surface_boundary"
+                ),
+                None,
+            )
+            self.assertIsNotNone(check)
+            self.assertEqual(check.severity, "pass")
+            self.assertEqual(
+                report.environment.get("public_shared_surface_boundary_ack"),
+                "enabled",
+            )
+        finally:
+            for key, val in old_env.items():
+                if val is None:
+                    os.environ.pop(key, None)
+                else:
+                    os.environ[key] = val
+
     def test_ssrf_posture_prefers_callback_allow_hosts(self):
         """S30: SSRF posture must read canonical callback allow-host env keys."""
         from services.security_doctor import SecurityReport, check_ssrf_posture

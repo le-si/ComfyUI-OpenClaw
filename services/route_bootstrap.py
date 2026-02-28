@@ -74,6 +74,9 @@ def _initialize_registries_and_security_gate() -> None:
         logging.getLogger("ComfyUI-OpenClaw").error(
             f"Failed to initialize registries: {e}"
         )
+        # CRITICAL: keep bootstrap fail-closed; swallowing startup gate errors
+        # silently degrades security posture and can expose partial registration.
+        raise
 
 
 def _do_full_registration(server) -> None:

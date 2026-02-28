@@ -168,6 +168,11 @@ OPENCLAW_OBSERVABILITY_TOKEN=change-this-obs-token
 # Public baseline: do not expose remote admin directly
 OPENCLAW_ALLOW_REMOTE_ADMIN=0
 
+# Public shared-surface boundary acknowledgement (S69).
+# Set only after reverse-proxy path allowlist + network ACL deny ComfyUI-native
+# high-risk paths and /api equivalents.
+OPENCLAW_PUBLIC_SHARED_SURFACE_BOUNDARY_ACK=1
+
 # Public baseline: enforce split control plane (S62/R106)
 OPENCLAW_CONTROL_PLANE_MODE=split
 OPENCLAW_CONTROL_PLANE_URL=https://control-plane.internal
@@ -205,17 +210,18 @@ OPENCLAW_LOCALHOST_ALLOW_NO_ORIGIN=0
 3. Enforce path-level boundary controls at reverse proxy:
    - allow only required OpenClaw routes
    - deny ComfyUI-native high-risk paths (`/prompt`, `/history*`, `/view*`, `/upload*`, `/ws`) and `/api/*` equivalents.
-4. Enforce split control plane in public posture (`OPENCLAW_CONTROL_PLANE_MODE=split` + external URL/TOKEN).
-5. Keep risky features disabled on public user-facing plane.
-6. Keep `OPENCLAW_LOCALHOST_ALLOW_NO_ORIGIN=0` in public deployments.
-7. Verify split posture from capabilities:
+4. Set `OPENCLAW_PUBLIC_SHARED_SURFACE_BOUNDARY_ACK=1` only after step 3 and network ACL hardening are in place.
+5. Enforce split control plane in public posture (`OPENCLAW_CONTROL_PLANE_MODE=split` + external URL/TOKEN).
+6. Keep risky features disabled on public user-facing plane.
+7. Keep `OPENCLAW_LOCALHOST_ALLOW_NO_ORIGIN=0` in public deployments.
+8. Verify split posture from capabilities:
    - `GET /openclaw/capabilities` and confirm `control_plane.mode=split`
-8. Run:
+9. Run:
     - `python scripts/check_deployment_profile.py --profile public`
-9. Validate with project test and release gates before rollout:
+10. Validate with project test and release gates before rollout:
     - `tests/TEST_SOP.md`
     - `RELEASE_CHECKLIST.md`
-10. Ensure `/openclaw/admin` is blocked at public edge unless a separately hardened private admin plane is in place.
+11. Ensure `/openclaw/admin` is blocked at public edge unless a separately hardened private admin plane is in place.
 
 ## 6. Bridge in Public Profile (only when absolutely required)
 

@@ -8,6 +8,7 @@ from .security_doctor_impl import (
     check_endpoint_exposure,
     check_feature_flags,
     check_hardening_wave2,
+    check_public_shared_surface_boundary,
     check_redaction_drift,
     check_runtime_guardrails,
     check_s45_exposure_posture,
@@ -18,6 +19,7 @@ from .security_doctor_impl import (
 
 __all__ = [
     "check_endpoint_exposure",
+    "check_public_shared_surface_boundary",
     "check_csrf_no_origin_override",
     "check_token_boundaries",
     "check_ssrf_posture",

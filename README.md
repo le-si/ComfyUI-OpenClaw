@@ -21,32 +21,33 @@ This project is designed to make **ComfyUI a reliable automation target** with a
 
 ## Security stance (how this project differs from convenience-first automation packs):
 
-- Public MAE route-plane posture is a hard guarantee: startup gate + CI no-skip drift suites must both pass
-- Control Plane Split is enforced for public posture: high-risk control surfaces are externalized while embedded UI stays on safe UX/read paths
-- Profile-driven startup hardening with fail-closed enforcement in hardened mode
-- Explicit **Admin Token** boundary for write actions
-- Startup module capability gates (disabled modules do not register routes/workers)
-- Localhost-first defaults; remote access is opt-in
-- Localhost no-origin CSRF override posture is explicitly surfaced at startup and in Security Doctor, with audit visibility for operator review
-- Strict outbound SSRF policy (callbacks + custom LLM base URLs)
-- Webhooks are **deny-by-default** until auth is configured
-- Encrypted webhook mode is **fail-closed** (invalid signature/decrypt/app-id checks are rejected)
-- Bridge worker endpoints enforce device-token auth, scope checks, and idempotency handling
-- Secrets are never stored in browser storage (optional server-side key store is local-only convenience)
-- Cryptography dependency is required for secrets-at-rest encryption paths; WeChat AES ingress remains optional via `pycryptodomex`
-- Tamper-evident, append-only audit trails for sensitive write/admin paths
-- Hardened external tool sandbox posture with fail-closed checks and filesystem path guards
-- Pack lifecycle file paths and pack API inputs are validated and root-bounded to prevent path traversal
-- Replay risk is reduced with deterministic dedupe keys for event payloads without message IDs
-- Endpoint inventory metadata and route drift tests to catch unclassified API exposure regressions
-- Retry partition hardening now separates rate-limit and transport retry budgets with deterministic degrade decisions and lane-level diagnostics/audit evidence
-- Adversarial verification is execution-gated (bounded fuzz + mutation smoke) in CI and local full-test/pre-push workflows with replayable artifacts
-- Wave E closeout hardening: deployment profile gates and critical flow parity are now enforced together with signed policy posture control, bounded anomaly telemetry, adversarial fuzz validation, and mutation-baseline regression sensitivity checks
-- Wave A/B/C closeout hardening: runtime/config/session stability contracts, strict outbound and supply-chain controls, and capability-aware operator guidance with bounded Parameter Lab/compare workflows
-- Runtime guardrails are enforced as a runtime-only contract with diagnostics, clamping, and reject-on-persist behavior for safety-critical limits (timeouts/retries/queue bounds/provider safety defaults)
-- Cryptographic lifecycle drills are automated with machine-readable evidence for rotation, revoke, key-loss recovery, and token-compromise fail-closed exercises
-- Management query paths now use deterministic pagination normalization and bounded scans to reduce malformed-input abuse and unbounded admin/list query cost
-- Compatibility matrix freshness/drift governance is operator-visible via Doctor checks and a repeatable refresh workflow with evidence output, reducing stale deployment assumptions before release
+- Public profile requires explicit shared-surface boundary acknowledgement to reduce accidental exposure of ComfyUI-native high-risk routes behind reverse proxies
+- Public MAE route-plane posture is guaranteed by startup enforcement plus no-skip CI route-drift checks
+- Public deployments enforce Control Plane Split so high-risk controls are externalized and embedded UI stays on safer read/UX surfaces
+- Runtime profile startup hardening is fail-closed in hardened mode
+- Admin write actions are protected by an explicit **Admin Token** boundary
+- Module capability gates prevent disabled modules from registering routes/workers
+- Webhook ingress is **deny-by-default** until authentication is configured
+- Encrypted webhook ingress is **fail-closed** on signature/decrypt/app-id validation failures
+- Bridge worker ingress enforces device token auth, scope checks, and idempotency handling
+- Outbound SSRF policy is strict for callbacks and custom LLM base URLs
+- Localhost-first defaults remain in place; remote access is explicit opt-in
+- Localhost no-origin CSRF override posture is surfaced in startup logs, Security Doctor, and audit visibility
+- Secrets are never stored in browser storage; optional server-side key store remains local-only convenience
+- Secrets-at-rest encryption depends on cryptography; WeChat AES ingress stays optional via `pycryptodomex`
+- Sensitive write/admin paths use tamper-evident, append-only audit trails
+- External tool sandboxing is fail-closed with filesystem path guards
+- Pack lifecycle file paths and pack API file inputs are root-bounded and traversal-validated
+- Replay risk is reduced with deterministic dedupe keys for payloads without message IDs
+- Endpoint inventory metadata plus route-drift tests catch unclassified API exposure regressions
+- Retry partition hardening separates rate-limit and transport budgets with deterministic degrade decisions and lane-level diagnostics/audit evidence
+- Runtime guardrails are runtime-only, with diagnostics, clamping, and reject-on-persist behavior for safety-critical limits
+- Compatibility matrix freshness/drift governance is surfaced in Doctor with repeatable refresh evidence
+- Management queries enforce deterministic pagination normalization and bounded scans against malformed or unbounded admin/list requests
+- Cryptographic lifecycle drills emit machine-readable evidence for rotate/revoke/key-loss/token-compromise fail-closed exercises
+- Adversarial verification gates (bounded fuzz + mutation smoke) are enforced in CI and local full-test/pre-push workflows
+- Wave E hardening closeout includes deployment-profile gates, critical-flow parity, signed policy posture controls, bounded anomaly telemetry, adversarial fuzz validation, and mutation sensitivity checks
+- Wave A/B/C hardening closeout includes runtime/config/session stability contracts, strict outbound and supply-chain controls, and capability-aware operator guidance with bounded Parameter Lab/compare workflows
 
 Deployment profiles and hardening checklists:
 - [Security Deployment Guide](docs/security_deployment_guide.md) (local / LAN / public templates + self-check command)
@@ -57,6 +58,20 @@ Deployment profiles and hardening checklists:
 
 
 <details><summary><h2>Latest Updates - Click to expand</h2></summary>
+
+<details>
+
+<summary><strong>Startup fail-closed bootstrap hardening and public boundary guardrail</strong></summary>
+
+- Enforced strict fail-closed startup propagation so bootstrap security-gate failures are no longer logged-and-continued; route/worker registration now aborts deterministically on fatal startup failures.
+- Added an explicit public deployment boundary acknowledgement contract:
+  - `OPENCLAW_PUBLIC_SHARED_SURFACE_BOUNDARY_ACK=1` (legacy alias supported)
+  - public profile gate now fails deterministically when this acknowledgement is missing.
+- Added a dedicated Security Doctor boundary posture check and machine-readable environment marker so shared ComfyUI/OpenClaw surface risk is visible to operators.
+- Synchronized deployment/operator docs for public boundary controls (reverse proxy path allowlist + network ACL requirements).
+- Completed full verification gate pass (detect-secrets, pre-commit, backend unit suites, and frontend Playwright E2E).
+
+</details>
 
 <details>
 
@@ -499,6 +514,11 @@ Remote admin actions are denied by default. If you understand the risk and need 
 
 - `OPENCLAW_ALLOW_REMOTE_ADMIN=1`
 
+Public profile boundary acknowledgement (required when `OPENCLAW_DEPLOYMENT_PROFILE=public`):
+
+- `OPENCLAW_PUBLIC_SHARED_SURFACE_BOUNDARY_ACK=1`
+  - set this only after your reverse proxy path allowlist + network ACL explicitly block ComfyUI-native high-risk routes (`/prompt`, `/history*`, `/view*`, `/upload*`, `/ws`, and `/api/*` equivalents)
+
 ### Windows env var tips (PowerShell / CMD / portable .bat / Desktop)
 
 - PowerShell (current session only):
@@ -574,6 +594,7 @@ Minimum recommendations:
 - restrict source IP ranges when possible
 - apply request-rate limits and connection limits
 - keep server and node package on current patched versions
+- if running `OPENCLAW_DEPLOYMENT_PROFILE=public`, set `OPENCLAW_PUBLIC_SHARED_SURFACE_BOUNDARY_ACK=1` only after enforcing reverse-proxy path allowlist + network ACL boundary controls
 
 For internet-facing deployment templates and hardening checklist, follow:
 

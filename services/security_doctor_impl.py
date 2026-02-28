@@ -43,6 +43,7 @@ VIOLATION_CODE_MAP: Dict[str, str] = {
     # Endpoint exposure
     "endpoint_exposure": "SEC-EP-001",
     "admin_token_missing": "SEC-EP-002",
+    "public_shared_surface_boundary": "SEC-BD-001",
     # Token boundaries
     "token_reuse": "SEC-TK-001",
     "admin_token_weak": "SEC-TK-002",
@@ -340,6 +341,64 @@ def check_endpoint_exposure(report: SecurityReport) -> None:
                 category="endpoint",
             )
         )
+
+
+def check_public_shared_surface_boundary(report: SecurityReport) -> None:
+    """S69: Surface shared ComfyUI/OpenClaw listener boundary posture."""
+    profile = os.environ.get("OPENCLAW_DEPLOYMENT_PROFILE", "local").strip().lower()
+    if not profile:
+        profile = "local"
+
+    ack_raw = (
+        os.environ.get("OPENCLAW_PUBLIC_SHARED_SURFACE_BOUNDARY_ACK")
+        or os.environ.get("MOLTBOT_PUBLIC_SHARED_SURFACE_BOUNDARY_ACK")
+        or ""
+    ).strip()
+    ack = ack_raw.lower() in {"1", "true", "yes", "on"}
+
+    report.environment["deployment_profile"] = profile
+    report.environment["public_shared_surface_boundary_ack"] = (
+        "enabled" if ack else "off"
+    )
+
+    if profile != "public":
+        report.add(
+            SecurityCheckResult(
+                name="public_shared_surface_boundary",
+                severity=SecuritySeverity.PASS.value,
+                message="Shared-surface boundary acknowledgement not required outside public profile",
+                category="endpoint",
+                detail=f"profile={profile}",
+            )
+        )
+        return
+
+    if ack:
+        report.add(
+            SecurityCheckResult(
+                name="public_shared_surface_boundary",
+                severity=SecuritySeverity.PASS.value,
+                message="Public shared-surface boundary acknowledgement is enabled",
+                category="endpoint",
+                remediation=(
+                    "Keep reverse-proxy path allowlist + network ACL controls aligned with this acknowledgement."
+                ),
+            )
+        )
+        return
+
+    report.add(
+        SecurityCheckResult(
+            name="public_shared_surface_boundary",
+            severity=SecuritySeverity.WARN.value,
+            message="Public profile boundary acknowledgement is missing for shared ComfyUI/OpenClaw surface",
+            category="endpoint",
+            remediation=(
+                "Set OPENCLAW_PUBLIC_SHARED_SURFACE_BOUNDARY_ACK=1 only after reverse-proxy "
+                "path allowlist and network ACL deny ComfyUI-native high-risk routes."
+            ),
+        )
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -1390,6 +1449,7 @@ def run_security_doctor(
     # Run all checks
     check_s45_exposure_posture(report)  # S45 parity (first — sets high_risk_mode)
     check_endpoint_exposure(report)
+    check_public_shared_surface_boundary(report)  # S69 shared-surface boundary
     check_token_boundaries(report)
     check_ssrf_posture(report)
     check_state_dir_permissions(report)
