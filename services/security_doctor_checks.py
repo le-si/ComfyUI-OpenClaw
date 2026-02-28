@@ -4,6 +4,7 @@ from .security_doctor_impl import (
     check_api_key_posture,
     check_comfyui_runtime,
     check_connector_security_posture,
+    check_csrf_no_origin_override,
     check_endpoint_exposure,
     check_feature_flags,
     check_hardening_wave2,
@@ -17,6 +18,7 @@ from .security_doctor_impl import (
 
 __all__ = [
     "check_endpoint_exposure",
+    "check_csrf_no_origin_override",
     "check_token_boundaries",
     "check_ssrf_posture",
     "check_state_dir_permissions",

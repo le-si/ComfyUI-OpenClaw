@@ -161,6 +161,54 @@ class TestSecurityDoctor(unittest.TestCase):
                 else:
                     os.environ[key] = val
 
+    def test_csrf_no_origin_override_warns_when_enabled(self):
+        """S68: explicit doctor warning when no-origin override is active."""
+        from services.security_doctor import (
+            SecurityReport,
+            check_csrf_no_origin_override,
+        )
+
+        old = os.environ.get("OPENCLAW_LOCALHOST_ALLOW_NO_ORIGIN")
+        try:
+            os.environ["OPENCLAW_LOCALHOST_ALLOW_NO_ORIGIN"] = "true"
+            report = SecurityReport()
+            check_csrf_no_origin_override(report)
+            check = next(
+                (c for c in report.checks if c.name == "csrf_no_origin_override"),
+                None,
+            )
+            self.assertIsNotNone(check)
+            self.assertEqual(check.severity, "warn")
+        finally:
+            if old is None:
+                os.environ.pop("OPENCLAW_LOCALHOST_ALLOW_NO_ORIGIN", None)
+            else:
+                os.environ["OPENCLAW_LOCALHOST_ALLOW_NO_ORIGIN"] = old
+
+    def test_csrf_no_origin_override_pass_when_disabled(self):
+        """S68: strict default reports pass when override is off."""
+        from services.security_doctor import (
+            SecurityReport,
+            check_csrf_no_origin_override,
+        )
+
+        old = os.environ.get("OPENCLAW_LOCALHOST_ALLOW_NO_ORIGIN")
+        try:
+            os.environ.pop("OPENCLAW_LOCALHOST_ALLOW_NO_ORIGIN", None)
+            report = SecurityReport()
+            check_csrf_no_origin_override(report)
+            check = next(
+                (c for c in report.checks if c.name == "csrf_no_origin_override"),
+                None,
+            )
+            self.assertIsNotNone(check)
+            self.assertEqual(check.severity, "pass")
+        finally:
+            if old is None:
+                os.environ.pop("OPENCLAW_LOCALHOST_ALLOW_NO_ORIGIN", None)
+            else:
+                os.environ["OPENCLAW_LOCALHOST_ALLOW_NO_ORIGIN"] = old
+
     def test_ssrf_posture_prefers_callback_allow_hosts(self):
         """S30: SSRF posture must read canonical callback allow-host env keys."""
         from services.security_doctor import SecurityReport, check_ssrf_posture

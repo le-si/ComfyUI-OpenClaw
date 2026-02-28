@@ -75,6 +75,8 @@ VIOLATION_CODE_MAP: Dict[str, str] = {
     "s45_hardened_loopback_no_admin": "SEC-S45-003",
     # S66 runtime guardrails
     "s66_runtime_guardrails": "SEC-S66-001",
+    # S68 CSRF no-origin override posture
+    "csrf_no_origin_override": "SEC-CSRF-001",
 }
 
 # Reason codes that trigger high_risk_mode
@@ -1327,6 +1329,39 @@ def check_runtime_guardrails(report: SecurityReport) -> None:
     )
 
 
+def check_csrf_no_origin_override(report: SecurityReport) -> None:
+    """S68: Surface localhost no-origin CSRF override posture explicitly."""
+    raw = os.environ.get("OPENCLAW_LOCALHOST_ALLOW_NO_ORIGIN", "")
+    enabled = raw.strip().lower() in {"1", "true", "yes", "on"}
+    report.environment["csrf_no_origin_override"] = "enabled" if enabled else "off"
+
+    if enabled:
+        report.add(
+            SecurityCheckResult(
+                name="csrf_no_origin_override",
+                severity=SecuritySeverity.WARN.value,
+                message=(
+                    "OPENCLAW_LOCALHOST_ALLOW_NO_ORIGIN is enabled; "
+                    "requests without Origin/Sec-Fetch-Site are allowed in localhost convenience mode"
+                ),
+                category="endpoint",
+                remediation=(
+                    "Unset OPENCLAW_LOCALHOST_ALLOW_NO_ORIGIN unless CLI/no-origin clients are required."
+                ),
+            )
+        )
+        return
+
+    report.add(
+        SecurityCheckResult(
+            name="csrf_no_origin_override",
+            severity=SecuritySeverity.PASS.value,
+            message="No-origin CSRF override is disabled (strict default active)",
+            category="endpoint",
+        )
+    )
+
+
 # ---------------------------------------------------------------------------
 # Main runner
 # ---------------------------------------------------------------------------
@@ -1361,6 +1396,7 @@ def run_security_doctor(
     check_redaction_drift(report)
     check_comfyui_runtime(report)
     check_runtime_guardrails(report)  # S66
+    check_csrf_no_origin_override(report)  # S68
     check_feature_flags(report)
     check_api_key_posture(report)
     check_connector_security_posture(report)  # S32

@@ -2,6 +2,7 @@
 Unit tests for S41 Security Gate.
 """
 
+import os
 import unittest
 from unittest.mock import MagicMock, patch
 
@@ -98,6 +99,52 @@ class TestSecurityGate(unittest.TestCase):
             enforce_startup_gate()
         except RuntimeError:
             self.fail("enforce_startup_gate raised RuntimeError in MINIMAL mode!")
+
+    @patch.dict(os.environ, {"OPENCLAW_LOCALHOST_ALLOW_NO_ORIGIN": "true"})
+    @patch("services.security_gate.logger.warning")
+    @patch("services.security_gate.is_hardened_mode", return_value=False)
+    @patch("services.access_control.is_any_token_configured", return_value=True)
+    @patch("services.runtime_config.get_config")
+    @patch("services.modules.is_module_enabled", return_value=False)
+    @patch("services.tool_runner.is_tools_enabled", return_value=False)
+    @patch(
+        "services.permission_posture.evaluate_startup_permissions",
+        return_value=(True, []),
+    )
+    @patch(
+        "services.control_plane.enforce_control_plane_startup",
+        return_value={"startup_passed": True, "errors": [], "warnings": []},
+    )
+    def test_no_origin_override_emits_startup_warning(
+        self,
+        _mock_cp,
+        _mock_perms,
+        _mock_tools,
+        _mock_mod_enabled,
+        mock_get_config,
+        _mock_any_auth,
+        _mock_hardened,
+        mock_warn,
+    ):
+        """S68: startup gate logs explicit warning when no-origin override is active."""
+        cfg = MagicMock()
+        cfg.allow_any_public_llm_host = False
+        cfg.allow_insecure_base_url = False
+        cfg.webhook_auth_mode = "bearer"
+        cfg.security_dangerous_bind_override = False
+        mock_get_config.return_value = cfg
+
+        passed, _warnings, fatal_errors = SecurityGate.verify_mandatory_controls()
+        self.assertTrue(passed, f"Unexpected fatal errors: {fatal_errors}")
+
+        warning_lines = [str(call.args[0]) for call in mock_warn.call_args_list]
+        self.assertTrue(
+            any(
+                "OPENCLAW_LOCALHOST_ALLOW_NO_ORIGIN=true active" in line
+                for line in warning_lines
+            ),
+            "Expected startup warning for no-origin override",
+        )
 
 
 if __name__ == "__main__":

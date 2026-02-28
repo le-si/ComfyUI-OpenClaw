@@ -6,6 +6,7 @@ Fails startup if critical controls are missing or misconfigured.
 """
 
 import logging
+import os
 from typing import List, Tuple
 
 from .runtime_profile import get_runtime_profile, is_hardened_mode
@@ -64,6 +65,28 @@ class SecurityGate:
                 outcome=outcome,
                 status_code=0,
                 details=details,
+            )
+
+        # IMPORTANT: keep this as startup visibility only (not gate-fatal).
+        # OPENCLAW_LOCALHOST_ALLOW_NO_ORIGIN is an explicit operator override for
+        # localhost tooling; surfacing it early avoids silent CSRF-boundary drift.
+        allow_no_origin = (
+            os.environ.get("OPENCLAW_LOCALHOST_ALLOW_NO_ORIGIN", "").strip().lower()
+            == "true"
+        )
+        if allow_no_origin:
+            logger.warning(
+                "S68: OPENCLAW_LOCALHOST_ALLOW_NO_ORIGIN=true active; "
+                "requests without Origin/Sec-Fetch-Site will be allowed in localhost convenience mode."
+            )
+            _emit_startup_audit(
+                action="startup.csrf_no_origin_override",
+                outcome="warn",
+                details={
+                    "env": "OPENCLAW_LOCALHOST_ALLOW_NO_ORIGIN",
+                    "value": "true",
+                    "profile": get_runtime_profile().value,
+                },
             )
 
         # 1. Access Control (S45 Update)
