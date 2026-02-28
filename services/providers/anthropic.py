@@ -4,17 +4,37 @@ from typing import Any, Dict, List, Optional
 
 try:
     from ..provider_errors import ProviderHTTPError
-    from ..retry_after import get_retry_after_seconds
-    from ..safe_io import STANDARD_OUTBOUND_POLICY, SSRFError, safe_request_json
+    from ..retry_after import parse_retry_after_body, parse_retry_after_header
+    from ..safe_io import (
+        STANDARD_OUTBOUND_POLICY,
+        SafeIOHTTPError,
+        SSRFError,
+        safe_request_json,
+    )
 except ImportError:
     from services.provider_errors import ProviderHTTPError
-    from services.retry_after import get_retry_after_seconds
-    from services.safe_io import STANDARD_OUTBOUND_POLICY, SSRFError, safe_request_json
+    from services.retry_after import parse_retry_after_body, parse_retry_after_header
+    from services.safe_io import (
+        STANDARD_OUTBOUND_POLICY,
+        SafeIOHTTPError,
+        SSRFError,
+        safe_request_json,
+    )
 
 logger = logging.getLogger("ComfyUI-OpenClaw.services.providers.anthropic")
 
 # Default Anthropic API version
 ANTHROPIC_API_VERSION = "2023-06-01"
+
+
+def _parse_error_body_dict(body: Optional[str]) -> Optional[Dict[str, Any]]:
+    if not body:
+        return None
+    try:
+        parsed = json.loads(body)
+    except (TypeError, json.JSONDecodeError):
+        return None
+    return parsed if isinstance(parsed, dict) else None
 
 
 def build_chat_request(
@@ -97,22 +117,24 @@ def make_request(
 
         return {"text": text, "raw": raw}
 
+    except SafeIOHTTPError as e:
+        error_body = _parse_error_body_dict(e.body)
+        retry_after = parse_retry_after_header(e.headers)
+        if retry_after is None:
+            retry_after = parse_retry_after_body(error_body)
+
+        logger.error(f"Anthropic API error: {e}")
+        raise ProviderHTTPError(
+            status_code=e.status_code,
+            message=str(e),
+            provider="anthropic",
+            model=model,
+            retry_after=retry_after,
+            headers=e.headers,
+            body=error_body if error_body is not None else e.body,
+        )
+
     except RuntimeError as e:
-        # S65: safe_io wraps HTTP errors in RuntimeError with status code in message?
-        # No, safe_io implementation:
-        # raise RuntimeError(f"HTTP error {e.code}: {e.reason}")
-        # raise RuntimeError(f"Request failed: {e}")
-
-        # We need to parse the error message to extract status/body if possible,
-        # OR update safe_io to raise structured errors.
-        # Given existing safe_io implementation raises RuntimeError string,
-        # we try to parse it best-effort or treat as generic 500.
-
-        # However, for ProviderHTTPError compliance, we need status code and headers.
-        # safe_io currently DOES NOT return headers on error.
-        # This is a limitation of safe_io replacement.
-
-        # Let's try to parse status code from string "HTTP error 400: ..."
         params = str(e)
         status_code = 500
         import re
@@ -122,14 +144,12 @@ def make_request(
             status_code = int(m.group(1))
 
         logger.error(f"Anthropic API error: {e}")
-
-        # Re-raise as ProviderHTTPError if possible
         raise ProviderHTTPError(
             status_code=status_code,
             message=str(e),
             provider="anthropic",
             model=model,
-            retry_after=0,  # Header access lost in safe_io exception
+            retry_after=None,
         )
 
     except SSRFError as e:

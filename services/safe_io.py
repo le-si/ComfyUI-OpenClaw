@@ -14,10 +14,19 @@ import socket
 import tempfile
 import urllib.request
 from dataclasses import dataclass, field
-from typing import Any, FrozenSet, Optional, Set, Tuple
+from typing import Any, Dict, FrozenSet, Optional, Set, Tuple
 from urllib.parse import urlparse
 
 logger = logging.getLogger("ComfyUI-OpenClaw.services.safe_io")
+
+# IMPORTANT: Keep outbound header forwarding parity across JSON and stream
+# callers. Drift here previously caused provider behavior mismatches.
+ALLOWED_OUTBOUND_HEADER_PREFIXES = (
+    "x-",
+    "content-type",
+    "authorization",
+    "accept",
+)
 
 # ============================================================================
 # FILESYSTEM SAFETY
@@ -191,6 +200,51 @@ class SSRFError(ValueError):
     """Raised when an SSRF attempt is detected."""
 
     pass
+
+
+class SafeIOHTTPError(RuntimeError):
+    """Structured HTTP failure raised by safe_request_* helpers."""
+
+    def __init__(
+        self,
+        *,
+        status_code: int,
+        reason: str,
+        method: str,
+        url: str,
+        headers: Optional[Dict[str, str]] = None,
+        body: Optional[str] = None,
+    ) -> None:
+        self.status_code = int(status_code)
+        self.reason = reason
+        self.method = method
+        self.url = url
+        self.headers = headers or {}
+        self.body = body
+        super().__init__(f"HTTP error {self.status_code}: {self.reason}")
+
+
+def _headers_to_dict(headers: Any) -> Dict[str, str]:
+    """Convert HTTP header container to plain dict[str, str]."""
+    if not headers:
+        return {}
+    try:
+        return {str(k): str(v) for k, v in headers.items()}
+    except Exception:
+        return {}
+
+
+def _http_error_body_preview(error: Exception, max_bytes: int = 4096) -> Optional[str]:
+    """Best-effort decode of HTTP error response body for retry-hint parsing."""
+    try:
+        raw = error.read(max_bytes)
+    except Exception:
+        return None
+    if not raw:
+        return None
+    if isinstance(raw, bytes):
+        return raw.decode("utf-8", errors="replace")
+    return str(raw)
 
 
 # ---------------------------------------------------------------------------
@@ -593,11 +647,12 @@ def safe_request_json(
         # Add safe headers
         # R106: external control-plane adapter requires Authorization header support.
         # Keep this allowlist narrow to avoid leaking arbitrary caller headers.
-        ALLOWED_HEADER_PREFIXES = ("x-", "content-type", "authorization")
         if headers:
             for key, value in headers.items():
                 key_lower = key.lower()
-                if any(key_lower.startswith(p) for p in ALLOWED_HEADER_PREFIXES):
+                if any(
+                    key_lower.startswith(p) for p in ALLOWED_OUTBOUND_HEADER_PREFIXES
+                ):
                     request.add_header(key, value)
                 else:
                     logger.debug(f"Skipping disallowed header: {key}")
@@ -635,7 +690,14 @@ def safe_request_json(
                     }
 
         except urllib.error.HTTPError as e:
-            raise RuntimeError(f"HTTP error {e.code}: {e.reason}")
+            raise SafeIOHTTPError(
+                status_code=e.code,
+                reason=str(getattr(e, "reason", "HTTPError")),
+                method=current_method,
+                url=current_url,
+                headers=_headers_to_dict(getattr(e, "headers", None)),
+                body=_http_error_body_preview(e),
+            )
 
         except urllib.error.URLError as e:
             if isinstance(e.reason, SSRFError):
@@ -694,11 +756,12 @@ def safe_request_text_stream(
         request.add_header("User-Agent", f"ComfyUI-OpenClaw/{PACK_VERSION}")
         request.add_header("Content-Type", "application/json")
 
-        ALLOWED_HEADER_PREFIXES = ("x-", "content-type", "authorization", "accept")
         if headers:
             for key, value in headers.items():
                 key_lower = key.lower()
-                if any(key_lower.startswith(p) for p in ALLOWED_HEADER_PREFIXES):
+                if any(
+                    key_lower.startswith(p) for p in ALLOWED_OUTBOUND_HEADER_PREFIXES
+                ):
                     request.add_header(key, value)
                 else:
                     logger.debug(f"Skipping disallowed header: {key}")
@@ -744,7 +807,14 @@ def safe_request_text_stream(
             return
 
         except urllib.error.HTTPError as e:
-            raise RuntimeError(f"HTTP error {e.code}: {e.reason}")
+            raise SafeIOHTTPError(
+                status_code=e.code,
+                reason=str(getattr(e, "reason", "HTTPError")),
+                method=current_method,
+                url=current_url,
+                headers=_headers_to_dict(getattr(e, "headers", None)),
+                body=_http_error_body_preview(e),
+            )
         except urllib.error.URLError as e:
             if isinstance(e.reason, SSRFError):
                 raise e.reason

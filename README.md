@@ -15,9 +15,9 @@ ComfyUI-OpenClaw is a **security-first orchestration layer** for ComfyUI that co
 
 This project is designed to make **ComfyUI a reliable automation target** with an explicit admin boundary and hardened defaults.
 
-<center>
-<img src="assets/adminMobileConsole.png" width="70%" />
-</center>
+<div align="center">
+  <img src="assets/adminMobileConsole.png" width="70%" />
+</div>
 
 ## Security stance (how this project differs from convenience-first automation packs):
 

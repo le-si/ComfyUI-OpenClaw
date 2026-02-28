@@ -3,12 +3,15 @@ import shutil
 import sys
 import tempfile
 import unittest
+import urllib.error
+from io import BytesIO
 from unittest.mock import MagicMock, patch
 
 sys.path.append(os.getcwd())
 
 from services.safe_io import (
     PathTraversalError,
+    SafeIOHTTPError,
     SSRFError,
     _normalize_host,
     is_private_ip,
@@ -16,6 +19,7 @@ from services.safe_io import (
     safe_read_bytes,
     safe_read_text,
     safe_request_json,
+    safe_request_text_stream,
     safe_write_text,
     validate_outbound_url,
 )
@@ -226,6 +230,119 @@ class TestURLSafety(unittest.TestCase):
             allow_hosts={"example.com"},
         )
         self.assertEqual(out["ok"], True)
+
+    @patch("services.safe_io._build_pinned_opener")
+    @patch("services.safe_io.validate_outbound_url")
+    def test_safe_request_json_http_error_preserves_retry_headers_and_body(
+        self, mock_validate, mock_build
+    ):
+        """HTTP errors should surface structured metadata for provider retry logic."""
+        mock_validate.return_value = ("https", "example.com", 443, ["93.184.216.34"])
+
+        mock_opener = MagicMock()
+        mock_opener.open.side_effect = urllib.error.HTTPError(
+            url="https://example.com/fail",
+            code=429,
+            msg="Too Many Requests",
+            hdrs={"Retry-After": "17", "Content-Type": "application/json"},
+            fp=BytesIO(b'{"error":{"retry_after":11}}'),
+        )
+        mock_build.return_value = mock_opener
+
+        with self.assertRaises(SafeIOHTTPError) as ctx:
+            safe_request_json(
+                method="POST",
+                url="https://example.com/fail",
+                json_body={"x": 1},
+                allow_hosts={"example.com"},
+            )
+
+        self.assertEqual(ctx.exception.status_code, 429)
+        self.assertEqual(ctx.exception.headers.get("Retry-After"), "17")
+        self.assertIn("retry_after", ctx.exception.body or "")
+
+    @patch("services.safe_io._build_pinned_opener")
+    @patch("services.safe_io.validate_outbound_url")
+    def test_safe_request_json_accept_header_is_allowed(
+        self, mock_validate, mock_build
+    ):
+        """JSON request path should allow Accept header (parity with stream path)."""
+        mock_validate.return_value = ("https", "example.com", 443, ["93.184.216.34"])
+
+        mock_response = MagicMock()
+        mock_response.getcode.return_value = 200
+        mock_response.read.return_value = b'{"ok": true}'
+
+        mock_opener = MagicMock()
+        mock_opener.open.return_value.__enter__.return_value = mock_response
+        mock_build.return_value = mock_opener
+
+        out = safe_request_json(
+            method="POST",
+            url="https://example.com/accept",
+            json_body={"x": 1},
+            headers={
+                "Accept": "application/json",
+                "X-Test": "ok",
+                "Bad-Header": "blocked",
+            },
+            allow_hosts={"example.com"},
+        )
+
+        self.assertEqual(out["ok"], True)
+        request_arg = mock_opener.open.call_args.args[0]
+        header_map = {k.lower(): v for k, v in request_arg.header_items()}
+        self.assertEqual(header_map.get("accept"), "application/json")
+        self.assertEqual(header_map.get("x-test"), "ok")
+        self.assertNotIn("bad-header", header_map)
+
+    @patch("services.safe_io._build_pinned_opener")
+    @patch("services.safe_io.validate_outbound_url")
+    def test_safe_request_text_stream_accept_header_is_allowed(
+        self, mock_validate, mock_build
+    ):
+        """Stream request path should share same allowed-header contract."""
+        mock_validate.return_value = ("https", "example.com", 443, ["93.184.216.34"])
+
+        class _FakeStreamResponse:
+            def __init__(self):
+                self.headers = {}
+                self._lines = [b"data: one\n", b""]
+
+            def getcode(self):
+                return 200
+
+            def readline(self, _max_bytes):
+                return self._lines.pop(0)
+
+            def close(self):
+                return None
+
+        fake_response = _FakeStreamResponse()
+        mock_opener = MagicMock()
+        mock_opener.open.return_value = fake_response
+        mock_build.return_value = mock_opener
+
+        lines = list(
+            safe_request_text_stream(
+                method="POST",
+                url="https://example.com/stream",
+                json_body={"x": 1},
+                headers={
+                    "Accept": "text/event-stream",
+                    "X-Test": "ok",
+                    "Bad-Header": "blocked",
+                },
+                allow_hosts={"example.com"},
+            )
+        )
+
+        self.assertEqual(lines, ["data: one\n"])
+        request_arg = mock_opener.open.call_args.args[0]
+        header_map = {k.lower(): v for k, v in request_arg.header_items()}
+        self.assertEqual(header_map.get("accept"), "text/event-stream")
+        self.assertEqual(header_map.get("x-test"), "ok")
+        self.assertNotIn("bad-header", header_map)
 
     def test_host_normalization_case(self):
         """Test host normalization is case-insensitive."""

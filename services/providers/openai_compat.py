@@ -4,24 +4,36 @@ from typing import Any, Callable, Dict, List, Optional
 
 try:
     from ..provider_errors import ProviderHTTPError
-    from ..retry_after import get_retry_after_seconds
+    from ..retry_after import parse_retry_after_body, parse_retry_after_header
     from ..safe_io import (
         STANDARD_OUTBOUND_POLICY,
+        SafeIOHTTPError,
         SSRFError,
         safe_request_json,
         safe_request_text_stream,
     )
 except ImportError:
     from services.provider_errors import ProviderHTTPError
-    from services.retry_after import get_retry_after_seconds
+    from services.retry_after import parse_retry_after_body, parse_retry_after_header
     from services.safe_io import (
         STANDARD_OUTBOUND_POLICY,
+        SafeIOHTTPError,
         SSRFError,
         safe_request_json,
         safe_request_text_stream,
     )
 
 logger = logging.getLogger("ComfyUI-OpenClaw.services.providers.openai_compat")
+
+
+def _parse_error_body_dict(body: Optional[str]) -> Optional[Dict[str, Any]]:
+    if not body:
+        return None
+    try:
+        parsed = json.loads(body)
+    except (TypeError, json.JSONDecodeError):
+        return None
+    return parsed if isinstance(parsed, dict) else None
 
 
 def build_chat_request(
@@ -43,10 +55,15 @@ def build_chat_request(
     # R39: Sanitize and include tools if provided
     if tools:
         try:
-            from services.schema_sanitizer import (
-                get_sanitization_summary,
-                sanitize_tools,
-            )
+            # CRITICAL: package-relative import must be tried first for ComfyUI
+            # custom_nodes package loading; fallback absolute import is for local tools.
+            try:
+                from ..schema_sanitizer import get_sanitization_summary, sanitize_tools
+            except ImportError:
+                from services.schema_sanitizer import (
+                    get_sanitization_summary,
+                    sanitize_tools,
+                )
 
             sanitized = sanitize_tools(tools, profile="openai_compat")
             if sanitized:
@@ -128,6 +145,23 @@ def make_request(
 
         return {"text": text, "raw": raw}
 
+    except SafeIOHTTPError as e:
+        error_body = _parse_error_body_dict(e.body)
+        retry_after = parse_retry_after_header(e.headers)
+        if retry_after is None:
+            retry_after = parse_retry_after_body(error_body)
+
+        logger.error(f"OpenAI-compat API error: {e}")
+        raise ProviderHTTPError(
+            status_code=e.status_code,
+            message=str(e),
+            provider="openai_compat",
+            model=model,
+            retry_after=retry_after,
+            headers=e.headers,
+            body=error_body if error_body is not None else e.body,
+        )
+
     except RuntimeError as e:
         # S65/R14: Attempt to reconstruct ProviderHTTPError from safe_io exception
 
@@ -147,7 +181,7 @@ def make_request(
             message=str(e),
             provider="openai_compat",
             model=model,
-            retry_after=0,
+            retry_after=None,
         )
 
     except SSRFError as e:
@@ -269,6 +303,23 @@ def make_request_stream(
             },
         }
 
+    except SafeIOHTTPError as e:
+        error_body = _parse_error_body_dict(e.body)
+        retry_after = parse_retry_after_header(e.headers)
+        if retry_after is None:
+            retry_after = parse_retry_after_body(error_body)
+
+        logger.error(f"OpenAI-compat streaming API error: {e}")
+        raise ProviderHTTPError(
+            status_code=e.status_code,
+            message=str(e),
+            provider="openai_compat",
+            model=model,
+            retry_after=retry_after,
+            headers=e.headers,
+            body=error_body if error_body is not None else e.body,
+        )
+
     except RuntimeError as e:
         params = str(e)
         status_code = 500
@@ -284,7 +335,7 @@ def make_request_stream(
             message=str(e),
             provider="openai_compat",
             model=model,
-            retry_after=0,
+            retry_after=None,
         )
     except SSRFError as e:
         logger.error(f"OpenAI-compat streaming SSRF blocked: {e}")
