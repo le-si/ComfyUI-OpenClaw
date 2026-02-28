@@ -16,7 +16,7 @@ except ImportError as e:
 logger = logging.getLogger("ComfyUI-OpenClaw.nodes.PromptPlanner")
 
 
-class MoltbotPromptPlanner:
+class OpenClawPromptPlanner:
     """
     Experimental node that uses an LLM to plan the prompt and generation parameters.
     DELEGATES to services.planner.PlannerService (F8 Refactor).
@@ -70,3 +70,7 @@ class MoltbotPromptPlanner:
 
         # Node expects params as JSON string
         return (positive, negative, json.dumps(params_dict, indent=2))
+
+
+# IMPORTANT: keep legacy class alias for existing imports and tests.
+MoltbotPromptPlanner = OpenClawPromptPlanner

@@ -2,21 +2,22 @@ import os
 import sys
 
 # Ensure this custom node root is on sys.path (ComfyUI loads modules by path, not package)
-_MOLTBOT_ROOT = os.path.dirname(os.path.abspath(__file__))
-if _MOLTBOT_ROOT not in sys.path:
-    sys.path.insert(0, _MOLTBOT_ROOT)
+_OPENCLAW_ROOT = os.path.dirname(os.path.abspath(__file__))
+if _OPENCLAW_ROOT not in sys.path:
+    sys.path.insert(0, _OPENCLAW_ROOT)
 
 if __package__:
-    from .nodes.batch_variants import MoltbotBatchVariants
-    from .nodes.image_to_prompt import MoltbotImageToPrompt
-    from .nodes.prompt_planner import MoltbotPromptPlanner
-    from .nodes.prompt_refiner import MoltbotPromptRefiner
+    from .nodes.batch_variants import OpenClawBatchVariants
+    from .nodes.image_to_prompt import OpenClawImageToPrompt
+    from .nodes.prompt_planner import OpenClawPromptPlanner
+    from .nodes.prompt_refiner import OpenClawPromptRefiner
 
     NODE_CLASS_MAPPINGS = {
-        "MoltbotPromptPlanner": MoltbotPromptPlanner,
-        "MoltbotBatchVariants": MoltbotBatchVariants,
-        "MoltbotImageToPrompt": MoltbotImageToPrompt,
-        "MoltbotPromptRefiner": MoltbotPromptRefiner,
+        # IMPORTANT: keep legacy mapping keys stable for existing workflows.
+        "MoltbotPromptPlanner": OpenClawPromptPlanner,
+        "MoltbotBatchVariants": OpenClawBatchVariants,
+        "MoltbotImageToPrompt": OpenClawImageToPrompt,
+        "MoltbotPromptRefiner": OpenClawPromptRefiner,
     }
 
     NODE_DISPLAY_NAME_MAPPINGS = {

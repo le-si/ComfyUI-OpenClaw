@@ -16,19 +16,23 @@ except ModuleNotFoundError:
 sys.path.append(os.getcwd())
 
 try:
-    from nodes.image_to_prompt import MoltbotImageToPrompt
+    from nodes.image_to_prompt import MoltbotImageToPrompt, OpenClawImageToPrompt
+    from nodes.prompt_refiner import MoltbotPromptRefiner
 except ModuleNotFoundError:
     MoltbotImageToPrompt = None
+    OpenClawImageToPrompt = None
+    MoltbotPromptRefiner = None
+from services.image_utils import tensor_to_base64_png
 from services.llm_client import LLMClient
 
 
 @unittest.skipIf(
-    (not NUMPY_AVAILABLE) or (MoltbotImageToPrompt is None),
+    (not NUMPY_AVAILABLE) or (OpenClawImageToPrompt is None),
     "numpy (and node deps) not available",
 )
 class TestImageToPrompt(unittest.TestCase):
     def setUp(self):
-        self.node = MoltbotImageToPrompt()
+        self.node = OpenClawImageToPrompt()
         self.node.llm_client = MagicMock()
 
     def test_preprocessing_tensor_mock(self):
@@ -99,6 +103,21 @@ class TestImageToPrompt(unittest.TestCase):
         self.assertEqual(caption, "A futuristic city")
         self.assertEqual(tags, "sci-fi, neon")
         self.assertEqual(prompt, "Cyberpunk city with neon lights")
+
+    def test_shared_image_helper_encoding_parity(self):
+        """R133: wrappers in image nodes must preserve shared encoding behavior."""
+        self.assertIs(MoltbotImageToPrompt, OpenClawImageToPrompt)
+        self.assertIsNotNone(MoltbotPromptRefiner)
+
+        fake_tensor = np.zeros((1, 256, 128, 3), dtype=np.float32)
+        image_node_b64 = self.node._tensor_to_base64_png(fake_tensor, max_side=512)
+        helper_b64 = tensor_to_base64_png(fake_tensor, max_side=512, context="test")
+        refiner_b64 = MoltbotPromptRefiner()._tensor_to_base64_png(
+            fake_tensor, max_side=512
+        )
+
+        self.assertEqual(image_node_b64, helper_b64)
+        self.assertEqual(image_node_b64, refiner_b64)
 
 
 if __name__ == "__main__":

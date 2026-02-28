@@ -1,22 +1,12 @@
-import base64
-import io
 import json
 import logging
-from typing import Any, Dict, List, Tuple
+from typing import Any, Tuple
 
 try:
-    import numpy as np  # type: ignore
-except ModuleNotFoundError:  # pragma: no cover
-    np = None  # type: ignore
-
-try:
-    from PIL import Image  # type: ignore
-except ModuleNotFoundError:  # pragma: no cover
-    Image = None  # type: ignore
-
-try:
+    from ..services.image_utils import tensor_to_base64_png
     from ..services.refiner import RefinerService
 except ImportError:
+    from services.image_utils import tensor_to_base64_png
     from services.refiner import RefinerService
 
 try:
@@ -38,7 +28,7 @@ ALLOWED_PATCH_KEYS = {
 logger = logging.getLogger("ComfyUI-OpenClaw.nodes.PromptRefiner")
 
 
-class MoltbotPromptRefiner:
+class OpenClawPromptRefiner:
     """
     Critiques and refines prompts/params based on a generated image and identified issues.
     DELEGATES to services.refiner.RefinerService (F21 Refactor).
@@ -89,39 +79,10 @@ class MoltbotPromptRefiner:
     def _tensor_to_base64_png(self, tensor_image: Any, max_side: int) -> str:
         """
         Convert ComfyUI tensor (Batch, H, W, C) to base64 PNG.
-        (Duplicated from ImageToPrompt for MVP robustness/isolation).
         """
-        if Image is None:
-            raise RuntimeError(
-                "Pillow (PIL) is required for PromptRefiner. Please install pillow."
-            )
-        if np is None:
-            raise RuntimeError(
-                "numpy is required for PromptRefiner. Please install numpy."
-            )
-        if len(tensor_image.shape) == 4:
-            img_np = tensor_image[0]
-        else:
-            img_np = tensor_image
-
-        if hasattr(img_np, "cpu"):
-            img_np = img_np.cpu().numpy()
-
-        img_np = np.clip(img_np * 255.0, 0, 255).astype(np.uint8)
-        pil_img = Image.fromarray(img_np)
-
-        width, height = pil_img.size
-        max_dim = max(width, height)
-        if max_dim > max_side:
-            scale = max_side / max_dim
-            new_w = int(width * scale)
-            new_h = int(height * scale)
-            pil_img = pil_img.resize((new_w, new_h), Image.Resampling.LANCZOS)
-
-        buffered = io.BytesIO()
-        pil_img.save(buffered, format="PNG", optimize=True)
-        img_str = base64.b64encode(buffered.getvalue()).decode("utf-8")
-        return img_str
+        return tensor_to_base64_png(
+            tensor_image=tensor_image, max_side=max_side, context="PromptRefiner"
+        )
 
     def refine_prompt(
         self,
@@ -174,3 +135,7 @@ class MoltbotPromptRefiner:
             metrics.increment("errors")  # Add metrics for service errors
             logger.error(f"Refiner Service failed: {e}")
             return (orig_positive, orig_negative, "{}", f"Error: {str(e)}")
+
+
+# IMPORTANT: keep legacy class alias for existing imports and tests.
+MoltbotPromptRefiner = OpenClawPromptRefiner

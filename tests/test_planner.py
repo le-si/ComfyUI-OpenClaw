@@ -77,8 +77,8 @@ class TestPromptPlanner(unittest.TestCase):
         self.assertEqual(params["width"], 1016)
         self.assertEqual(params["height"], 1024)
         # cfg/steps should be clamped by schema (exact limits in GenerationParams)
-        self.assertLessEqual(params["cfg"], 30.0)
-        self.assertLessEqual(params["steps"], 150)
+        self.assertEqual(params["cfg"], 30.0)
+        self.assertEqual(params["steps"], 100)
 
 
 if __name__ == "__main__":

@@ -15,7 +15,7 @@ except ImportError:
 logger = logging.getLogger("ComfyUI-OpenClaw.nodes.BatchVariants")
 
 
-class MoltbotBatchVariants:
+class OpenClawBatchVariants:
     """
     Generates deterministic variants for batch processing.
     """
@@ -133,3 +133,7 @@ class MoltbotBatchVariants:
             params_list.append(json.dumps(validated.dict(), indent=2))
 
         return (pos_list, neg_list, params_list)
+
+
+# IMPORTANT: keep legacy class alias for existing imports and tests.
+MoltbotBatchVariants = OpenClawBatchVariants

@@ -1,20 +1,8 @@
-import base64
-import io
-import json
 import logging
-from typing import Any, Dict, List, Tuple
+from typing import Any, Tuple
 
 try:
-    from PIL import Image  # type: ignore
-except ModuleNotFoundError:  # pragma: no cover
-    Image = None  # type: ignore
-
-try:
-    import numpy as np  # type: ignore
-except ModuleNotFoundError:  # pragma: no cover
-    np = None  # type: ignore
-
-try:
+    from ..services.image_utils import tensor_to_base64_png
     from ..services.llm_client import LLMClient
     from ..services.llm_output import (
         extract_json_object,
@@ -22,6 +10,7 @@ try:
         sanitize_string,
     )
 except ImportError:
+    from services.image_utils import tensor_to_base64_png
     from services.llm_client import LLMClient
     from services.llm_output import (
         extract_json_object,
@@ -37,7 +26,7 @@ except ImportError:
 logger = logging.getLogger("ComfyUI-OpenClaw.nodes.ImageToPrompt")
 
 
-class MoltbotImageToPrompt:
+class OpenClawImageToPrompt:
     """
     Experimental node that uses Vision LLM to generate prompt starters from an image.
     """
@@ -80,46 +69,9 @@ class MoltbotImageToPrompt:
         Convert ComfyUI tensor (Batch, H, W, C) to base64 PNG.
         Uses the first image in batch.
         """
-        if Image is None:
-            raise RuntimeError(
-                "Pillow (PIL) is required for ImageToPrompt. Please install pillow."
-            )
-        if np is None:
-            raise RuntimeError(
-                "numpy is required for ImageToPrompt. Please install numpy."
-            )
-        # Tensor is typically [Batch, H, W, 3] float32 0..1
-        # Take first image
-        if len(tensor_image.shape) == 4:
-            img_np = tensor_image[0]
-        else:
-            # Handle case where it might be single image [H, W, 3]
-            img_np = tensor_image
-
-        # Check if tensor (convert to numpy if it is a torch tensor)
-        if hasattr(img_np, "cpu"):
-            img_np = img_np.cpu().numpy()
-
-        # Convert to uint8 0..255
-        img_np = np.clip(img_np * 255.0, 0, 255).astype(np.uint8)
-
-        # To PIL
-        pil_img = Image.fromarray(img_np)
-
-        # Resize if needed
-        width, height = pil_img.size
-        max_dim = max(width, height)
-        if max_dim > max_side:
-            scale = max_side / max_dim
-            new_w = int(width * scale)
-            new_h = int(height * scale)
-            pil_img = pil_img.resize((new_w, new_h), Image.Resampling.LANCZOS)
-
-        # Bytes Metadata stripping (default save doesn't add much, but good practice)
-        buffered = io.BytesIO()
-        pil_img.save(buffered, format="PNG", optimize=True)
-        img_str = base64.b64encode(buffered.getvalue()).decode("utf-8")
-        return img_str
+        return tensor_to_base64_png(
+            tensor_image=tensor_image, max_side=max_side, context="ImageToPrompt"
+        )
 
     def generate_prompt(
         self, image: Any, goal: str, detail_level: str, max_image_side: int
@@ -186,3 +138,7 @@ Do not use markdown blocks.
             metrics.increment("errors")
             logger.error(f"Failed to generate prompt from image: {e}")
             raise e
+
+
+# IMPORTANT: keep legacy class alias for existing imports and tests.
+MoltbotImageToPrompt = OpenClawImageToPrompt
