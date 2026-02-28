@@ -84,6 +84,40 @@ else:
     DATA_DIR = os.path.join(PACK_DIR, "data")
     LOG_FILE = os.path.join(DATA_DIR, "openclaw.log")
 
+# IMPORTANT: startup log truncation must run once per process.
+# Multiple module-level loggers call setup_logger(); repeated truncation would
+# erase fresh logs emitted after the first logger initialization.
+_LOG_TRUNCATE_APPLIED = False
+
+
+def _is_env_enabled(*keys: str) -> bool:
+    for key in keys:
+        val = (os.environ.get(key) or "").strip().lower()
+        if val in {"1", "true", "yes", "on"}:
+            return True
+    return False
+
+
+def _maybe_truncate_log_on_start(logger: logging.Logger) -> None:
+    global _LOG_TRUNCATE_APPLIED
+    if _LOG_TRUNCATE_APPLIED:
+        return
+    if not _is_env_enabled(
+        "OPENCLAW_LOG_TRUNCATE_ON_START", "MOLTBOT_LOG_TRUNCATE_ON_START"
+    ):
+        return
+    try:
+        os.makedirs(DATA_DIR, exist_ok=True)
+        with open(LOG_FILE, "w", encoding="utf-8"):
+            pass
+        logger.info(
+            f"Startup log truncation applied for {LOG_FILE} "
+            "(OPENCLAW_LOG_TRUNCATE_ON_START=1)"
+        )
+        _LOG_TRUNCATE_APPLIED = True
+    except Exception as e:
+        logger.warning(f"Failed to truncate startup log file {LOG_FILE}: {e}")
+
 
 class RedactedFormatter(logging.Formatter):
     """
@@ -136,6 +170,7 @@ def setup_logger(name: str = "ComfyUI-OpenClaw") -> logging.Logger:
 
     # Only add handler if not already added to avoid duplicates on reload
     if not logger.handlers:
+        _maybe_truncate_log_on_start(logger)
         api_key = get_api_key()
         sensitive = [api_key] if api_key else []
         formatter = RedactedFormatter(

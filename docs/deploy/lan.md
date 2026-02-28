@@ -40,6 +40,9 @@ OPENCLAW_ALLOW_REMOTE_ADMIN=1
 
 # Require a token for Logs/Config viewing
 OPENCLAW_OBSERVABILITY_TOKEN=observability-secret
+
+# Optional startup log hygiene (avoid stale historical error lines in UI)
+OPENCLAW_LOG_TRUNCATE_ON_START=1
 ```
 
 ### 3. Firewall Rules (Host)

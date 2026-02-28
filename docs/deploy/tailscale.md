@@ -46,6 +46,7 @@ To be safe:
 
 1. Set `OPENCLAW_ADMIN_TOKEN` to a strong secret.
 2. Enforce `OPENCLAW_OBSERVABILITY_TOKEN` if you plan to view logs remotely.
+3. Optional: set `OPENCLAW_LOG_TRUNCATE_ON_START=1` to clear stale `openclaw.log` at startup.
 
 ### 4. "Red Lines"
 

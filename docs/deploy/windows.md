@@ -14,6 +14,7 @@ To set OpenClaw security tokens in the portable version, edit your `run_nvidia_g
 set OPENCLAW_ADMIN_TOKEN=my-secret-token
 set OPENCLAW_ALLOW_REMOTE_ADMIN=1
 set OPENCLAW_OBSERVABILITY_TOKEN=observability-token
+set OPENCLAW_LOG_TRUNCATE_ON_START=1
 
 :: Run ComfyUI
 .\python_embeded\python.exe -s ComfyUI\main.py --windows-standalone-build
@@ -25,6 +26,7 @@ pause
 ```powershell
 $env:OPENCLAW_ADMIN_TOKEN="my-secret-token"
 $env:OPENCLAW_ALLOW_REMOTE_ADMIN="1"
+$env:OPENCLAW_LOG_TRUNCATE_ON_START="1"
 ./python_embeded/python.exe -s ComfyUI/main.py
 ```
 
@@ -35,6 +37,7 @@ If you want to open the standalone remote admin page from another device in your
 ```powershell
 $env:OPENCLAW_ADMIN_TOKEN="my-secret-token"
 $env:OPENCLAW_ALLOW_REMOTE_ADMIN="1"
+$env:OPENCLAW_LOG_TRUNCATE_ON_START="1"
 ./python_embeded/python.exe -s ComfyUI/main.py --listen 0.0.0.0 --port 8188
 ```
 

@@ -40,6 +40,8 @@ No special configuration is required.
   - Keep SSRF relax flags disabled:
     - `OPENCLAW_ALLOW_ANY_PUBLIC_LLM_HOST=0`
     - `OPENCLAW_ALLOW_INSECURE_BASE_URL=0`
+- **Optional log hygiene**:
+  - `OPENCLAW_LOG_TRUNCATE_ON_START=1` clears stale `openclaw.log` content once at startup.
 
 ### 3. "Red Lines" (What NOT to do)
 

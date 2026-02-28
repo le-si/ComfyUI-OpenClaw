@@ -70,6 +70,7 @@ Only do this on trusted/private access planes and keep backend protection enable
 
 - `OPENCLAW_ADMIN_TOKEN=<strong-secret>`
 - `OPENCLAW_ALLOW_REMOTE_ADMIN=1`
+- `OPENCLAW_LOG_TRUNCATE_ON_START=1` (optional, startup log hygiene)
 
 Use one more auth boundary at proxy layer (IP allowlist, SSO, or basic auth), for example:
 

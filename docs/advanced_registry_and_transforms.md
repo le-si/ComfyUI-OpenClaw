@@ -7,6 +7,7 @@ This guide covers optional, high-control features that are disabled by default.
 - Remote registry sync uses quarantine and trust policy controls.
 - Constrained transforms execute trusted Python modules with strict runtime limits.
 - Both features are fail-closed when disabled.
+- Optional operational log hygiene: `OPENCLAW_LOG_TRUNCATE_ON_START=1` clears stale `openclaw.log` at backend startup (once per process).
 
 ## Remote registry sync
 

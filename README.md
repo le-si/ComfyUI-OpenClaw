@@ -15,7 +15,9 @@ ComfyUI-OpenClaw is a **security-first orchestration layer** for ComfyUI that co
 
 This project is designed to make **ComfyUI a reliable automation target** with an explicit admin boundary and hardened defaults.
 
----
+<center>
+<img src="assets/adminMobileConsole.png" width="70%" />
+</center>
 
 ## Security stance (how this project differs from convenience-first automation packs):
 
@@ -48,6 +50,8 @@ This project is designed to make **ComfyUI a reliable automation target** with a
 Deployment profiles and hardening checklists:
 - [Security Deployment Guide](docs/security_deployment_guide.md) (local / LAN / public templates + self-check command)
 - [Security Key/Token Lifecycle SOP](docs/security_key_lifecycle_sop.md) (trust-root, secrets key, and bridge token rotation/revocation/disaster recovery)
+- [Security Checklist](docs/security_checklist.md) (pre-exposure operational checklist for connector and ingress boundaries)
+- [Runtime Hardening and Startup](docs/runtime_hardening_and_startup.md) (runtime profile, startup gate, and hardened baseline behaviors)
 
 
 
@@ -475,11 +479,13 @@ Remote admin actions are denied by default. If you understand the risk and need 
 - PowerShell (current session only):
   - `$env:OPENCLAW_LLM_API_KEY="<YOUR_API_KEY>"`
   - `$env:OPENCLAW_ADMIN_TOKEN="<YOUR_ADMIN_TOKEN>"`
+  - `$env:OPENCLAW_LOG_TRUNCATE_ON_START="1"` (optional: clear previous `openclaw.log` at startup)
 - PowerShell (persistent; takes effect in new shells):
   - `setx OPENCLAW_LLM_API_KEY "<YOUR_API_KEY>"`
   - `setx OPENCLAW_ADMIN_TOKEN "<YOUR_ADMIN_TOKEN>"`
+  - `setx OPENCLAW_LOG_TRUNCATE_ON_START "1"` (optional)
 - CMD (current session only): `set OPENCLAW_LLM_API_KEY=<YOUR_API_KEY>`
-- Portable `.bat` launchers: add `set OPENCLAW_LLM_API_KEY=...` / `set OPENCLAW_ADMIN_TOKEN=...` before launching ComfyUI.
+- Portable `.bat` launchers: add `set OPENCLAW_LLM_API_KEY=...` / `set OPENCLAW_ADMIN_TOKEN=...` (optionally `set OPENCLAW_LOG_TRUNCATE_ON_START=1`) before launching ComfyUI.
 - ComfyUI Desktop: if env vars are not passed through reliably, prefer the Settings UI key store for localhost-only convenience, or set system-wide env vars.
 
 ## Remote Admin Console (Mobile UI)
@@ -933,6 +939,7 @@ Override:
 Logs:
 
 - `openclaw.log` (legacy `moltbot.log` is still supported)
+- Optional startup truncation: set `OPENCLAW_LOG_TRUNCATE_ON_START=1` to clear the active log file once at process startup (useful to avoid stale-history noise in UI log views).
 - Optional structured JSON logs for selected core paths:
   - set `OPENCLAW_LOG_FORMAT=json` (or `OPENCLAW_STRUCTURED_LOGS=1`) before startup
   - default behavior remains plain text logs (no structured log emission unless opt-in)

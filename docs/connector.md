@@ -45,6 +45,7 @@ Set the following environment variables (or put them in a `.env` file if you use
 - `OPENCLAW_CONNECTOR_DEBUG`: Set to `1` for verbose logs.
 - `OPENCLAW_CONNECTOR_ADMIN_USERS`: Comma-separated list of user IDs allowed to run admin commands (for example `/stop`, approvals, schedules). Admin users are also treated as trusted senders for `/run`.
 - `OPENCLAW_CONNECTOR_ADMIN_TOKEN`: Admin token sent to OpenClaw (`X-OpenClaw-Admin-Token`).
+- `OPENCLAW_LOG_TRUNCATE_ON_START`: Optional backend runtime flag. Set `1` to clear `openclaw.log` once at backend startup to avoid stale-history noise in UI log panels.
 
 **Admin token behavior:**
 

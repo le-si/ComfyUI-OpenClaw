@@ -39,6 +39,7 @@
 
 - [ ] `OPENCLAW_CONNECTOR_DEBUG=1` logs sensitive data — **disable in production**.
 - [ ] Ensure no debug flags are set in production environment.
+- [ ] Optional ops hygiene: if stale historical errors cause confusion in log viewers, use `OPENCLAW_LOG_TRUNCATE_ON_START=1` during controlled restart windows.
 
 ### 7. Tunnel / Reverse Proxy
 

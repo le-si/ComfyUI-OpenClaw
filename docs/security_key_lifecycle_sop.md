@@ -19,6 +19,9 @@ All paths are relative to `OPENCLAW_STATE_DIR` (legacy fallback: `MOLTBOT_STATE_
 | Encrypted secret store | `secrets.enc.json` | Encrypted provider secrets |
 | Bridge token registry | `bridge_tokens.json` | Device token lifecycle state and audit trail |
 
+Optional startup log hygiene for incident drills:
+- Set `OPENCLAW_LOG_TRUNCATE_ON_START=1` before restart when you need a clean `openclaw.log` timeline.
+
 ## 2. Global Rules
 
 1. Always take a timestamped backup before any lifecycle operation.

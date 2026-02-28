@@ -81,6 +81,8 @@ OPENCLAW_WEBHOOK_AUTH_MODE=hmac
 OPENCLAW_WEBHOOK_HMAC_SECRET=replace-with-strong-secret
 OPENCLAW_BRIDGE_ENABLED=1
 OPENCLAW_BRIDGE_DEVICE_TOKEN=replace-with-bridge-device-token
+# Optional: clear stale history in startup log views
+OPENCLAW_LOG_TRUNCATE_ON_START=1
 ```
 
 Then validate:

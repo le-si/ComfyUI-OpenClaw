@@ -55,6 +55,13 @@ Use `--strict-warnings` if you want warnings to fail the check in hardened pipel
 python scripts/check_deployment_profile.py --profile public --strict-warnings
 ```
 
+Optional operational log hygiene (all profiles):
+
+```bash
+# Clear active openclaw.log once at startup (useful to avoid stale UI log noise)
+OPENCLAW_LOG_TRUNCATE_ON_START=1
+```
+
 ## 3. Local (Single-user)
 
 ### 3.1 Pasteable config template
@@ -72,6 +79,8 @@ OPENCLAW_SECURITY_DANGEROUS_BIND_OVERRIDE=0
 
 # Optional but recommended
 OPENCLAW_ADMIN_TOKEN=change-this-local-admin-token
+# Optional startup log hygiene
+# OPENCLAW_LOG_TRUNCATE_ON_START=1
 ```
 
 ### 3.2 Checklist
@@ -107,6 +116,8 @@ OPENCLAW_ENABLE_TRANSFORMS=0
 OPENCLAW_ALLOW_ANY_PUBLIC_LLM_HOST=0
 OPENCLAW_ALLOW_INSECURE_BASE_URL=0
 OPENCLAW_SECURITY_DANGEROUS_BIND_OVERRIDE=0
+# Optional startup log hygiene
+# OPENCLAW_LOG_TRUNCATE_ON_START=1
 ```
 
 ### 4.2 Checklist
@@ -156,6 +167,8 @@ OPENCLAW_ENABLE_TRANSFORMS=0
 OPENCLAW_ALLOW_ANY_PUBLIC_LLM_HOST=0
 OPENCLAW_ALLOW_INSECURE_BASE_URL=0
 OPENCLAW_SECURITY_DANGEROUS_BIND_OVERRIDE=0
+# Optional startup log hygiene
+# OPENCLAW_LOG_TRUNCATE_ON_START=1
 ```
 
 ### 5.2 Checklist
