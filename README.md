@@ -1087,7 +1087,7 @@ OpenClaw includes a standalone **Connector** process that allows you to control 
 
 ## Security
 
-Read `SECURITY.md` before exposing any endpoint beyond localhost. The project is designed to be secure-by-default (deny-by-default auth, SSRF protections, redaction, bounded outputs), but unsafe deployment can still create risk.
+Read [SECURITY.md](SECURITY.md) before exposing any endpoint beyond localhost. The project is designed to be secure-by-default (deny-by-default auth, SSRF protections, redaction, bounded outputs), but unsafe deployment can still create risk.
 
 ### Security Deployment Guide
 

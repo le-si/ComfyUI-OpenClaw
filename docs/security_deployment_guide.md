@@ -8,7 +8,7 @@ This guide is the single entry point for secure deployment of ComfyUI-OpenClaw a
 
 Use this guide together with:
 
-- `SECURITY.md`
+- [SECURITY.md](../SECURITY.md)
 - `docs/deploy/local-only.md`
 - `docs/deploy/lan.md`
 - `docs/deploy/reverse-proxy.md`

@@ -3,6 +3,8 @@
 ## Quick Links
 
 - Deployment profiles and checklists: [Security Deployment Guide](docs/security_deployment_guide.md)
+- Runtime startup hardening behavior: [Runtime Hardening and Startup](docs/runtime_hardening_and_startup.md)
+- Pre-exposure checklist: [Security Checklist](docs/security_checklist.md)
 - Deployment self-check command:
   - `python scripts/check_deployment_profile.py --profile local|lan|public`
 
@@ -21,13 +23,28 @@ Please report security vulnerabilities by creating a **private** issue on GitHub
 
 ---
 
-# Safe Deployment Guide (S18)
+# Safe Deployment Guide
 
 OpenClaw is a powerful extension that interacts with LLMs and the filesystem (via ComfyUI). **By default, it is designed for local (localhost) use.** Exposing it to the public internet requires careful configuration.
 
 ## ⚠️ Warning
 
-**Do NOT expose your ComfyUI instance directly to the public internet** (e.g., port forwarding 8188) without a secure reverse proxy or VPN.
+**Do NOT expose your ComfyUI instance directly to the public internet** (for example via direct port-forwarding) without a secure reverse proxy or VPN.
+
+## Shared Listener Boundary (Critical)
+
+OpenClaw and ComfyUI share the same HTTP listener/port.
+
+This means:
+
+1. Protecting `/openclaw/*` routes does not automatically protect ComfyUI-native routes.
+2. Public reverse-proxy policy must enforce path-level allow/deny and network ACL boundaries.
+3. Public posture requires explicit operator acknowledgement that these boundaries are in place.
+
+High-risk ComfyUI-native routes to deny on public edges unless intentionally required:
+
+- `/prompt`, `/history*`, `/view*`, `/upload*`, `/ws`
+- `/api/prompt`, `/api/history*`, `/api/view*`, `/api/upload*`, `/api/ws`
 
 ## Recommended Deployment
 
@@ -39,67 +56,85 @@ OpenClaw is a powerful extension that interacts with LLMs and the filesystem (vi
 
 If you must expose OpenClaw via a reverse proxy (Nginx, Caddy, Cloudflare Tunnel), you MUST configure the following:
 
-### 1. Observability Access Control (S14)
+### 1. Token Boundaries
 
 Logs (`/openclaw/logs/tail`) and Config (`/openclaw/config`) are restricted to loopback clients by default. (Legacy `/moltbot/*` endpoints are also supported.) To allow remote access via proxy, set a secure token:
 
 ```bash
 export OPENCLAW_OBSERVABILITY_TOKEN="your-secure-random-token-here"
+export OPENCLAW_ADMIN_TOKEN="your-secure-random-admin-token-here"
 # Legacy compatibility (optional):
 # export MOLTBOT_OBSERVABILITY_TOKEN="your-secure-random-token-here"
+# export MOLTBOT_ADMIN_TOKEN="your-secure-random-admin-token-here"
 ```
 
 Then configure your proxy or client to send the header `X-OpenClaw-Obs-Token: your-secure-random-token-here` (legacy: `X-Moltbot-Obs-Token`).
 
-### 2. Trusted Proxies (S6)
+### 2. Trusted Proxy Attribution
 
 If using a reverse proxy, OpenClaw needs to know the *real* client IP for rate limiting enforcement.
 
-Configure your proxy (e.g., Nginx) to send `X-Forwarded-For`. Then tell Moltbot to trust your proxy's IP:
+Configure your proxy to send `X-Forwarded-For`, then configure trusted proxy ranges:
 
-```bash
-export MOLTBOT_TRUST_X_FORWARDED_FOR=1
-# Comma-separated list of trusted proxy IPs or CIDRs
-export MOLTBOT_TRUSTED_PROXIES="127.0.0.1,10.0.0.0/8"
-```
-New names (preferred):
 ```bash
 export OPENCLAW_TRUST_X_FORWARDED_FOR=1
 export OPENCLAW_TRUSTED_PROXIES="127.0.0.1,10.0.0.0/8"
+# Legacy compatibility (optional):
+# export MOLTBOT_TRUST_X_FORWARDED_FOR=1
+# export MOLTBOT_TRUSTED_PROXIES="127.0.0.1,10.0.0.0/8"
 ```
 
-### 3. SSRF Protection (S16)
+### 3. Public Profile Boundary Acknowledgement (S69)
+
+For public profile deployments, you must explicitly acknowledge that reverse-proxy path controls and network ACL boundaries are already enforced:
+
+```bash
+export OPENCLAW_DEPLOYMENT_PROFILE=public
+export OPENCLAW_PUBLIC_SHARED_SURFACE_BOUNDARY_ACK=1
+# Legacy compatibility (optional):
+# export MOLTBOT_PUBLIC_SHARED_SURFACE_BOUNDARY_ACK=1
+```
+
+If this acknowledgement is missing in public profile, deployment profile checks fail with `DP-PUBLIC-008`.
+
+### 4. Startup Gate Behavior (R136 + S56)
+
+Startup security gates are fail-closed. Fatal startup gate/bootstrap failures abort route/worker registration and do not continue in a partial state.
+
+Recommended preflight:
+
+```bash
+python scripts/check_deployment_profile.py --profile public --strict-warnings
+```
+
+### 5. SSRF Protection
 
 OpenClaw validates custom LLM `base_url` settings to prevent Server-Side Request Forgery (SSRF).
 
-* **Default**: Only known providers (OpenAI, Anthropic, etc.) and Localhost (Ollama) are allowed.
-* **Custom URLs**: Must be explicitly enabled:
+* **Default**: known providers and localhost-safe paths are allowed.
+* **Custom base URL**:
+  - requires explicit opt-in:
 
     ```bash
     export OPENCLAW_ALLOW_CUSTOM_BASE_URL=1
     # Legacy compatibility (optional):
     # export MOLTBOT_ALLOW_CUSTOM_BASE_URL=1
     ```
-
-    Even when enabled, private IPs (LAN) are blocked by default. To allow insecure/LAN base URLs (risky):
-
+  - use strict allowlist:
     ```bash
-    export OPENCLAW_ALLOW_INSECURE_BASE_URL=1
-    # Legacy compatibility (optional):
-    # export MOLTBOT_ALLOW_INSECURE_BASE_URL=1
+    export OPENCLAW_LLM_ALLOWED_HOSTS="api.example.com,llm.example.com"
     ```
+  - avoid broad bypass flags in production (`OPENCLAW_ALLOW_ANY_PUBLIC_LLM_HOST`, `OPENCLAW_ALLOW_INSECURE_BASE_URL`).
 
-### 4. Rate Limiting (S17)
+### 6. Rate Limiting
 
-OpenClaw enforces internal rate limits even if you don't.
+OpenClaw enforces internal rate limits:
 
 * Webhooks: 30/min
 * Logs: 60/min
 * Admin: 20/min
 
-* Admin: 20/min
-
-### 5. Sidecar Bridge (S19)
+### 7. Sidecar Bridge
 
 OpenClaw supports a "Sidecar Bridge" (F10) for safe interaction with external bots (Discord/Slack).
 
@@ -111,7 +146,12 @@ OpenClaw supports a "Sidecar Bridge" (F10) for safe interaction with external bo
 
 ## Security Checklist
 
-* [ ] **Authentication**: Your reverse proxy should handle general auth (Basic Auth, OAuth).
-* [ ] **HTTPS**: Always use TLS/SSL.
-* [ ] **Tokens**: Set `OPENCLAW_OBSERVABILITY_TOKEN` and `OPENCLAW_ADMIN_TOKEN` (for config writes). (Legacy `MOLTBOT_*` vars still work.)
-* [ ] **Isolation**: Don't run as root.
+* [ ] **HTTPS + Edge Auth**: reverse proxy enforces TLS and an additional auth boundary (SSO/Basic/IP ACL).
+* [ ] **No direct public bind**: never expose raw ComfyUI/OpenClaw listener directly.
+* [ ] **Token boundaries**: set `OPENCLAW_ADMIN_TOKEN` and `OPENCLAW_OBSERVABILITY_TOKEN` (legacy aliases acceptable).
+* [ ] **Trusted proxy config**: set `OPENCLAW_TRUST_X_FORWARDED_FOR=1` and exact `OPENCLAW_TRUSTED_PROXIES`.
+* [ ] **Public shared-surface ack**: for `OPENCLAW_DEPLOYMENT_PROFILE=public`, set `OPENCLAW_PUBLIC_SHARED_SURFACE_BOUNDARY_ACK=1` only after proxy path allowlist + ACL are verified.
+* [ ] **Public path deny rules**: block ComfyUI-native high-risk routes and `/api/*` equivalents unless explicitly required.
+* [ ] **Startup gate preflight**: run `python scripts/check_deployment_profile.py --profile public --strict-warnings`.
+* [ ] **Runtime diagnostics**: review `GET /openclaw/security/doctor` before exposure.
+* [ ] **Least privilege host posture**: do not run as root/Administrator.
