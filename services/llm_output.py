@@ -59,47 +59,34 @@ def extract_json_object(
         match = re.search(pattern, text, re.IGNORECASE)
         if match:
             candidate = match.group(1).strip()
-            result = _try_parse_json_object(candidate)
+            result = _extract_json_object_with_decoder(candidate)
             if result is not None:
                 return result
 
-    # Try to find JSON object directly: find first { and matching }
-    # Use a more robust approach: try parsing from each { position
-    start_positions = [i for i, c in enumerate(text) if c == "{"]
+    return _extract_json_object_with_decoder(text)
 
-    for start in start_positions:
-        # Try incrementally larger substrings
-        depth = 0
-        in_string = False
-        escape_next = False
 
-        for end in range(start, len(text)):
-            char = text[end]
+def _extract_json_object_with_decoder(text: str) -> Optional[Dict[str, Any]]:
+    """
+    Extract first JSON object using stdlib JSONDecoder.raw_decode scanning.
 
-            if escape_next:
-                escape_next = False
-                continue
+    R132: keep parsing behavior deterministic while removing fragile
+    hand-written brace-depth logic.
+    """
+    decoder = json.JSONDecoder()
+    start = text.find("{")
 
-            if char == "\\" and in_string:
-                escape_next = True
-                continue
+    while start != -1:
+        try:
+            result, _ = decoder.raw_decode(text, idx=start)
+        except (json.JSONDecodeError, ValueError):
+            start = text.find("{", start + 1)
+            continue
 
-            if char == '"' and not escape_next:
-                in_string = not in_string
-                continue
+        if isinstance(result, dict):
+            return result
 
-            if not in_string:
-                if char == "{":
-                    depth += 1
-                elif char == "}":
-                    depth -= 1
-                    if depth == 0:
-                        # Found potential complete object
-                        candidate = text[start : end + 1]
-                        result = _try_parse_json_object(candidate)
-                        if result is not None:
-                            return result
-                        break  # This { didn't work, try next start position
+        start = text.find("{", start + 1)
 
     return None
 
@@ -109,13 +96,7 @@ def _try_parse_json_object(text: str) -> Optional[Dict[str, Any]]:
     Attempt to parse text as a JSON object (dict).
     Returns None if parsing fails or result is not a dict.
     """
-    try:
-        result = json.loads(text)
-        if isinstance(result, dict):
-            return result
-        return None
-    except (json.JSONDecodeError, ValueError):
-        return None
+    return _extract_json_object_with_decoder(text)
 
 
 def sanitize_string(value: Any, default: str = "", max_length: int = 10_000) -> str:

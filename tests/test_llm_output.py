@@ -86,6 +86,35 @@ class TestExtractJsonObject(unittest.TestCase):
         self.assertIn("prompt", result)
         self.assertIn("actual", result)
 
+    def test_escaped_quotes_and_braces(self):
+        """R132: escaped quotes/braces inside strings should not break extraction."""
+        text = (
+            'prefix {"msg": "say \\"hi\\" and keep {literal} braces", "ok": true} '
+            "suffix"
+        )
+        result = extract_json_object(text)
+        self.assertEqual(
+            result, {"msg": 'say "hi" and keep {literal} braces', "ok": True}
+        )
+
+    def test_unicode_escape_sequences(self):
+        """R132: unicode escapes should decode correctly through raw decoder path."""
+        text = 'noise {"greeting":"\\u4f60\\u597d","emoji":"\\ud83d\\ude00"} tail'
+        result = extract_json_object(text)
+        self.assertEqual(result, {"greeting": "你好", "emoji": "😀"})
+
+    def test_skips_invalid_brace_candidate_then_recovers(self):
+        """R132: should continue scanning after invalid brace candidate."""
+        text = 'oops {not-json} then valid {"ok": 1, "nested": {"x": 2}} done'
+        result = extract_json_object(text)
+        self.assertEqual(result, {"ok": 1, "nested": {"x": 2}})
+
+    def test_markdown_fence_with_commentary_inside(self):
+        """R132: fenced blocks with commentary should still extract first object."""
+        text = '```json\nResult => {"a": 1, "b": 2}\n```'
+        result = extract_json_object(text)
+        self.assertEqual(result, {"a": 1, "b": 2})
+
 
 class TestSanitization(unittest.TestCase):
 
