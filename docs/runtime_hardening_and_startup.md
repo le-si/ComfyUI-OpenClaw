@@ -40,6 +40,25 @@ Current mandatory checks:
 
 In `minimal` mode, the same checks emit warnings but do not block startup.
 
+## Localhost no-origin override posture
+
+`OPENCLAW_LOCALHOST_ALLOW_NO_ORIGIN` controls a localhost convenience escape hatch for clients
+that do not send `Origin` / `Sec-Fetch-Site` headers.
+
+- Default/unset: strict behavior remains active (no-origin requests are denied in convenience mode).
+- When set to `true`: no-origin localhost requests are allowed in convenience mode.
+
+Operational visibility:
+
+- Startup emits an explicit warning when the override is enabled.
+- Security Doctor reports this as an explicit posture check (`csrf_no_origin_override`, code `SEC-CSRF-001`).
+- Startup audit includes a dedicated event so operators can trace when this override is active.
+
+Security note:
+
+- Keep this override disabled for shared/LAN/public deployments.
+- Enable only for local CLI/tooling compatibility, and only as long as required.
+
 ## Module startup boundaries
 
 Module enablement is decided during startup and then locked.

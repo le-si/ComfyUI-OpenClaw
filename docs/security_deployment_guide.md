@@ -24,6 +24,26 @@ Before using OpenClaw in any internet-facing setup, you must explicitly accept:
 4. If you cannot satisfy the `public` profile baseline and checklist, do not deploy publicly. Use `local` or private/VPN-only access instead.
 5. High-risk capabilities (external tools, registry sync, transforms, remote admin) must remain disabled unless there is a reviewed and time-bounded operational requirement.
 
+## 0.1 Shared-Port Boundary Statement (Critical)
+
+OpenClaw runs inside ComfyUI and shares the same HTTP listener/port.
+
+This means:
+
+1. Protecting `/openclaw/*` endpoints does **not** automatically protect ComfyUI native endpoints.
+2. If your public edge forwards raw ComfyUI upstream traffic broadly, attackers may still reach native ComfyUI surfaces.
+3. Public deployment must enforce path-level allow/deny policy at reverse proxy (and network ACL), not just OpenClaw tokens.
+
+High-risk ComfyUI-native paths to explicitly deny on public edges (unless intentionally required):
+
+- direct paths: `/prompt`, `/history*`, `/view*`, `/upload*`, `/ws`
+- API-shim paths: `/api/prompt`, `/api/history*`, `/api/view*`, `/api/upload*`, `/api/ws`
+
+Notes:
+
+- Exact ComfyUI route shape can vary by version and shim behavior. Use deny rules that cover both direct and `/api/*` forms.
+- If you intentionally expose full ComfyUI UI to users, apply a separate hardened admin/user plane design and do not rely on OpenClaw route auth alone.
+
 ## 1. Profile Matrix
 
 | Profile | Intended Use | Minimum Security Baseline |
@@ -76,9 +96,12 @@ OPENCLAW_ENABLE_TRANSFORMS=0
 OPENCLAW_ALLOW_ANY_PUBLIC_LLM_HOST=0
 OPENCLAW_ALLOW_INSECURE_BASE_URL=0
 OPENCLAW_SECURITY_DANGEROUS_BIND_OVERRIDE=0
+OPENCLAW_LOCALHOST_ALLOW_NO_ORIGIN=0
 
 # Optional but recommended
 OPENCLAW_ADMIN_TOKEN=change-this-local-admin-token
+# Optional local CLI compatibility only (do not enable on LAN/public):
+# OPENCLAW_LOCALHOST_ALLOW_NO_ORIGIN=true
 # Optional startup log hygiene
 # OPENCLAW_LOG_TRUNCATE_ON_START=1
 ```
@@ -89,9 +112,10 @@ OPENCLAW_ADMIN_TOKEN=change-this-local-admin-token
 2. Keep remote admin disabled.
 3. Keep external tools/registry sync/transforms disabled unless explicitly needed.
 4. For local LLM providers (Ollama/LM Studio), use loopback URLs only (`localhost`/`127.0.0.1`/`::1`); keep `OPENCLAW_ALLOW_ANY_PUBLIC_LLM_HOST=0` and `OPENCLAW_ALLOW_INSECURE_BASE_URL=0`.
-5. Run:
+5. Keep `OPENCLAW_LOCALHOST_ALLOW_NO_ORIGIN=0` unless you explicitly need local CLI/no-origin compatibility.
+6. Run:
    - `python scripts/check_deployment_profile.py --profile local`
-6. If you enable optional high-risk features, document why and time-box the change.
+7. If you enable optional high-risk features, document why and time-box the change.
 
 ## 4. LAN (Trusted Subnet)
 
@@ -116,6 +140,7 @@ OPENCLAW_ENABLE_TRANSFORMS=0
 OPENCLAW_ALLOW_ANY_PUBLIC_LLM_HOST=0
 OPENCLAW_ALLOW_INSECURE_BASE_URL=0
 OPENCLAW_SECURITY_DANGEROUS_BIND_OVERRIDE=0
+OPENCLAW_LOCALHOST_ALLOW_NO_ORIGIN=0
 # Optional startup log hygiene
 # OPENCLAW_LOG_TRUNCATE_ON_START=1
 ```
@@ -125,11 +150,12 @@ OPENCLAW_SECURITY_DANGEROUS_BIND_OVERRIDE=0
 1. Restrict host firewall to trusted LAN subnets only.
 2. Use distinct admin and observability tokens.
 3. Keep bridge/tools/registry/transforms disabled unless there is a reviewed requirement.
-4. Run:
+4. Keep `OPENCLAW_LOCALHOST_ALLOW_NO_ORIGIN=0` for LAN deployments.
+5. Run:
    - `python scripts/check_deployment_profile.py --profile lan`
-5. Run the security diagnostics endpoint before production use:
+6. Run the security diagnostics endpoint before production use:
    - `GET /openclaw/security/doctor` (admin boundary).
-6. If using mobile/remote admin UI, expose `/openclaw/admin` only inside trusted LAN/VPN boundaries.
+7. If using mobile/remote admin UI, expose `/openclaw/admin` only inside trusted LAN/VPN boundaries.
 
 ## 5. Public (Internet + Reverse Proxy)
 
@@ -167,6 +193,7 @@ OPENCLAW_ENABLE_TRANSFORMS=0
 OPENCLAW_ALLOW_ANY_PUBLIC_LLM_HOST=0
 OPENCLAW_ALLOW_INSECURE_BASE_URL=0
 OPENCLAW_SECURITY_DANGEROUS_BIND_OVERRIDE=0
+OPENCLAW_LOCALHOST_ALLOW_NO_ORIGIN=0
 # Optional startup log hygiene
 # OPENCLAW_LOG_TRUNCATE_ON_START=1
 ```
@@ -175,16 +202,20 @@ OPENCLAW_SECURITY_DANGEROUS_BIND_OVERRIDE=0
 
 1. Never expose raw ComfyUI port directly to the internet.
 2. Enforce authentication at reverse proxy and application layers.
-3. Enforce split control plane in public posture (`OPENCLAW_CONTROL_PLANE_MODE=split` + external URL/TOKEN).
-4. Keep risky features disabled on public user-facing plane.
-5. Verify split posture from capabilities:
+3. Enforce path-level boundary controls at reverse proxy:
+   - allow only required OpenClaw routes
+   - deny ComfyUI-native high-risk paths (`/prompt`, `/history*`, `/view*`, `/upload*`, `/ws`) and `/api/*` equivalents.
+4. Enforce split control plane in public posture (`OPENCLAW_CONTROL_PLANE_MODE=split` + external URL/TOKEN).
+5. Keep risky features disabled on public user-facing plane.
+6. Keep `OPENCLAW_LOCALHOST_ALLOW_NO_ORIGIN=0` in public deployments.
+7. Verify split posture from capabilities:
    - `GET /openclaw/capabilities` and confirm `control_plane.mode=split`
-6. Run:
+8. Run:
     - `python scripts/check_deployment_profile.py --profile public`
-7. Validate with project test and release gates before rollout:
+9. Validate with project test and release gates before rollout:
     - `tests/TEST_SOP.md`
     - `RELEASE_CHECKLIST.md`
-8. Ensure `/openclaw/admin` is blocked at public edge unless a separately hardened private admin plane is in place.
+10. Ensure `/openclaw/admin` is blocked at public edge unless a separately hardened private admin plane is in place.
 
 ## 6. Bridge in Public Profile (only when absolutely required)
 
@@ -209,12 +240,13 @@ The check fails if bridge is enabled without the mTLS/device-binding bundle.
 ## 7. Operational Red Lines
 
 1. Do not use localhost convenience mode for shared/LAN/public deployments.
-2. Do not enable `OPENCLAW_SECURITY_DANGEROUS_BIND_OVERRIDE` in production.
-3. Do not enable `OPENCLAW_SECURITY_DANGEROUS_PROFILE_OVERRIDE` in production.
-4. Do not enable `OPENCLAW_SPLIT_COMPAT_OVERRIDE` in production.
-5. Do not enable external tools/registry sync/transforms on public user-facing plane by default.
-6. Do not use wildcard-like trust posture for callback destinations.
-7. Do not treat this as a "set and forget" deployment; re-run profile checks after every config change.
+2. Do not enable `OPENCLAW_LOCALHOST_ALLOW_NO_ORIGIN=true` in shared/LAN/public deployments.
+3. Do not enable `OPENCLAW_SECURITY_DANGEROUS_BIND_OVERRIDE` in production.
+4. Do not enable `OPENCLAW_SECURITY_DANGEROUS_PROFILE_OVERRIDE` in production.
+5. Do not enable `OPENCLAW_SPLIT_COMPAT_OVERRIDE` in production.
+6. Do not enable external tools/registry sync/transforms on public user-facing plane by default.
+7. Do not use wildcard-like trust posture for callback destinations.
+8. Do not treat this as a "set and forget" deployment; re-run profile checks after every config change.
 
 ## 8. Mechanical Gate Integration (Startup + CI)
 

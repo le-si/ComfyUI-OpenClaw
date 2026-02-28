@@ -41,6 +41,9 @@ OPENCLAW_ALLOW_REMOTE_ADMIN=1
 # Require a token for Logs/Config viewing
 OPENCLAW_OBSERVABILITY_TOKEN=observability-secret
 
+# Keep strict localhost no-origin behavior (do not relax on LAN)
+OPENCLAW_LOCALHOST_ALLOW_NO_ORIGIN=0
+
 # Optional startup log hygiene (avoid stale historical error lines in UI)
 OPENCLAW_LOG_TRUNCATE_ON_START=1
 ```
@@ -67,6 +70,7 @@ sudo ufw allow from 192.168.1.0/24 to any port 8188
 
 - ❌ Do not forward port 8188 on your router.
 - ❌ Do not use `--listen 0.0.0.0` on a laptop connected to public WiFi.
+- ❌ Do not set `OPENCLAW_LOCALHOST_ALLOW_NO_ORIGIN=true` on LAN/shared deployments.
 
 ## Testing
 

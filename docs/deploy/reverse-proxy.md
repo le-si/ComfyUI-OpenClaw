@@ -3,12 +3,26 @@
 For power users who want to run ComfyUI behind Caddy, Nginx, or Traefik.
 This adds limits, TLS, and header management.
 
+## Shared-Boundary Warning
+
+OpenClaw and ComfyUI share the same upstream listener.
+Blocking or authenticating `/openclaw/*` alone is not enough for public posture.
+If your proxy forwards broad paths to ComfyUI, native ComfyUI routes may still be reachable.
+
+Treat reverse proxy policy as the primary boundary:
+
+- allow only the routes you intentionally need
+- deny ComfyUI-native high-risk paths and their `/api/*` forms
+
 ## Guidelines
 
 1. **Block Sensitive Paths**: Prevent external access to admin/debug endpoints if not needed.
     - Block `/openclaw/logs/*`
     - Block `/openclaw/config`
     - Block `/openclaw/admin` and legacy `/moltbot/admin` when remote admin UI is not required
+    - Block ComfyUI-native high-risk paths:
+      - `/prompt`, `/history*`, `/view*`, `/upload*`, `/ws`
+      - `/api/prompt`, `/api/history*`, `/api/view*`, `/api/upload*`, `/api/ws`
 2. **Timeouts**: ComfyUI generation can take time. Increase timeouts.
     - `proxy_read_timeout 600s;` (Nginx)
 3. **Websockets**: ComfyUI requires WS support.
@@ -26,8 +40,12 @@ comfyui.local {
     }
 
     # Security: Block sensitive OpenClaw paths from external access
-    @sensitive path /openclaw/logs* /openclaw/config /openclaw/admin /moltbot/admin
-    respond @sensitive 403
+    @openclaw_sensitive path /openclaw/logs* /openclaw/config /openclaw/admin /moltbot/admin
+    respond @openclaw_sensitive 403
+
+    # Security: Block ComfyUI-native high-risk surfaces (direct + /api variants)
+    @comfy_native_sensitive path /prompt /history* /view* /upload* /ws /api/prompt /api/history* /api/view* /api/upload* /api/ws
+    respond @comfy_native_sensitive 403
 }
 ```
 
@@ -61,8 +79,30 @@ server {
     location = /openclaw/admin {
         deny all;
     }
+
+    # Block ComfyUI native high-risk routes (direct + /api variants)
+    location = /prompt { deny all; }
+    location /history { deny all; }
+    location /view { deny all; }
+    location /upload { deny all; }
+    location = /ws { deny all; }
+
+    location = /api/prompt { deny all; }
+    location /api/history { deny all; }
+    location /api/view { deny all; }
+    location /api/upload { deny all; }
+    location = /api/ws { deny all; }
 }
 ```
+
+## Recommended Pattern: Allowlist-First Routing
+
+If you do not need full ComfyUI UI exposure, prefer explicit allowlist routing:
+
+- allow only required OpenClaw routes (for example `/openclaw/admin`, selected `/openclaw/*` APIs)
+- deny everything else by default
+
+This reduces accidental exposure from ComfyUI route changes or API shim behavior differences.
 
 ## If You Intentionally Expose Remote Admin Console
 
@@ -70,6 +110,7 @@ Only do this on trusted/private access planes and keep backend protection enable
 
 - `OPENCLAW_ADMIN_TOKEN=<strong-secret>`
 - `OPENCLAW_ALLOW_REMOTE_ADMIN=1`
+- `OPENCLAW_LOCALHOST_ALLOW_NO_ORIGIN=0` (keep strict no-origin posture on shared/remote planes)
 - `OPENCLAW_LOG_TRUNCATE_ON_START=1` (optional, startup log hygiene)
 
 Use one more auth boundary at proxy layer (IP allowlist, SSO, or basic auth), for example:

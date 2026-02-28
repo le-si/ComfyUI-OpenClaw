@@ -27,6 +27,7 @@ This project is designed to make **ComfyUI a reliable automation target** with a
 - Explicit **Admin Token** boundary for write actions
 - Startup module capability gates (disabled modules do not register routes/workers)
 - Localhost-first defaults; remote access is opt-in
+- Localhost no-origin CSRF override posture is explicitly surfaced at startup and in Security Doctor, with audit visibility for operator review
 - Strict outbound SSRF policy (callbacks + custom LLM base URLs)
 - Webhooks are **deny-by-default** until auth is configured
 - Encrypted webhook mode is **fail-closed** (invalid signature/decrypt/app-id checks are rejected)
@@ -56,6 +57,30 @@ Deployment profiles and hardening checklists:
 
 
 <details><summary><h2>Latest Updates - Click to expand</h2></summary>
+
+<details>
+
+<summary><strong>Core runtime maintainability and contract hardening batch</strong></summary>
+
+- Refactored startup/bootstrap responsibilities into clearer service slices to keep the entry path thin and easier to validate.
+- Hardened provider adapter error contracts with safer HTTP error propagation and retry-after handling consistency.
+- Replaced fragile JSON object extraction logic in LLM output parsing with stdlib decoder-based behavior for stronger edge-case resilience.
+- Unified node/runtime consistency by converging shared image encoding helpers and internal node naming compatibility paths.
+- Added and aligned regression coverage, then completed full verification gate pass (detect-secrets, pre-commit, backend unit suites, and frontend Playwright E2E).
+
+</details>
+
+<details>
+
+<summary><strong>Security and reliability hotfix chain: startup gate cleanup, atomic audit writes, and clearer CSRF override posture</strong></summary>
+
+- Cleaned up unreachable startup security-gate code after fatal raise paths, keeping fail-closed behavior explicit and reducing maintenance ambiguity.
+- Hardened append-only audit integrity by making hash-chain write flow atomic under a process lock to avoid concurrent chain-fork risk.
+- Added explicit startup warning when localhost no-origin override is enabled, plus a dedicated Security Doctor posture check/violation mapping for operator visibility.
+- Added focused regression coverage for startup warning/doctor posture and audit lock path behavior.
+- Completed full verification gate pass (detect-secrets, pre-commit, backend unit suites, and frontend Playwright E2E).
+
+</details>
 
 <details>
 
@@ -693,6 +718,7 @@ Notes:
 - `POST /openclaw/llm/chat` in localhost convenience mode (no admin token configured):
   - allows same-origin loopback requests
   - denies cross-origin requests with CSRF error
+  - if `OPENCLAW_LOCALHOST_ALLOW_NO_ORIGIN=true`, requests missing `Origin` / `Sec-Fetch-Site` are allowed for local tooling compatibility; this posture is explicitly surfaced in startup logs, Security Doctor, and audit events
 - `/openclaw/llm/models` cache behavior:
   - key: `(provider, base_url)`
   - TTL: 5 minutes

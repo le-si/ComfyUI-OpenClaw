@@ -34,6 +34,8 @@
 - [ ] Keep ComfyUI on localhost (`--listen 127.0.0.1`) unless LAN access required.
 - [ ] If exposing to LAN/Internet: set `OPENCLAW_ADMIN_TOKEN` environment variable.
 - [ ] Never expose admin endpoints without token.
+- [ ] For shared/LAN/public exposure, keep `OPENCLAW_LOCALHOST_ALLOW_NO_ORIGIN=0` (or unset).
+- [ ] Run `GET /openclaw/security/doctor` and verify no `csrf_no_origin_override` warning before exposure.
 
 ### 6. Debug Mode
 

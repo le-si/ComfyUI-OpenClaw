@@ -40,6 +40,10 @@ No special configuration is required.
   - Keep SSRF relax flags disabled:
     - `OPENCLAW_ALLOW_ANY_PUBLIC_LLM_HOST=0`
     - `OPENCLAW_ALLOW_INSECURE_BASE_URL=0`
+- **No-origin convenience override (optional, local-only)**:
+  - default/unset keeps strict no-origin denial
+  - set `OPENCLAW_LOCALHOST_ALLOW_NO_ORIGIN=true` only when local CLI/tooling compatibility requires it
+  - keep it unset/disabled for normal browser-only local use
 - **Optional log hygiene**:
   - `OPENCLAW_LOG_TRUNCATE_ON_START=1` clears stale `openclaw.log` content once at startup.
 
@@ -47,6 +51,7 @@ No special configuration is required.
 
 - ❌ Do not run with `--listen 0.0.0.0` or `--listen`.
 - ❌ Do not port-forward port 8188 on your router.
+- ❌ Do not leave `OPENCLAW_LOCALHOST_ALLOW_NO_ORIGIN=true` enabled longer than needed.
 
 ## Testing
 
