@@ -40,6 +40,7 @@ metrics = tail_log = require_observability_access = check_rate_limit = trace_sto
 get_executor_diagnostics = None  # type: ignore
 webhook_handler = webhook_submit_handler = webhook_validate_handler = capabilities_handler = preflight_handler = None  # type: ignore
 config_get_handler = config_put_handler = llm_test_handler = llm_models_handler = llm_chat_handler = None  # type: ignore
+remote_admin_page_handler = None  # type: ignore  # F61
 security_doctor_handler = None  # type: ignore  # S30
 templates_list_handler = None  # type: ignore
 secrets_status_handler = secrets_put_handler = secrets_delete_handler = None  # type: ignore
@@ -96,6 +97,12 @@ if web is not None:
         "..api.events",
         "api.events",
         ("events_poll_handler", "events_stream_handler"),
+    )
+    (remote_admin_page_handler,) = import_attrs_dual(  # F61
+        __package__,
+        "..api.remote_admin",
+        "api.remote_admin",
+        ("remote_admin_page_handler",),
     )
     (inventory_handler, preflight_handler) = import_attrs_dual(
         __package__,
@@ -725,6 +732,7 @@ def register_routes(server) -> None:
     # Core Observability & Config
     for prefix in prefixes:
         core_routes = [
+            ("GET", f"{prefix}/admin", remote_admin_page_handler),  # F61
             ("GET", f"{prefix}/health", health_handler),
             ("GET", f"{prefix}/logs/tail", logs_tail_handler),
             ("GET", f"{prefix}/jobs", jobs_handler),

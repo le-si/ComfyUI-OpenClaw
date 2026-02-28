@@ -24,6 +24,7 @@ from services.csrf_protection import is_same_origin_request
 # Any non-optional /openclaw|/moltbot route added in register_routes must be
 # classified here, otherwise tests fail.
 AUTH_CLASS_BY_ROUTE = {
+    ("GET", "/admin"): "public-safe",
     ("GET", "/health"): "public-safe",
     # IMPORTANT:
     # `/logs/tail` was hardened to admin-only because log payload can expose
