@@ -50,7 +50,7 @@ To be safe:
 
 ### 4. "Red Lines"
 
-- ❌ Do not use `tailscale funnel` (public internet exposure) unless you have implemented **Gate B** (Bridge Safety) controls from the [Release Checklist](../../RELEASE_CHECKLIST.md).
+- ❌ Do not use `tailscale funnel` (public internet exposure) unless you have implemented **Gate B** (Bridge Safety) controls from the [Release Checklist](../RELEASE_CHECKLIST.md).
 - ❌ Do not share your Tailnet with untrusted users.
 
 ## Testing

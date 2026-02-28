@@ -8,7 +8,7 @@ This guide is the single entry point for secure deployment of ComfyUI-OpenClaw a
 
 Use this guide together with:
 
-- [SECURITY.md](../SECURITY.md)
+- [SECURITY.md](SECURITY.md)
 - `docs/deploy/local-only.md`
 - `docs/deploy/lan.md`
 - `docs/deploy/reverse-proxy.md`
@@ -220,7 +220,7 @@ OPENCLAW_LOCALHOST_ALLOW_NO_ORIGIN=0
     - `python scripts/check_deployment_profile.py --profile public`
 10. Validate with project test and release gates before rollout:
     - `tests/TEST_SOP.md`
-    - `RELEASE_CHECKLIST.md`
+    - [RELEASE_CHECKLIST.md](RELEASE_CHECKLIST.md)
 11. Ensure `/openclaw/admin` is blocked at public edge unless a separately hardened private admin plane is in place.
 
 ## 6. Bridge in Public Profile (only when absolutely required)

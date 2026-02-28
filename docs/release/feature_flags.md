@@ -4,7 +4,7 @@ This document lists the feature flags that control **risky capabilities** in Com
 Users should audit these flags before deploying to a public or untrusted network.
 
 > [!WARNING]
-> Enabling these flags increases the attack surface. Ensure you have read the [Security Policy](../../SECURITY.md) and use appropriate network controls (e.g., Tailscale, Reverse Proxy with Auth).
+> Enabling these flags increases the attack surface. Ensure you have read the [Security Policy](../SECURITY.md) and use appropriate network controls (e.g., Tailscale, Reverse Proxy with Auth).
 
 ## Risk Levels
 
