@@ -35,6 +35,17 @@ from typing import Any, Dict, List, Optional, Set, Tuple
 
 logger = logging.getLogger("ComfyUI-OpenClaw.services.security_doctor")
 
+try:
+    from .connector_allowlist_posture import (
+        evaluate_connector_allowlist_posture,
+        is_strict_connector_allowlist_profile,
+    )
+except Exception:
+    from services.connector_allowlist_posture import (  # type: ignore
+        evaluate_connector_allowlist_posture,
+        is_strict_connector_allowlist_profile,
+    )
+
 # ---------------------------------------------------------------------------
 # WP1: S30 Violation Code Mapping Table (bounded vocabulary)
 # ---------------------------------------------------------------------------
@@ -866,50 +877,30 @@ def check_api_key_posture(report: SecurityReport) -> None:
 # Security checks — S32 Connector security posture
 # ---------------------------------------------------------------------------
 
-# Environment variables checked by S32
-_S32_CONNECTOR_TOKEN_VARS = [
-    "OPENCLAW_CONNECTOR_ADMIN_TOKEN",
-    "OPENCLAW_CONNECTOR_TELEGRAM_TOKEN",
-    "OPENCLAW_CONNECTOR_DISCORD_TOKEN",
-    "OPENCLAW_CONNECTOR_LINE_CHANNEL_SECRET",
-    "OPENCLAW_CONNECTOR_LINE_CHANNEL_ACCESS_TOKEN",
-    "OPENCLAW_CONNECTOR_WHATSAPP_ACCESS_TOKEN",
-    "OPENCLAW_CONNECTOR_WHATSAPP_APP_SECRET",
-    "OPENCLAW_CONNECTOR_WECHAT_TOKEN",
-    "OPENCLAW_CONNECTOR_WECHAT_APP_ID",
-    "OPENCLAW_CONNECTOR_WECHAT_APP_SECRET",
-]
-
-_S32_ALLOWLIST_VARS = [
-    "OPENCLAW_CONNECTOR_TELEGRAM_ALLOWED_USERS",
-    "OPENCLAW_CONNECTOR_DISCORD_ALLOWED_USERS",
-    "OPENCLAW_CONNECTOR_DISCORD_ALLOWED_CHANNELS",
-    "OPENCLAW_CONNECTOR_LINE_ALLOWED_USERS",
-    "OPENCLAW_CONNECTOR_WHATSAPP_ALLOWED_USERS",
-    "OPENCLAW_CONNECTOR_WECHAT_ALLOWED_USERS",
-]
-
 
 def check_connector_security_posture(report: SecurityReport) -> None:
     """S32: Check connector security posture for internet-exposed deployments."""
-    # --- Token presence ---
-    active_tokens = []
-    missing_tokens = []
-    for var in _S32_CONNECTOR_TOKEN_VARS:
-        val = os.environ.get(var, "").strip()
-        if val:
-            active_tokens.append(var)
-        else:
-            missing_tokens.append(var)
+    posture = evaluate_connector_allowlist_posture(os.environ)
+    active_markers = posture["active_markers"]
+    active_platforms = posture["active_platforms"]
+    unguarded_platforms = posture["unguarded_platforms"]
+    configured_allowlists = posture["configured_allowlists"]
+    recommended_allowlist_vars = posture["recommended_allowlist_vars"]
 
-    if active_tokens:
+    # --- Connector activation presence ---
+    if active_markers:
         report.add(
             SecurityCheckResult(
                 name="s32_connector_tokens",
                 severity=SecuritySeverity.PASS.value,
-                message=f"{len(active_tokens)} connector token(s) configured",
+                message=f"{len(active_platforms)} connector platform(s) active",
                 category="connector",
-                detail="Active: " + ", ".join(active_tokens),
+                detail=(
+                    "Platforms: "
+                    + ", ".join(active_platforms)
+                    + " | markers: "
+                    + ", ".join(active_markers)
+                ),
             )
         )
     else:
@@ -923,31 +914,49 @@ def check_connector_security_posture(report: SecurityReport) -> None:
         )
 
     # --- Allowlist coverage ---
-    configured_allowlists = []
-    for var in _S32_ALLOWLIST_VARS:
-        val = os.environ.get(var, "").strip()
-        if val:
-            configured_allowlists.append(var)
-
-    # Only warn if tokens are configured but allowlists are empty
-    if active_tokens and not configured_allowlists:
+    # CRITICAL: keep strict-profile escalation aligned with startup fail-closed.
+    # If this drifts, doctor may show WARN while startup hard-fails (or vice versa).
+    if active_platforms and unguarded_platforms:
+        strict_profile = is_strict_connector_allowlist_profile(os.environ)
+        severity = (
+            SecuritySeverity.FAIL.value
+            if strict_profile
+            else SecuritySeverity.WARN.value
+        )
+        posture_hint = "public/hardened" if strict_profile else "non-strict"
         report.add(
             SecurityCheckResult(
                 name="s32_allowlist_coverage",
-                severity=SecuritySeverity.WARN.value,
-                message="Connector tokens active but no user/channel allowlists configured",
+                severity=severity,
+                message=(
+                    "Connector ingress active but allowlist coverage missing for: "
+                    + ", ".join(unguarded_platforms)
+                ),
                 category="connector",
-                detail="Without allowlists, connectors may accept messages from any user.",
-                remediation=("Set at least one of: " + ", ".join(_S32_ALLOWLIST_VARS)),
+                detail=(
+                    f"Profile posture={posture_hint}. "
+                    "Without allowlists, connectors may accept messages from any user/channel."
+                ),
+                remediation=(
+                    "Set platform allowlists before enabling internet-facing connector ingress. "
+                    "Allowed vars: " + ", ".join(recommended_allowlist_vars)
+                ),
             )
         )
-    elif configured_allowlists:
+    elif active_platforms:
         report.add(
             SecurityCheckResult(
                 name="s32_allowlist_coverage",
                 severity=SecuritySeverity.PASS.value,
-                message=f"{len(configured_allowlists)} connector allowlist(s) configured",
+                message=(
+                    f"Allowlist coverage present for {len(active_platforms)} active connector platform(s)"
+                ),
                 category="connector",
+                detail=(
+                    "Configured allowlists: " + ", ".join(configured_allowlists)
+                    if configured_allowlists
+                    else "Configured allowlists: (none required for inactive platforms)"
+                ),
             )
         )
 
@@ -982,7 +991,7 @@ def check_connector_security_posture(report: SecurityReport) -> None:
 
     # --- DM policy open warning ---
     dev_mode = os.environ.get("MOLTBOT_DEV_MODE", "").strip().lower()
-    if dev_mode in ("1", "true", "yes", "on") and active_tokens:
+    if dev_mode in ("1", "true", "yes", "on") and active_markers:
         report.add(
             SecurityCheckResult(
                 name="s32_dev_mode_with_connectors",

@@ -97,7 +97,19 @@ export OPENCLAW_PUBLIC_SHARED_SURFACE_BOUNDARY_ACK=1
 
 If this acknowledgement is missing in public profile, deployment profile checks fail with `DP-PUBLIC-008`.
 
-### 4. Startup Gate Behavior (R136 + S56)
+### 4. Connector Allowlist Fail-Closed (Public/Hardened)
+
+Connector ingress posture is fail-closed in strict profiles:
+
+- if connector platform ingress is active (Telegram/Discord/LINE/WhatsApp/WeChat/Kakao/Slack)
+- and matching allowlist variables are missing
+- startup/deployment checks fail closed (`DP-PUBLIC-009` for public profile)
+
+Operational requirement:
+
+- never enable connector platform tokens/enable flags in public or hardened posture without platform allowlist coverage.
+
+### 5. Startup Gate Behavior (R136 + S56)
 
 Startup security gates are fail-closed. Fatal startup gate/bootstrap failures abort route/worker registration and do not continue in a partial state.
 
@@ -107,7 +119,7 @@ Recommended preflight:
 python scripts/check_deployment_profile.py --profile public --strict-warnings
 ```
 
-### 5. SSRF Protection
+### 6. SSRF Protection
 
 OpenClaw validates custom LLM `base_url` settings to prevent Server-Side Request Forgery (SSRF).
 
@@ -126,7 +138,7 @@ OpenClaw validates custom LLM `base_url` settings to prevent Server-Side Request
     ```
   - avoid broad bypass flags in production (`OPENCLAW_ALLOW_ANY_PUBLIC_LLM_HOST`, `OPENCLAW_ALLOW_INSECURE_BASE_URL`).
 
-### 6. Rate Limiting
+### 7. Rate Limiting
 
 OpenClaw enforces internal rate limits:
 
@@ -134,7 +146,7 @@ OpenClaw enforces internal rate limits:
 * Logs: 60/min
 * Admin: 20/min
 
-### 7. Sidecar Bridge
+### 8. Sidecar Bridge
 
 OpenClaw supports a "Sidecar Bridge" (F10) for safe interaction with external bots (Discord/Slack).
 
@@ -152,6 +164,7 @@ OpenClaw supports a "Sidecar Bridge" (F10) for safe interaction with external bo
 * [ ] **Trusted proxy config**: set `OPENCLAW_TRUST_X_FORWARDED_FOR=1` and exact `OPENCLAW_TRUSTED_PROXIES`.
 * [ ] **Public shared-surface ack**: for `OPENCLAW_DEPLOYMENT_PROFILE=public`, set `OPENCLAW_PUBLIC_SHARED_SURFACE_BOUNDARY_ACK=1` only after proxy path allowlist + ACL are verified.
 * [ ] **Public path deny rules**: block ComfyUI-native high-risk routes and `/api/*` equivalents unless explicitly required.
+* [ ] **Connector strict-posture allowlists**: if connector ingress is active in `public` or `hardened`, ensure platform allowlists are set before startup (`DP-PUBLIC-009` for public profile).
 * [ ] **Startup gate preflight**: run `python scripts/check_deployment_profile.py --profile public --strict-warnings`.
 * [ ] **Runtime diagnostics**: review `GET /openclaw/security/doctor` before exposure.
 * [ ] **Least privilege host posture**: do not run as root/Administrator.

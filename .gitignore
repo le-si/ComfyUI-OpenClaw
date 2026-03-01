@@ -18,7 +18,6 @@ coverage.xml
 *.cover
 reference/
 AGEN*.md
-roadmap.md
 scripts/sync_split.py
 tests_output.txt
 node_modules/

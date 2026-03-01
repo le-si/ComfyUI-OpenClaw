@@ -334,7 +334,7 @@ def emit_audit_event(*args, **kwargs) -> Dict[str, Any]:
 
 
 def audit_config_write(actor_ip: str, ok: bool, error: Optional[str] = None) -> None:
-    emit_audit_event("settings.config_write", actor_ip, ok, error=error)
+    # CRITICAL: keep convenience wrappers single-emit to avoid duplicate audit noise.
     emit_audit_event(
         action="config.update",
         target="config.json",
@@ -349,9 +349,6 @@ def audit_config_write(actor_ip: str, ok: bool, error: Optional[str] = None) -> 
 def audit_secret_write(
     actor_ip: str, provider: str, ok: bool, error: Optional[str] = None
 ) -> None:
-    emit_audit_event(
-        "settings.secret_write", actor_ip, ok, provider=provider, error=error
-    )
     emit_audit_event(
         action="secrets.write",
         target=provider,
@@ -369,9 +366,6 @@ def audit_secret_delete(
     actor_ip: str, provider: str, ok: bool, error: Optional[str] = None
 ) -> None:
     emit_audit_event(
-        "settings.secret_delete", actor_ip, ok, provider=provider, error=error
-    )
-    emit_audit_event(
         action="secrets.delete",
         target=provider,
         outcome="allow" if ok else "error",
@@ -385,7 +379,6 @@ def audit_secret_delete(
 
 
 def audit_llm_test(actor_ip: str, ok: bool, error: Optional[str] = None) -> None:
-    emit_audit_event("settings.llm_test", actor_ip, ok, error=error)
     emit_audit_event(
         action="llm.test_connection",
         target="llm",

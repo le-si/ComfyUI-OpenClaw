@@ -146,6 +146,47 @@ class TestSecurityGate(unittest.TestCase):
             "Expected startup warning for no-origin override",
         )
 
+    @patch.dict(os.environ, {"OPENCLAW_CONNECTOR_TELEGRAM_TOKEN": "tok"}, clear=False)
+    @patch("services.security_gate.is_hardened_mode", return_value=True)
+    @patch("services.access_control.is_auth_configured", return_value=True)
+    @patch("services.access_control.is_any_token_configured", return_value=True)
+    @patch("services.runtime_config.get_config")
+    @patch("services.modules.is_module_enabled", return_value=False)
+    @patch("services.tool_runner.is_tools_enabled", return_value=False)
+    @patch(
+        "services.permission_posture.evaluate_startup_permissions",
+        return_value=(True, []),
+    )
+    @patch(
+        "services.control_plane.enforce_control_plane_startup",
+        return_value={"startup_passed": True, "errors": [], "warnings": []},
+    )
+    def test_hardened_connector_without_allowlist_fails_closed(
+        self,
+        _mock_cp,
+        _mock_perms,
+        _mock_tools,
+        _mock_mod_enabled,
+        mock_get_config,
+        _mock_any_auth,
+        _mock_auth,
+        _mock_hardened,
+    ):
+        """S71: hardened runtime must fail when connector ingress has no allowlist."""
+        cfg = MagicMock()
+        cfg.allow_any_public_llm_host = False
+        cfg.allow_insecure_base_url = False
+        cfg.webhook_auth_mode = "bearer"
+        cfg.security_dangerous_bind_override = False
+        mock_get_config.return_value = cfg
+
+        passed, _warnings, fatal_errors = SecurityGate.verify_mandatory_controls()
+        self.assertFalse(passed)
+        self.assertTrue(any("S71 (hardened fail-closed)" in e for e in fatal_errors))
+
+        with self.assertRaises(RuntimeError):
+            enforce_startup_gate()
+
 
 if __name__ == "__main__":
     unittest.main()

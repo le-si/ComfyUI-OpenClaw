@@ -13,6 +13,13 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Dict, Iterable, Mapping, Optional
 
+try:
+    from .connector_allowlist_posture import evaluate_connector_allowlist_posture
+except Exception:
+    from services.connector_allowlist_posture import (  # type: ignore
+        evaluate_connector_allowlist_posture,
+    )
+
 TRUTHY = {"1", "true", "yes", "on"}
 FALSY = {"0", "false", "no", "off"}
 _PUBLIC_BOUNDARY_ACK_ENV = "OPENCLAW_PUBLIC_SHARED_SURFACE_BOUNDARY_ACK"
@@ -461,6 +468,34 @@ def evaluate_deployment_profile(
             "DP-PUBLIC-004",
             "Callback allow_hosts is not configured.",
             "If callback delivery is used, set OPENCLAW_CALLBACK_ALLOW_HOSTS to strict host allowlist.",
+        )
+
+    connector_posture = evaluate_connector_allowlist_posture(env)
+    if connector_posture["has_unguarded_connectors"]:
+        # CRITICAL: public profile must fail closed for connector ingress without
+        # explicit allowlists; warn-only here would leave internet-facing gaps.
+        report.add(
+            "fail",
+            "DP-PUBLIC-009",
+            "Connector allowlist coverage is missing for active platform(s): "
+            + ", ".join(connector_posture["unguarded_platforms"]),
+            (
+                "Set connector allowlist vars before enabling public deployment. "
+                "Allowed vars: "
+                + ", ".join(connector_posture["recommended_allowlist_vars"])
+            ),
+        )
+    elif connector_posture["has_active_connectors"]:
+        report.add(
+            "pass",
+            "DP-PUBLIC-009",
+            "Active connector platforms have allowlist coverage.",
+        )
+    else:
+        report.add(
+            "pass",
+            "DP-PUBLIC-009",
+            "No connector ingress platforms are active.",
         )
 
     if bridge_enabled:

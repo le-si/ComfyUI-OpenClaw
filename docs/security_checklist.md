@@ -11,7 +11,12 @@
   - Telegram: `OPENCLAW_CONNECTOR_TELEGRAM_ALLOWED_USERS` / `_ALLOWED_CHATS`
   - Discord: `OPENCLAW_CONNECTOR_DISCORD_ALLOWED_USERS` / `_ALLOWED_CHANNELS`
   - LINE: `OPENCLAW_CONNECTOR_LINE_ALLOWED_USERS` / `_ALLOWED_GROUPS`
+  - WhatsApp: `OPENCLAW_CONNECTOR_WHATSAPP_ALLOWED_USERS`
+  - WeChat: `OPENCLAW_CONNECTOR_WECHAT_ALLOWED_USERS`
+  - KakaoTalk: `OPENCLAW_CONNECTOR_KAKAO_ALLOWED_USERS`
+  - Slack: `OPENCLAW_CONNECTOR_SLACK_ALLOWED_USERS` / `_ALLOWED_CHANNELS`
 - [ ] Verify startup banner shows "No trusted users" warning if allowlists are empty.
+- [ ] For strict posture (`OPENCLAW_DEPLOYMENT_PROFILE=public` or `OPENCLAW_RUNTIME_PROFILE=hardened`), do not enable connector ingress without allowlists; startup/deployment checks fail closed.
 
 ### 2. Webhook Security (LINE)
 
@@ -36,6 +41,7 @@
 - [ ] Never expose admin endpoints without token.
 - [ ] For shared/LAN/public exposure, keep `OPENCLAW_LOCALHOST_ALLOW_NO_ORIGIN=0` (or unset).
 - [ ] For `OPENCLAW_DEPLOYMENT_PROFILE=public`, set `OPENCLAW_PUBLIC_SHARED_SURFACE_BOUNDARY_ACK=1` only after reverse-proxy path allowlist + network ACL explicitly block ComfyUI-native high-risk routes.
+- [ ] For `OPENCLAW_DEPLOYMENT_PROFILE=public`, if any connector platform token/enable flag is set, confirm corresponding allowlist coverage before startup (`DP-PUBLIC-009`).
 - [ ] Run `GET /openclaw/security/doctor` and verify no `csrf_no_origin_override` warning before exposure.
 
 ### 6. Debug Mode
@@ -55,6 +61,7 @@
 | Feature | Default | Effect |
 |---------|---------|--------|
 | Empty allowlists | Untrusted | All `/run` requires approval |
+| Active connector without allowlist in strict posture (`public`/`hardened`) | Fail-closed | Startup/deployment checks block serving |
 | No admin users | Limited | Admin commands unavailable |
 | Rate limiting | Enabled | 10 req/min/user, 30 req/min/channel |
 | Debug mode | Disabled | No sensitive logging |

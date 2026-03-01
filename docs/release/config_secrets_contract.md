@@ -1,8 +1,8 @@
 # OpenClaw Config & Secrets Contract (v1)
 
 > **Status**: normative
-> **Version**: 1.0.2
-> **Date**: 2026-02-26
+> **Version**: 1.0.3
+> **Date**: 2026-03-01
 
 This document defines the authoritative configuration contract for OpenClaw. It enumerates all supported environment variables, their precedence rules, and security classifications.
 
@@ -69,11 +69,33 @@ Controls the `connector` sidecar process and outbound delivery.
 | `OPENCLAW_CONNECTOR_URL` | Core | URL of the OpenClaw backend (default: `http://127.0.0.1:8188`). |
 | `OPENCLAW_CONNECTOR_ADMIN_TOKEN` | Core | Token to authenticate Connector calls to Backend. |
 | `OPENCLAW_CONNECTOR_TELEGRAM_TOKEN` | Telegram | Bot API Token. |
+| `OPENCLAW_CONNECTOR_TELEGRAM_ALLOWED_USERS` | Telegram | Comma-separated trusted user IDs. |
 | `OPENCLAW_CONNECTOR_TELEGRAM_ALLOWED_CHATS`| Telegram | Comma-separated allowlist of logic IDs (User IDs or Chat IDs). |
 | `OPENCLAW_CONNECTOR_DISCORD_TOKEN` | Discord | Bot User Token. |
+| `OPENCLAW_CONNECTOR_DISCORD_ALLOWED_USERS` | Discord | Comma-separated trusted user IDs. |
 | `OPENCLAW_CONNECTOR_DISCORD_ALLOWED_CHANNELS`| Discord | Comma-separated list of Channel IDs. |
 | `OPENCLAW_CONNECTOR_LINE_CHANNEL_SECRET` | LINE | Channel Secret. |
 | `OPENCLAW_CONNECTOR_LINE_CHANNEL_ACCESS_TOKEN`| LINE | Channel Access Token. |
+| `OPENCLAW_CONNECTOR_LINE_ALLOWED_USERS` | LINE | Comma-separated trusted user IDs. |
+| `OPENCLAW_CONNECTOR_LINE_ALLOWED_GROUPS` | LINE | Comma-separated trusted group IDs. |
+| `OPENCLAW_CONNECTOR_WHATSAPP_ACCESS_TOKEN` | WhatsApp | Cloud API access token. |
+| `OPENCLAW_CONNECTOR_WHATSAPP_APP_SECRET` | WhatsApp | App secret for webhook signature validation. |
+| `OPENCLAW_CONNECTOR_WHATSAPP_ALLOWED_USERS` | WhatsApp | Comma-separated trusted `wa_id` values. |
+| `OPENCLAW_CONNECTOR_WECHAT_TOKEN` | WeChat | Webhook verification token. |
+| `OPENCLAW_CONNECTOR_WECHAT_APP_ID` | WeChat | Official Account AppID. |
+| `OPENCLAW_CONNECTOR_WECHAT_APP_SECRET` | WeChat | Official Account AppSecret. |
+| `OPENCLAW_CONNECTOR_WECHAT_ALLOWED_USERS` | WeChat | Comma-separated trusted OpenID values. |
+| `OPENCLAW_CONNECTOR_KAKAO_ENABLED` | KakaoTalk | Enables Kakao adapter when truthy. |
+| `OPENCLAW_CONNECTOR_KAKAO_ALLOWED_USERS` | KakaoTalk | Comma-separated trusted user IDs. |
+| `OPENCLAW_CONNECTOR_SLACK_BOT_TOKEN` | Slack | Bot OAuth token (`xoxb-*`). |
+| `OPENCLAW_CONNECTOR_SLACK_SIGNING_SECRET` | Slack | Ingress signature secret. |
+| `OPENCLAW_CONNECTOR_SLACK_APP_TOKEN` | Slack | Optional Socket Mode app token (`xapp-*`). |
+| `OPENCLAW_CONNECTOR_SLACK_ALLOWED_USERS` | Slack | Comma-separated trusted user IDs. |
+| `OPENCLAW_CONNECTOR_SLACK_ALLOWED_CHANNELS` | Slack | Comma-separated trusted channel IDs. |
+
+Connector posture rules:
+- In strict posture (`OPENCLAW_DEPLOYMENT_PROFILE=public` or `OPENCLAW_RUNTIME_PROFILE=hardened`), active connector platforms without allowlist coverage are fail-closed.
+- Public deployment profile check surfaces this as `DP-PUBLIC-009`.
 
 **Delivery & Media:**
 

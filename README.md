@@ -13,11 +13,40 @@ ComfyUI-OpenClaw is a **security-first orchestration layer** for ComfyUI that co
 - **Now supports 7 major messaging platforms, including Discord, Telegram, WhatsApp, LINE, WeChat, KakaoTalk, and Slack.**
 - **And more exciting features being added continuously**
 
-This project is designed to make **ComfyUI a reliable automation target** with an explicit admin boundary and hardened defaults.
+---
+<br>
 
 <div align="center">
   <img src="assets/adminMobileConsole.png" width="70%" />
 </div>
+
+<br>
+<br>
+
+```
+ComfyUI Process (single Python process + shared aiohttp app)
+│
+├── ComfyUI Core (owned by ComfyUI)
+│   ├── Native routes: /prompt, /history, /view, /upload, /ws, ...
+│   └── Execution engine + model runtime
+│
+└── OpenClaw package (loaded from custom_nodes/comfyui-openclaw)
+    ├── Registers OpenClaw-managed routes into the same PromptServer app:
+    │   ├── /openclaw/*
+    │   ├── /api/openclaw/* (browser/API shim)
+    │   └── Legacy aliases: /moltbot/* and /api/moltbot/*
+    ├── Security/runtime modules (startup gate, RBAC, CSRF, HMAC, audit, SSRF controls)
+    ├── Automation services (approvals, schedules, presets, webhook/assist flows)
+    ├── State + secrets storage (openclaw_state/*)
+    ├── Embedded frontend extension (OpenClaw sidebar tabs) + remote admin page (/openclaw/admin)
+    └── ComfyUI nodes exported by this pack (planner/refiner/image-to-prompt/batch variants)
+
+Optional companion process (outside the ComfyUI process):
+└── Connector sidecar (Telegram/Discord/LINE/WhatsApp/WeChat/Kakao/Slack) -> calls OpenClaw HTTP APIs
+```
+
+This project is designed to make **ComfyUI a reliable automation target** with an explicit admin boundary and hardened defaults.
+<br>
 
 ## Security stance (how this project differs from convenience-first automation packs):
 
@@ -25,26 +54,27 @@ This project is designed to make **ComfyUI a reliable automation target** with a
 - Public MAE route-plane posture is guaranteed by startup enforcement plus no-skip CI route-drift checks
 - Public deployments enforce Control Plane Split so high-risk controls are externalized and embedded UI stays on safer read/UX surfaces
 - Runtime profile startup hardening is fail-closed in hardened mode
+- Connector ingress is fail-closed in public/hardened posture when platform allowlists are missing, with synchronized startup gate, deployment-profile check, Security Doctor posture, and startup audit visibility
 - Admin write actions are protected by an explicit **Admin Token** boundary
-- Module capability gates prevent disabled modules from registering routes/workers
 - Webhook ingress is **deny-by-default** until authentication is configured
 - Encrypted webhook ingress is **fail-closed** on signature/decrypt/app-id validation failures
 - Bridge worker ingress enforces device token auth, scope checks, and idempotency handling
+- External tool sandboxing is fail-closed with filesystem path guards
 - Outbound SSRF policy is strict for callbacks and custom LLM base URLs
+- Module capability gates prevent disabled modules from registering routes/workers
+- Endpoint inventory metadata plus route-drift tests catch unclassified API exposure regressions
+- Pack lifecycle file paths and pack API file inputs are root-bounded and traversal-validated
+- Sensitive write/admin paths use tamper-evident, append-only audit trails
+- Replay risk is reduced with deterministic dedupe keys for payloads without message IDs
 - Localhost-first defaults remain in place; remote access is explicit opt-in
 - Localhost no-origin CSRF override posture is surfaced in startup logs, Security Doctor, and audit visibility
 - Secrets are never stored in browser storage; optional server-side key store remains local-only convenience
 - Secrets-at-rest encryption depends on cryptography; WeChat AES ingress stays optional via `pycryptodomex`
-- Sensitive write/admin paths use tamper-evident, append-only audit trails
-- External tool sandboxing is fail-closed with filesystem path guards
-- Pack lifecycle file paths and pack API file inputs are root-bounded and traversal-validated
-- Replay risk is reduced with deterministic dedupe keys for payloads without message IDs
-- Endpoint inventory metadata plus route-drift tests catch unclassified API exposure regressions
-- Retry partition hardening separates rate-limit and transport budgets with deterministic degrade decisions and lane-level diagnostics/audit evidence
-- Runtime guardrails are runtime-only, with diagnostics, clamping, and reject-on-persist behavior for safety-critical limits
-- Compatibility matrix freshness/drift governance is surfaced in Doctor with repeatable refresh evidence
-- Management queries enforce deterministic pagination normalization and bounded scans against malformed or unbounded admin/list requests
 - Cryptographic lifecycle drills emit machine-readable evidence for rotate/revoke/key-loss/token-compromise fail-closed exercises
+- Runtime guardrails are runtime-only, with diagnostics, clamping, and reject-on-persist behavior for safety-critical limits
+- Management queries enforce deterministic pagination normalization and bounded scans against malformed or unbounded admin/list requests
+- Retry partition hardening separates rate-limit and transport budgets with deterministic degrade decisions and lane-level diagnostics/audit evidence
+- Compatibility matrix freshness/drift governance is surfaced in Doctor with repeatable refresh evidence
 - Adversarial verification gates (bounded fuzz + mutation smoke) are enforced in CI and local full-test/pre-push workflows
 - Wave E hardening closeout includes deployment-profile gates, critical-flow parity, signed policy posture controls, bounded anomaly telemetry, adversarial fuzz validation, and mutation sensitivity checks
 - Wave A/B/C hardening closeout includes runtime/config/session stability contracts, strict outbound and supply-chain controls, and capability-aware operator guidance with bounded Parameter Lab/compare workflows
@@ -58,6 +88,17 @@ Deployment profiles and hardening checklists:
 
 
 <details><summary><h2>Latest Updates - Click to expand</h2></summary>
+
+<details>
+
+<summary><strong>Audit event clarity and connector ingress fail-closed hardening</strong></summary>
+
+- Normalized audit helper behavior so config/secret/LLM-test convenience wrappers now emit one canonical audit event per action, reducing duplicate noise while preserving legacy compatibility paths.
+- Added shared connector allowlist posture evaluation and enforced fail-closed startup behavior for public/hardened deployments when connector ingress is active without allowlist coverage.
+- Kept local/permissive posture as warning-only, with synchronized visibility across startup checks, deployment profile checks, and Security Doctor diagnostics.
+- Added focused regression coverage and completed full verification gate pass (detect-secrets, pre-commit, backend unit suites, and frontend Playwright E2E).
+
+</details>
 
 <details>
 

@@ -149,6 +149,32 @@ class TestEvaluateStartupGate(unittest.TestCase):
         codes = {v["code"] for v in result.violations}
         self.assertIn("DP-PUBLIC-008", codes)
 
+    def test_public_connector_token_without_allowlist_fails(self):
+        """S71: public profile fails closed when connector ingress lacks allowlist."""
+        env = {
+            "OPENCLAW_DEPLOYMENT_PROFILE": "public",
+            "OPENCLAW_ADMIN_TOKEN": "admin-token",
+            "OPENCLAW_OBSERVABILITY_TOKEN": "obs-token",
+            "OPENCLAW_ALLOW_REMOTE_ADMIN": "0",
+            "OPENCLAW_PUBLIC_SHARED_SURFACE_BOUNDARY_ACK": "1",
+            "OPENCLAW_TRUST_X_FORWARDED_FOR": "1",
+            "OPENCLAW_TRUSTED_PROXIES": "127.0.0.1",
+            "OPENCLAW_WEBHOOK_AUTH_MODE": "hmac",
+            "OPENCLAW_WEBHOOK_HMAC_SECRET": "secret",
+            "OPENCLAW_WEBHOOK_REQUIRE_REPLAY_PROTECTION": "1",
+            "OPENCLAW_ENABLE_EXTERNAL_TOOLS": "0",
+            "OPENCLAW_ENABLE_REGISTRY_SYNC": "0",
+            "OPENCLAW_ENABLE_TRANSFORMS": "0",
+            "OPENCLAW_ALLOW_ANY_PUBLIC_LLM_HOST": "0",
+            "OPENCLAW_ALLOW_INSECURE_BASE_URL": "0",
+            "OPENCLAW_SECURITY_DANGEROUS_BIND_OVERRIDE": "0",
+            "OPENCLAW_CONNECTOR_TELEGRAM_TOKEN": "tok",
+        }
+        result = evaluate_startup_gate(env)
+        self.assertFalse(result.passed)
+        codes = {v["code"] for v in result.violations}
+        self.assertIn("DP-PUBLIC-009", codes)
+
     # ---- override contract ----
 
     def test_override_bypasses_failing_gate(self):

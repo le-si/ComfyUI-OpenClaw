@@ -37,8 +37,11 @@ Current mandatory checks:
   - `OPENCLAW_ALLOW_INSECURE_BASE_URL` must not bypass policy
 - If webhook module is active, webhook auth mode must be configured
 - Redaction service must be available
+- Connector ingress allowlist coverage is enforced for strict posture:
+  - `OPENCLAW_RUNTIME_PROFILE=hardened`: startup fails closed if an active connector platform has no allowlist
+  - `OPENCLAW_DEPLOYMENT_PROFILE=public`: deployment/startup checks fail closed for the same condition (`DP-PUBLIC-009`)
 
-In `minimal` mode, the same checks emit warnings but do not block startup.
+In `minimal` mode, these checks are warning-first for local/LAN posture, but `public` deployment profile still enforces fail-closed policy checks.
 
 ### Bootstrap fail-closed propagation
 
@@ -62,6 +65,18 @@ Gate behavior:
 
 - missing ack in public profile: deployment profile check fails (`DP-PUBLIC-008`)
 - ack present: this boundary contract check passes
+
+## Connector allowlist posture in strict profiles
+
+Connector token/enable markers activate ingress posture checks for:
+
+- Telegram, Discord, LINE, WhatsApp, WeChat, KakaoTalk, Slack
+
+When a platform is active, at least one platform-specific allowlist variable must be configured.
+
+- `public` deployment profile: fail-closed (`DP-PUBLIC-009`)
+- `hardened` runtime profile: fail-closed at startup gate
+- non-strict local/LAN posture: warning posture in Security Doctor (`s32_allowlist_coverage`)
 
 ## Localhost no-origin override posture
 

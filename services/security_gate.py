@@ -11,6 +11,13 @@ from typing import List, Tuple
 
 from .runtime_profile import get_runtime_profile, is_hardened_mode
 
+try:
+    from .connector_allowlist_posture import evaluate_connector_allowlist_posture
+except Exception:
+    from services.connector_allowlist_posture import (  # type: ignore
+        evaluate_connector_allowlist_posture,
+    )
+
 logger = logging.getLogger(__name__)
 
 
@@ -207,6 +214,53 @@ class SecurityGate:
                 warnings.append(f"S62 Control-Plane: {w}")
         except ImportError:
             warnings.append("S62 control_plane module failed to import")
+
+        # 7. Connector allowlist fail-closed posture (S71)
+        connector_posture = evaluate_connector_allowlist_posture(os.environ)
+        if connector_posture["has_unguarded_connectors"]:
+            deployment_profile = (
+                os.environ.get("OPENCLAW_DEPLOYMENT_PROFILE", "").strip().lower()
+            )
+            platforms = ", ".join(connector_posture["unguarded_platforms"])
+            allowlist_vars = ", ".join(connector_posture["recommended_allowlist_vars"])
+            msg = (
+                "Connector allowlist coverage missing for active platform(s): "
+                f"{platforms}. Configure allowlists ({allowlist_vars}) before enabling ingress."
+            )
+
+            # CRITICAL: hardened/public must fail closed for unallowlisted connector ingress.
+            if is_hardened_mode():
+                warnings.append(f"S71 (hardened fail-closed): {msg}")
+                _emit_startup_audit(
+                    action="startup.connector_allowlist_posture",
+                    outcome="error",
+                    details={
+                        "mode": "hardened",
+                        "unguarded_platforms": connector_posture["unguarded_platforms"],
+                        "deployment_profile": deployment_profile or "unset",
+                    },
+                )
+            elif deployment_profile == "public":
+                fatal_errors.append(f"S71 (public fail-closed): {msg}")
+                _emit_startup_audit(
+                    action="startup.connector_allowlist_posture",
+                    outcome="error",
+                    details={
+                        "mode": "public",
+                        "unguarded_platforms": connector_posture["unguarded_platforms"],
+                    },
+                )
+            else:
+                warnings.append(f"S71 (warn-only): {msg}")
+                _emit_startup_audit(
+                    action="startup.connector_allowlist_posture",
+                    outcome="warn",
+                    details={
+                        "mode": "warn_only",
+                        "unguarded_platforms": connector_posture["unguarded_platforms"],
+                        "deployment_profile": deployment_profile or "unset",
+                    },
+                )
 
         # In HARDENED mode, treat all warnings as FATAL
         if is_hardened_mode() and warnings:

@@ -15,6 +15,7 @@ The connector runs alongside ComfyUI on your machine.
 
 - **Transport Model**: Telegram/Discord are outbound. LINE/WhatsApp/WeChat/KakaoTalk/Slack require inbound HTTPS webhook endpoints.
 - **Allowlist/Trust Model**: Allowlists define trusted senders/channels. Non-allowlisted senders are treated as untrusted (for example, `/run` is approval-routed instead of auto-executed).
+- **Strict Profile Gate**: In `public` deployment or `hardened` runtime posture, enabling connector ingress without platform allowlist coverage is fail-closed at startup/deployment checks.
 - **Local Secrets**: Bot tokens are stored in your local environment, never sent to ComfyUI.
 - **Admin Boundary**: Control-plane actions call admin endpoints on the local OpenClaw server and require connector-side admin token configuration for admin command paths.
 

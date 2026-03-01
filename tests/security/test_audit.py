@@ -78,21 +78,18 @@ class TestAudit(unittest.TestCase):
         self.assertEqual(entries[0]["prev_hash"], "GENESIS")
         self.assertEqual(entries[1]["prev_hash"], entries[0]["entry_hash"])
 
-    def test_legacy_shims(self):
+    def test_legacy_shims_single_emit_contract(self):
         audit_config_write("1.2.3.4", ok=True)
         audit_llm_test("1.2.3.4", ok=False, error="bad")
         audit_secret_write("1.2.3.4", "openai", ok=True)
         audit_secret_delete("1.2.3.4", "openai", ok=False, error="not_found")
 
         entries = self._read_entries()
+        self.assertEqual(len(entries), 4)
         actions = [e["action"] for e in entries]
-        self.assertIn("settings.config_write", actions)
         self.assertIn("config.update", actions)
-        self.assertIn("settings.llm_test", actions)
         self.assertIn("llm.test_connection", actions)
-        self.assertIn("settings.secret_write", actions)
         self.assertIn("secrets.write", actions)
-        self.assertIn("settings.secret_delete", actions)
         self.assertIn("secrets.delete", actions)
 
     def test_write_path_uses_atomic_lock(self):

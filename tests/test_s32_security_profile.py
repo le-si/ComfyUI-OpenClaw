@@ -543,6 +543,8 @@ class TestSecurityDoctorConnectorPosture(unittest.TestCase):
         # Save and clear all S32-relevant env vars
         self._saved_env = {}
         s32_vars = [
+            "OPENCLAW_DEPLOYMENT_PROFILE",
+            "OPENCLAW_RUNTIME_PROFILE",
             "OPENCLAW_CONNECTOR_ADMIN_TOKEN",
             "OPENCLAW_CONNECTOR_TELEGRAM_TOKEN",
             "OPENCLAW_CONNECTOR_DISCORD_TOKEN",
@@ -550,11 +552,24 @@ class TestSecurityDoctorConnectorPosture(unittest.TestCase):
             "OPENCLAW_CONNECTOR_LINE_CHANNEL_ACCESS_TOKEN",
             "OPENCLAW_CONNECTOR_WHATSAPP_ACCESS_TOKEN",
             "OPENCLAW_CONNECTOR_WHATSAPP_APP_SECRET",
+            "OPENCLAW_CONNECTOR_WECHAT_TOKEN",
+            "OPENCLAW_CONNECTOR_WECHAT_APP_ID",
+            "OPENCLAW_CONNECTOR_WECHAT_APP_SECRET",
+            "OPENCLAW_CONNECTOR_KAKAO_ENABLED",
+            "OPENCLAW_CONNECTOR_SLACK_BOT_TOKEN",
+            "OPENCLAW_CONNECTOR_SLACK_SIGNING_SECRET",
+            "OPENCLAW_CONNECTOR_SLACK_APP_TOKEN",
             "OPENCLAW_CONNECTOR_TELEGRAM_ALLOWED_USERS",
+            "OPENCLAW_CONNECTOR_TELEGRAM_ALLOWED_CHATS",
             "OPENCLAW_CONNECTOR_DISCORD_ALLOWED_USERS",
             "OPENCLAW_CONNECTOR_DISCORD_ALLOWED_CHANNELS",
             "OPENCLAW_CONNECTOR_LINE_ALLOWED_USERS",
+            "OPENCLAW_CONNECTOR_LINE_ALLOWED_GROUPS",
             "OPENCLAW_CONNECTOR_WHATSAPP_ALLOWED_USERS",
+            "OPENCLAW_CONNECTOR_WECHAT_ALLOWED_USERS",
+            "OPENCLAW_CONNECTOR_KAKAO_ALLOWED_USERS",
+            "OPENCLAW_CONNECTOR_SLACK_ALLOWED_USERS",
+            "OPENCLAW_CONNECTOR_SLACK_ALLOWED_CHANNELS",
             "MOLTBOT_DEV_MODE",
         ]
         for var in s32_vars:
@@ -593,8 +608,8 @@ class TestSecurityDoctorConnectorPosture(unittest.TestCase):
         self.assertEqual(token_check.severity, self.SecuritySeverity.PASS.value)
         self.assertEqual(allowlist_check.severity, self.SecuritySeverity.PASS.value)
 
-    def test_tokens_without_allowlist_warns(self):
-        """Tokens active but no allowlist → WARN."""
+    def test_tokens_without_allowlist_warns_in_non_strict_profile(self):
+        """Tokens active but no allowlist → WARN for non-public/non-hardened posture."""
         os.environ["OPENCLAW_CONNECTOR_TELEGRAM_TOKEN"] = "test-tok"
         report = self.SecurityReport()
         self.check(report)
@@ -605,6 +620,30 @@ class TestSecurityDoctorConnectorPosture(unittest.TestCase):
         self.assertTrue(
             len(allowlist_check[0].remediation) > 0, "Should have remediation text"
         )
+
+    def test_tokens_without_allowlist_fail_in_public_profile(self):
+        """Tokens active but no allowlist → FAIL for public deployment posture."""
+        os.environ["OPENCLAW_DEPLOYMENT_PROFILE"] = "public"
+        os.environ["OPENCLAW_CONNECTOR_TELEGRAM_TOKEN"] = "test-tok"
+        report = self.SecurityReport()
+        self.check(report)
+        allowlist_check = [
+            c for c in report.checks if c.name == "s32_allowlist_coverage"
+        ]
+        self.assertEqual(len(allowlist_check), 1)
+        self.assertEqual(allowlist_check[0].severity, self.SecuritySeverity.FAIL.value)
+
+    def test_tokens_without_allowlist_fail_in_hardened_runtime(self):
+        """Tokens active but no allowlist → FAIL for hardened runtime posture."""
+        os.environ["OPENCLAW_RUNTIME_PROFILE"] = "hardened"
+        os.environ["OPENCLAW_CONNECTOR_TELEGRAM_TOKEN"] = "test-tok"
+        report = self.SecurityReport()
+        self.check(report)
+        allowlist_check = [
+            c for c in report.checks if c.name == "s32_allowlist_coverage"
+        ]
+        self.assertEqual(len(allowlist_check), 1)
+        self.assertEqual(allowlist_check[0].severity, self.SecuritySeverity.FAIL.value)
 
     def test_whatsapp_token_without_secret_warns(self):
         """WhatsApp access token set without app_secret → WARN."""

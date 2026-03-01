@@ -50,7 +50,7 @@ Notes:
 |---|---|---|
 | `local` | single operator on same machine | no remote admin, no proxy trust, high-risk features disabled unless explicitly needed |
 | `lan` | trusted private network | admin + observability token, webhook auth + replay protection, remote admin opt-in, risky features off |
-| `public` | internet-facing reverse proxy | strict token boundaries, trusted proxy config, remote admin off, control-plane split required, risky features off, webhook auth fail-closed |
+| `public` | internet-facing reverse proxy | strict token boundaries, trusted proxy config, remote admin off, control-plane split required, risky features off, webhook auth fail-closed, connector allowlist fail-closed |
 
 ## 2. Self-check Command
 
@@ -191,6 +191,12 @@ OPENCLAW_WEBHOOK_REQUIRE_REPLAY_PROTECTION=1
 # Optional callback path must be tightly allowlisted
 OPENCLAW_CALLBACK_ALLOW_HOSTS=example.com,api.example.com
 
+# If connector ingress is enabled in public posture, set platform allowlists.
+# Otherwise startup/deployment checks fail closed.
+# Example (Telegram):
+# OPENCLAW_CONNECTOR_TELEGRAM_TOKEN=...
+# OPENCLAW_CONNECTOR_TELEGRAM_ALLOWED_USERS=123456
+
 # Keep risky expansion surfaces off on public user plane
 OPENCLAW_ENABLE_EXTERNAL_TOOLS=0
 OPENCLAW_ENABLE_REGISTRY_SYNC=0
@@ -212,16 +218,17 @@ OPENCLAW_LOCALHOST_ALLOW_NO_ORIGIN=0
    - deny ComfyUI-native high-risk paths (`/prompt`, `/history*`, `/view*`, `/upload*`, `/ws`) and `/api/*` equivalents.
 4. Set `OPENCLAW_PUBLIC_SHARED_SURFACE_BOUNDARY_ACK=1` only after step 3 and network ACL hardening are in place.
 5. Enforce split control plane in public posture (`OPENCLAW_CONTROL_PLANE_MODE=split` + external URL/TOKEN).
-6. Keep risky features disabled on public user-facing plane.
-7. Keep `OPENCLAW_LOCALHOST_ALLOW_NO_ORIGIN=0` in public deployments.
-8. Verify split posture from capabilities:
+6. If any connector platform token/enable flag is configured, set corresponding platform allowlist vars before startup (`DP-PUBLIC-009` fail-closed).
+7. Keep risky features disabled on public user-facing plane.
+8. Keep `OPENCLAW_LOCALHOST_ALLOW_NO_ORIGIN=0` in public deployments.
+9. Verify split posture from capabilities:
    - `GET /openclaw/capabilities` and confirm `control_plane.mode=split`
-9. Run:
+10. Run:
     - `python scripts/check_deployment_profile.py --profile public`
-10. Validate with project test and release gates before rollout:
+11. Validate with project test and release gates before rollout:
     - `tests/TEST_SOP.md`
     - [RELEASE_CHECKLIST.md](RELEASE_CHECKLIST.md)
-11. Ensure `/openclaw/admin` is blocked at public edge unless a separately hardened private admin plane is in place.
+12. Ensure `/openclaw/admin` is blocked at public edge unless a separately hardened private admin plane is in place.
 
 ## 6. Bridge in Public Profile (only when absolutely required)
 
