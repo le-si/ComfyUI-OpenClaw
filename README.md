@@ -91,6 +91,17 @@ Deployment profiles and hardening checklists:
 
 <details>
 
+<summary><strong>Frontend quality baseline for Library and Approvals surfaces</strong></summary>
+
+- Canonicalized active frontend styling ownership around `openclaw-*`, including shell/tab-manager cleanup and a deterministic split of `web/openclaw.css` into core and legacy-alias modules.
+- Added a frontend unit-test lane with Vitest + jsdom plus baseline coverage for shared UI helpers and extracted Library tab state logic.
+- Expanded Playwright coverage for `Library` and `Approvals`, including success/degraded paths and approvals parity between the sidebar and the Remote Admin Console.
+- Completed full verification gate pass (detect-secrets, pre-commit, backend unit suites, adversarial/retry/real-backend lanes, and frontend Playwright E2E).
+
+</details>
+
+<details>
+
 <summary><strong>Audit event clarity and connector ingress fail-closed hardening</strong></summary>
 
 - Normalized audit helper behavior so config/secret/LLM-test convenience wrappers now emit one canonical audit event per action, reducing duplicate noise while preserving legacy compatibility paths.

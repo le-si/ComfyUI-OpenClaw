@@ -5,6 +5,7 @@
 import { tabManager } from "./openclaw_tabs.js";
 import { ErrorBoundary } from "./ErrorBoundary.js";
 import { openclawApi } from "./openclaw_api.js";
+import { normalizeLegacyClassNames } from "./openclaw_utils.js";
 
 export class OpenClawUI {
     constructor() {
@@ -27,7 +28,7 @@ export class OpenClawUI {
     }
 
     _enforceSidebarMinWidth(container) {
-        // IMPORTANT: Keep this value aligned with CSS .openclaw-sidebar-container/.moltbot-sidebar-container min-width.
+        // IMPORTANT: Keep this value aligned with CSS .openclaw-sidebar-container min-width.
         const minWidthPx = 560;
 
         const applyMinWidth = () => {
@@ -62,10 +63,10 @@ export class OpenClawUI {
     toggleFloatingPanel() {
         if (!this.floating.panel) {
             const panel = document.createElement("div");
-            panel.className = "openclaw-floating-panel moltbot-floating-panel";
+            panel.className = "openclaw-floating-panel";
 
             const close = document.createElement("button");
-            close.className = "openclaw-floating-close moltbot-floating-close";
+            close.className = "openclaw-floating-close";
             close.textContent = "\u00D7";
             close.title = "Close";
             close.addEventListener("click", () => {
@@ -73,7 +74,7 @@ export class OpenClawUI {
             });
 
             const content = document.createElement("div");
-            content.className = "openclaw-floating-content moltbot-floating-content";
+            content.className = "openclaw-floating-content";
 
             panel.appendChild(close);
             panel.appendChild(content);
@@ -98,31 +99,31 @@ export class OpenClawUI {
 
     _render(container) {
         container.innerHTML = "";
-        container.className = "openclaw-sidebar-container moltbot-sidebar-container";
+        container.className = "openclaw-sidebar-container";
 
         // 1. Header
         const header = document.createElement("div");
-        header.className = "openclaw-header moltbot-header";
+        header.className = "openclaw-header";
 
         const statusDot = document.createElement("div");
-        statusDot.className = "openclaw-status-dot moltbot-status-dot ok";
+        statusDot.className = "openclaw-status-dot ok";
         statusDot.title = "System Status";
         this.statusDot = statusDot;
 
         const title = document.createElement("div");
-        title.className = "openclaw-title moltbot-title";
+        title.className = "openclaw-title";
         title.textContent = "OpenClaw";
 
         // F9: About badges (version fetched from /openclaw/health; legacy /moltbot/health)
         const badges = document.createElement("div");
-        badges.className = "openclaw-badges moltbot-badges";
+        badges.className = "openclaw-badges";
         const versionSpan = document.createElement("span");
-        versionSpan.className = "openclaw-version moltbot-version";
+        versionSpan.className = "openclaw-version";
         versionSpan.textContent = "v...";
         const repoLink = document.createElement("a");
         repoLink.href = "https://github.com/rookiestar28/ComfyUI-OpenClaw";
         repoLink.target = "_blank";
-        repoLink.className = "openclaw-repo-link moltbot-repo-link";
+        repoLink.className = "openclaw-repo-link";
         repoLink.title = "View on GitHub";
         repoLink.textContent = "View on GitHub";
         badges.appendChild(versionSpan);
@@ -139,7 +140,7 @@ export class OpenClawUI {
                 // F55: Control plane mode indicator badge
                 const cpMode = data?.control_plane?.mode || data?.deployment_profile || "local";
                 const modeBadge = document.createElement("span");
-                modeBadge.className = `openclaw-mode-badge moltbot-mode-badge openclaw-mode-${cpMode} moltbot-mode-${cpMode}`;
+                modeBadge.className = `openclaw-mode-badge openclaw-mode-${cpMode}`;
                 modeBadge.textContent = cpMode.toUpperCase();
                 modeBadge.title = `Control plane: ${cpMode}`;
                 // Style inline for immediate visibility
@@ -183,18 +184,19 @@ export class OpenClawUI {
 
         // 2. Tab Bar
         const tabBar = document.createElement("div");
-        tabBar.className = "openclaw-tabs moltbot-tabs";
+        tabBar.className = "openclaw-tabs";
         this.tabBar = tabBar;
         container.appendChild(tabBar);
 
         // 3. Content Area
         const contentArea = document.createElement("div");
-        contentArea.className = "openclaw-content moltbot-content";
+        contentArea.className = "openclaw-content";
         this.contentArea = contentArea;
         container.appendChild(contentArea);
 
         // Initialize Tabs
         tabManager.init(tabBar, contentArea);
+        normalizeLegacyClassNames(container);
     }
 
     /**
@@ -268,7 +270,7 @@ export class OpenClawUI {
             header.after(bannerEl);
         }
 
-        bannerEl.className = `openclaw-banner moltbot-banner openclaw-banner-${severity} moltbot-banner-${severity}`;
+        bannerEl.className = `openclaw-banner openclaw-banner-${severity}`;
         bannerEl.dataset.id = id;
         bannerEl.dataset.severity = severity;
         bannerEl.innerHTML = ""; // Clear content
@@ -281,7 +283,7 @@ export class OpenClawUI {
         // Action Button
         if (action) {
             const btn = document.createElement("button");
-            btn.className = "openclaw-banner-action moltbot-banner-action";
+            btn.className = "openclaw-banner-action";
             btn.textContent = action.label;
             btn.addEventListener("click", () => this.handleAction(action));
             bannerEl.appendChild(btn);
@@ -290,7 +292,7 @@ export class OpenClawUI {
         // Dismiss Button
         if (dismissible) {
             const close = document.createElement("button");
-            close.className = "openclaw-banner-close moltbot-banner-close";
+            close.className = "openclaw-banner-close";
             close.textContent = "\u00D7";
             close.addEventListener("click", () => {
                 bannerEl.remove();
@@ -345,10 +347,10 @@ export class OpenClawUI {
     showConfirm({ title, message, fatal = false, onConfirm }) {
         // Create modal overlay
         const overlay = document.createElement("div");
-        overlay.className = "openclaw-modal-overlay moltbot-modal-overlay";
+        overlay.className = "openclaw-modal-overlay";
 
         const modal = document.createElement("div");
-        modal.className = `openclaw-modal moltbot-modal ${fatal ? "fatal" : ""}`;
+        modal.className = `openclaw-modal ${fatal ? "fatal" : ""}`;
 
         const h3 = document.createElement("h3");
         h3.textContent = title || "Confirm Action";
@@ -357,15 +359,15 @@ export class OpenClawUI {
         p.textContent = message || "Are you sure?";
 
         const buttons = document.createElement("div");
-        buttons.className = "openclaw-modal-buttons moltbot-modal-buttons";
+        buttons.className = "openclaw-modal-buttons";
 
         const cancelBtn = document.createElement("button");
-        cancelBtn.className = "openclaw-btn moltbot-btn secondary";
+        cancelBtn.className = "openclaw-btn secondary";
         cancelBtn.textContent = "Cancel";
         cancelBtn.onclick = () => overlay.remove();
 
         const confirmBtn = document.createElement("button");
-        confirmBtn.className = `openclaw-btn moltbot-btn ${fatal ? "danger" : "primary"}`;
+        confirmBtn.className = `openclaw-btn ${fatal ? "danger" : "primary"}`;
         confirmBtn.textContent = "Confirm";
         confirmBtn.onclick = () => {
             overlay.remove();
@@ -381,6 +383,7 @@ export class OpenClawUI {
         overlay.appendChild(modal);
 
         this.container.appendChild(overlay);
+        normalizeLegacyClassNames(overlay);
     }
 }
 
@@ -574,7 +577,7 @@ export class OpenClawActions {
      */
     _showBlockedToast(actionName, reason) {
         const toast = document.createElement("div");
-        toast.className = "openclaw-blocked-toast moltbot-blocked-toast";
+        toast.className = "openclaw-blocked-toast";
         toast.style.cssText = `
             position: fixed; bottom: 20px; right: 20px; z-index: 99999;
             background: #1e1e2e; border: 1px solid #f59e0b;

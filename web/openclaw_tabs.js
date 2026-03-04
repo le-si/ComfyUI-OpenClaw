@@ -3,6 +3,7 @@
  * Handles tab creation, switching, and lazy rendering.
  */
 import { ErrorBoundary } from "./ErrorBoundary.js";
+import { normalizeLegacyClassNames } from "./openclaw_utils.js";
 
 export class TabManager {
     constructor() {
@@ -49,12 +50,12 @@ export class TabManager {
 
         this.tabs.forEach(tab => {
             const btn = document.createElement("div");
-            btn.className = "openclaw-tab moltbot-tab";
+            btn.className = "openclaw-tab";
             if (tab.icon) {
                 const icon = document.createElement("i");
-                icon.className = `openclaw-tab-icon moltbot-tab-icon ${tab.icon}`;
+                icon.className = `openclaw-tab-icon ${tab.icon}`;
                 const label = document.createElement("span");
-                label.className = "openclaw-tab-label moltbot-tab-label";
+                label.className = "openclaw-tab-label";
                 label.textContent = tab.title;
                 btn.appendChild(icon);
                 btn.appendChild(label);
@@ -70,10 +71,13 @@ export class TabManager {
             if (!this.contentEl.querySelector(`#openclaw-tab-${tab.id}`)) {
                 const pane = document.createElement("div");
                 pane.id = `openclaw-tab-${tab.id}`;
-                pane.className = "openclaw-tab-pane moltbot-tab-pane";
+                pane.className = "openclaw-tab-pane";
                 this.contentEl.appendChild(pane);
             }
         });
+
+        normalizeLegacyClassNames(this.tabsEl);
+        normalizeLegacyClassNames(this.contentEl);
     }
 
     activateTab(id) {
@@ -110,6 +114,10 @@ export class TabManager {
                 }
             });
             tab.loaded = true;
+        }
+
+        if (pane) {
+            normalizeLegacyClassNames(pane);
         }
     }
 

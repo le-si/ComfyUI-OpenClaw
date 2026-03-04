@@ -1,15 +1,67 @@
 import { openclawApi } from "../openclaw_api.js";
-import { showError, clearError } from "../openclaw_utils.js";
+import {
+    showError,
+    clearError,
+    normalizeLegacyClassNames,
+} from "../openclaw_utils.js";
 
-// Helper for safe HTML escaping
 function escapeHtml(text) {
     if (!text) return "";
     return text
         .replace(/&/g, "&amp;")
         .replace(/</g, "&lt;")
         .replace(/>/g, "&gt;")
-        .replace(/"/g, "&quot;")
+        .replace(/\"/g, "&quot;")
         .replace(/'/g, "&#039;");
+}
+
+function stringifyVal(value) {
+    if (typeof value === "object" && value !== null) return "{...}";
+    return String(value);
+}
+
+function renderInputsSummary(inputs) {
+    if (!inputs) return "";
+    const keys = Object.keys(inputs);
+    if (keys.length === 0) return "No inputs";
+    const preview = keys.slice(0, 2).map((key) => `${key}: ${stringifyVal(inputs[key])}`);
+    if (keys.length > 2) preview.push(`+${keys.length - 2} more`);
+    return escapeHtml(preview.join(", "));
+}
+
+function renderApprovalItem(request) {
+    const statusClass = request.status;
+    const isPending = request.status === "pending";
+
+    return `
+        <div class="openclaw-list-item" style="padding: 10px; border-bottom: 1px solid var(--openclaw-color-border); margin-bottom: 4px; border-left: 3px solid var(--openclaw-color-border);">
+            <div style="display: flex; justify-content: space-between; align-items: flex-start; gap: 10px;">
+                <div>
+                    <div style="font-weight: bold; font-size: var(--openclaw-font-md); color: var(--openclaw-color-fg);">
+                        ${escapeHtml(request.template_id)}
+                        <span style="font-size: var(--openclaw-font-xs); font-weight: normal; color: var(--openclaw-color-fg-muted); margin-left:8px;">${escapeHtml(request.approval_id)}</span>
+                    </div>
+                    <div style="font-size: var(--openclaw-font-sm); color: var(--openclaw-color-fg-muted); margin-top: 4px;">
+                        Inputs: <span style="color: #aaa;">${renderInputsSummary(request.inputs)}</span>
+                    </div>
+                    <div style="font-size: var(--openclaw-font-xs); color: #666; margin-top: 4px;">
+                        Requested: ${new Date(request.requested_at).toLocaleString()}
+                        ${request.source ? `via ${escapeHtml(request.source)}` : ""}
+                    </div>
+                </div>
+                <div style="display: flex; flex-direction: column; align-items: flex-end; gap: 5px;">
+                    <span class="openclaw-badge ${statusClass}">${request.status.toUpperCase()}</span>
+                    <div style="display: flex; gap: 5px; margin-top: 5px; flex-wrap: wrap; justify-content: flex-end;">
+                        <button class="openclaw-btn openclaw-btn-sm" data-action="details" data-id="${request.approval_id}">Details</button>
+                        ${isPending ? `
+                            <button class="openclaw-btn openclaw-btn-sm openclaw-btn-primary" data-action="approve" data-id="${request.approval_id}">Approve</button>
+                            <button class="openclaw-btn openclaw-btn-sm openclaw-btn-danger" data-action="reject" data-id="${request.approval_id}">Reject</button>
+                        ` : ""}
+                    </div>
+                </div>
+            </div>
+        </div>
+    `;
 }
 
 export const ApprovalsTab = {
@@ -18,134 +70,69 @@ export const ApprovalsTab = {
     icon: "pi pi-check-circle",
 
     render(container) {
-        // --- 1. Static Layout ---
         container.innerHTML = `
-            <div class="openclaw-panel openclaw-panel moltbot-panel">
-                <div class="openclaw-card openclaw-card moltbot-card" style="border-radius:0; border:none; border-bottom:1px solid var(--moltbot-color-border);">
-                     <div class="openclaw-section-header openclaw-section-header moltbot-section-header">Approval Requests</div>
-                     <div class="openclaw-error-box openclaw-error-box moltbot-error-box" style="display:none"></div>
-                     <div class="openclaw-toolbar openclaw-toolbar moltbot-toolbar" style="margin-top:5px; display:flex; gap:5px; align-items:center;" id="apr-toolbar">
-                        <div id="apr-filter-btns" style="display: flex; gap: 5px;">
-                            <button class="openclaw-btn openclaw-btn moltbot-btn openclaw-btn-primary openclaw-btn-primary moltbot-btn-primary" data-status="pending">Pending</button>
-                            <button class="openclaw-btn openclaw-btn moltbot-btn" data-status="approved">Approved</button>
-                            <button class="openclaw-btn openclaw-btn moltbot-btn" data-status="rejected">Rejected</button>
-                            <button class="openclaw-btn openclaw-btn moltbot-btn" data-status="">All</button>
+            <div class="openclaw-panel">
+                <div class="openclaw-card" style="border-radius:0; border:none; border-bottom:1px solid var(--openclaw-color-border);">
+                    <div class="openclaw-section-header">Approval Requests</div>
+                    <div class="openclaw-error-box" style="display:none"></div>
+                    <div class="openclaw-toolbar" style="margin-top:5px; display:flex; gap:5px; align-items:center;" id="apr-toolbar">
+                        <div id="apr-filter-btns" style="display: flex; gap: 5px; flex-wrap: wrap;">
+                            <button class="openclaw-btn openclaw-btn-primary" data-status="pending">Pending</button>
+                            <button class="openclaw-btn" data-status="approved">Approved</button>
+                            <button class="openclaw-btn" data-status="rejected">Rejected</button>
+                            <button class="openclaw-btn" data-status="">All</button>
                         </div>
-                        <button class="openclaw-btn openclaw-btn moltbot-btn openclaw-btn-sm openclaw-btn-sm moltbot-btn-sm" id="apr-refresh-btn" style="margin-left: auto;">
-                            Refresh
-                        </button>
+                        <button class="openclaw-btn openclaw-btn-sm" id="apr-refresh-btn" style="margin-left: auto;">Refresh</button>
                     </div>
                 </div>
 
-                <div id="apr-list" class="openclaw-scroll-area openclaw-scroll-area moltbot-scroll-area" style="padding:0;">
-                     <div class="openclaw-empty-state openclaw-empty-state moltbot-empty-state">Loading...</div>
+                <div id="apr-list" class="openclaw-scroll-area" style="padding:0;">
+                    <div class="openclaw-empty-state">Loading...</div>
                 </div>
             </div>
 
-            <!-- Details Modal -->
-             <div id="apr-editor-overlay" class="openclaw-modal-overlay openclaw-modal-overlay moltbot-modal-overlay" style="display:none;">
-                <div id="apr-details-modal" class="openclaw-modal openclaw-modal moltbot-modal" style="width: 600px;">
-                    <div class="openclaw-modal-header openclaw-modal-header moltbot-modal-header">
+            <div id="apr-editor-overlay" class="openclaw-modal-overlay" style="display:none;">
+                <div id="apr-details-modal" class="openclaw-modal" style="width: 600px;">
+                    <div class="openclaw-modal-header">
                         <span id="apr-modal-title">Request Details</span>
                     </div>
-
-                    <div class="openclaw-modal-body openclaw-modal-body moltbot-modal-body">
-                         <div style="font-family: var(--moltbot-font-mono); font-size: var(--moltbot-font-xs); background: #111; padding: 10px; border: 1px solid #333; height: 300px; overflow: auto; white-space: pre-wrap;" id="apr-modal-content"></div>
+                    <div class="openclaw-modal-body">
+                        <div style="font-family: var(--openclaw-font-mono); font-size: var(--openclaw-font-xs); background: #111; padding: 10px; border: 1px solid #333; height: 300px; overflow: auto; white-space: pre-wrap;" id="apr-modal-content"></div>
                     </div>
-
-                    <div class="openclaw-modal-footer openclaw-modal-footer moltbot-modal-footer">
-                        <button class="openclaw-btn openclaw-btn moltbot-btn" id="apr-modal-close">Close</button>
+                    <div class="openclaw-modal-footer">
+                        <button class="openclaw-btn" id="apr-modal-close">Close</button>
                         <div id="apr-modal-actions" style="display:flex; gap:10px;"></div>
                     </div>
                 </div>
             </div>
         `;
+        normalizeLegacyClassNames(container);
 
-        // --- 2. State & References ---
         const ui = {
             list: container.querySelector("#apr-list"),
             filters: container.querySelector("#apr-filter-btns"),
             refreshBtn: container.querySelector("#apr-refresh-btn"),
             modal: {
                 overlay: container.querySelector("#apr-editor-overlay"),
-                el: container.querySelector("#apr-details-modal"),
-                title: container.querySelector("#apr-modal-title"),
                 content: container.querySelector("#apr-modal-content"),
                 close: container.querySelector("#apr-modal-close"),
                 actions: container.querySelector("#apr-modal-actions"),
-            }
+            },
         };
 
-        let currentState = {
+        const currentState = {
             status: "pending",
-            approvals: []
-        };
-
-        // --- 3. View Logic ---
-
-        const renderInputsSummary = (inputs) => {
-            if (!inputs) return "";
-            const keys = Object.keys(inputs);
-            if (keys.length === 0) return "No inputs";
-            // Show first 2 inputs
-            const firstTwo = keys.slice(0, 2).map(k => `${k}: ${stringifyVal(inputs[k])}`);
-            if (keys.length > 2) firstTwo.push(`+${keys.length - 2} more`);
-            return escapeHtml(firstTwo.join(", "));
-        };
-
-        const stringifyVal = (v) => {
-            if (typeof v === "object") return "{...}";
-            return String(v);
-        }
-
-        const renderListItem = (req) => {
-            // Mapping status to CSS classes is cleaner than inline colors
-            const statusClass = req.status; // pending, approved, rejected
-            const isPending = req.status === "pending";
-
-            return `
-                <div class="openclaw-list-item openclaw-list-item moltbot-list-item" style="padding: 10px; border-bottom: 1px solid var(--moltbot-color-border); margin-bottom: 4px; border-left: 3px solid var(--moltbot-color-border);">
-                    <div style="display: flex; justify-content: space-between; align-items: flex-start;">
-                        <div>
-                            <div style="font-weight: bold; font-size: var(--moltbot-font-md); color: var(--moltbot-color-fg);">
-                                ${escapeHtml(req.template_id)}
-                                <span style="font-size: var(--moltbot-font-xs); font-weight: normal; color: var(--moltbot-color-fg-muted); margin-left:8px;">${escapeHtml(req.approval_id)}</span>
-                            </div>
-                            <div style="font-size: var(--moltbot-font-sm); color: var(--moltbot-color-fg-muted); margin-top: 4px;">
-                                Inputs: <span style="color: #aaa;">${renderInputsSummary(req.inputs)}</span>
-                            </div>
-                            <div style="font-size: var(--moltbot-font-xs); color: #666; margin-top: 4px;">
-                                Requested: ${new Date(req.requested_at).toLocaleString()}
-                                ${req.source ? `via ${escapeHtml(req.source)}` : ''}
-                            </div>
-                        </div>
-                        <div style="display: flex; flex-direction: column; align-items: flex-end; gap: 5px;">
-                            <span class="openclaw-badge openclaw-badge moltbot-badge ${statusClass}">
-                                ${req.status.toUpperCase()}
-                            </span>
-
-                            <div style="display: flex; gap: 5px; margin-top: 5px;">
-                                <button class="openclaw-btn openclaw-btn moltbot-btn openclaw-btn-sm openclaw-btn-sm moltbot-btn-sm" data-action="details" data-id="${req.approval_id}">Details</button>
-                                ${isPending ? `
-                                    <button class="openclaw-btn openclaw-btn moltbot-btn openclaw-btn-sm openclaw-btn-sm moltbot-btn-sm openclaw-btn-primary openclaw-btn-primary moltbot-btn-primary" data-action="approve" data-id="${req.approval_id}">Approve</button>
-                                    <button class="openclaw-btn openclaw-btn moltbot-btn openclaw-btn-sm openclaw-btn-sm moltbot-btn-sm openclaw-btn-danger openclaw-btn-danger moltbot-btn-danger" data-action="reject" data-id="${req.approval_id}">Reject</button>
-                                ` : ''}
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            `;
+            approvals: [],
         };
 
         const renderList = () => {
             if (currentState.approvals.length === 0) {
-                ui.list.innerHTML = '<div class="openclaw-empty-state openclaw-empty-state moltbot-empty-state">No requests found.</div>';
+                ui.list.innerHTML = '<div class="openclaw-empty-state">No requests found.</div>';
                 return;
             }
-            ui.list.innerHTML = currentState.approvals.map(renderListItem).join("");
+            ui.list.innerHTML = currentState.approvals.map(renderApprovalItem).join("");
+            normalizeLegacyClassNames(ui.list);
         };
-
-        // --- 4. Logic ---
 
         const loadApprovals = async () => {
             clearError(container);
@@ -159,7 +146,7 @@ export const ApprovalsTab = {
                 currentState.approvals = res.data.approvals || [];
                 renderList();
             } else {
-                ui.list.innerHTML = ''; // Clear loading
+                ui.list.innerHTML = "";
                 showError(container, res.error);
             }
         };
@@ -169,7 +156,7 @@ export const ApprovalsTab = {
 
             const res = await openclawApi.approveRequest(id, { autoExecute: true });
             if (res.ok) {
-                alert(`Approved! ` + (res.data.executed ? `Executed as prompt ${res.data.prompt_id}` : `Marked approved.`));
+                alert(`Approved! ${res.data.executed ? `Executed as prompt ${res.data.prompt_id}` : "Marked approved."}`);
                 loadApprovals();
             } else {
                 showError(container, `Approval failed: ${res.error}`);
@@ -187,69 +174,58 @@ export const ApprovalsTab = {
             }
         };
 
-        const showDetails = async (id) => {
-            // Find in local state first, or fetch
-            let req = currentState.approvals.find(a => a.approval_id === id);
-
-            if (!req) {
-                const res = await openclawApi.getApproval(id);
-                if (res.ok) req = res.data.approval;
-            }
-
-            if (!req) return;
-
-            ui.modal.content.textContent = JSON.stringify(req, null, 2);
-
-            // Render actions
-            if (req.status === "pending") {
-                ui.modal.actions.innerHTML = `
-                    <button class="openclaw-btn openclaw-btn moltbot-btn openclaw-btn-primary openclaw-btn-primary moltbot-btn-primary" id="apr-modal-approve">Approve</button>
-                    <button class="openclaw-btn openclaw-btn moltbot-btn openclaw-btn-danger openclaw-btn-danger moltbot-btn-danger" id="apr-modal-reject">Reject</button>
-                `;
-
-                // Bind dynamic buttons
-                container.querySelector("#apr-modal-approve").onclick = () => { handleApprove(id); closeModal(); };
-                container.querySelector("#apr-modal-reject").onclick = () => { handleReject(id); closeModal(); };
-
-            } else {
-                ui.modal.actions.innerHTML = "";
-            }
-
-            openModal();
+        const closeModal = () => {
+            ui.modal.overlay.style.display = "none";
         };
 
         const openModal = () => {
             ui.modal.overlay.style.display = "flex";
         };
 
-        const closeModal = () => {
-            ui.modal.overlay.style.display = "none";
+        const showDetails = async (id) => {
+            let request = currentState.approvals.find((approval) => approval.approval_id === id);
+            if (!request) {
+                const res = await openclawApi.getApproval(id);
+                if (res.ok) request = res.data.approval;
+            }
+            if (!request) return;
+
+            ui.modal.content.textContent = JSON.stringify(request, null, 2);
+            if (request.status === "pending") {
+                ui.modal.actions.innerHTML = `
+                    <button class="openclaw-btn openclaw-btn-primary" id="apr-modal-approve">Approve</button>
+                    <button class="openclaw-btn openclaw-btn-danger" id="apr-modal-reject">Reject</button>
+                `;
+                container.querySelector("#apr-modal-approve").onclick = () => {
+                    handleApprove(id);
+                    closeModal();
+                };
+                container.querySelector("#apr-modal-reject").onclick = () => {
+                    handleReject(id);
+                    closeModal();
+                };
+            } else {
+                ui.modal.actions.innerHTML = "";
+            }
+            openModal();
         };
 
-        // --- 5. Event Binding ---
+        ui.filters.addEventListener("click", (event) => {
+            const btn = event.target.closest("button[data-status]");
+            if (!btn || btn.parentElement !== ui.filters) return;
 
-        // Filters
-        ui.filters.addEventListener("click", (e) => {
-            const btn = e.target.closest("button[data-status]");
-            if (btn && btn.parentElement === ui.filters) { // Ensure strict match
-                // Update active state
-                ui.filters.querySelectorAll("button").forEach(b => b.classList.remove("openclaw-btn-primary", "openclaw-btn-primary", "moltbot-btn-primary"));
-                btn.classList.add("openclaw-btn-primary", "openclaw-btn-primary", "moltbot-btn-primary");
-
-                // Update state
-                currentState.status = btn.dataset.status; // "" for all
-                loadApprovals();
-            }
+            ui.filters
+                .querySelectorAll("button[data-status]")
+                .forEach((button) => button.classList.remove("openclaw-btn-primary"));
+            btn.classList.add("openclaw-btn-primary");
+            currentState.status = btn.dataset.status;
+            loadApprovals();
         });
 
-        // Refresh
         ui.refreshBtn.addEventListener("click", loadApprovals);
-
-        // List Actions
-        ui.list.addEventListener("click", (e) => {
-            const btn = e.target.closest("button[data-action]");
+        ui.list.addEventListener("click", (event) => {
+            const btn = event.target.closest("button[data-action]");
             if (!btn) return;
-
             const action = btn.dataset.action;
             const id = btn.dataset.id;
 
@@ -258,13 +234,11 @@ export const ApprovalsTab = {
             else if (action === "details") showDetails(id);
         });
 
-        // Modal
         ui.modal.close.addEventListener("click", closeModal);
-        ui.modal.overlay.addEventListener("click", (e) => {
-            if (e.target === ui.modal.overlay) closeModal();
+        ui.modal.overlay.addEventListener("click", (event) => {
+            if (event.target === ui.modal.overlay) closeModal();
         });
 
-        // Initial Load
         loadApprovals();
-    }
+    },
 };

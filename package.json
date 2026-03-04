@@ -5,10 +5,14 @@
     "node": ">=18.0.0"
   },
   "devDependencies": {
-    "@playwright/test": "^1.50.0"
+    "@playwright/test": "^1.50.0",
+    "jsdom": "^26.0.0",
+    "vitest": "^3.2.4"
   },
   "scripts": {
     "test": "node scripts/run-playwright.mjs",
+    "test:unit": "vitest run",
+    "test:unit:watch": "vitest",
     "test:ui": "npx playwright test --ui",
     "test:headed": "npx playwright test --headed",
     "test:debug": "npx playwright test --debug",

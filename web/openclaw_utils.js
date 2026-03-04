@@ -19,6 +19,59 @@ export function makeEl(tag, className = "", text = "") {
 }
 
 /**
+ * F63: prefer canonical `openclaw-*` classes when both legacy and canonical
+ * variants are present on the same node.
+ */
+export function normalizeLegacyClassTokens(className = "") {
+    const tokens = String(className)
+        .split(/\s+/)
+        .map((token) => token.trim())
+        .filter(Boolean);
+    const canonical = new Set(
+        tokens.filter((token) => token.startsWith("openclaw-"))
+    );
+    const seen = new Set();
+    const normalized = [];
+
+    tokens.forEach((token) => {
+        if (token.startsWith("moltbot-")) {
+            const suffix = token.slice("moltbot-".length);
+            if (canonical.has(`openclaw-${suffix}`)) {
+                return;
+            }
+        }
+        if (seen.has(token)) {
+            return;
+        }
+        seen.add(token);
+        normalized.push(token);
+    });
+
+    return normalized.join(" ");
+}
+
+export function normalizeLegacyClassNames(root) {
+    if (!root) return root;
+    const nodes = [];
+    if (typeof root.className === "string") {
+        nodes.push(root);
+    }
+    if (typeof root.querySelectorAll === "function") {
+        nodes.push(...root.querySelectorAll("[class]"));
+    }
+
+    nodes.forEach((node) => {
+        if (typeof node.className !== "string") return;
+        const normalized = normalizeLegacyClassTokens(node.className);
+        if (normalized !== node.className) {
+            node.className = normalized;
+        }
+    });
+
+    return root;
+}
+
+/**
  * Lightweight toast helper for UI feedback.
  * @param {string} message
  * @param {"info"|"error"|"success"} variant
