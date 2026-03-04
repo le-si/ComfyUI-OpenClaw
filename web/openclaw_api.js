@@ -524,6 +524,15 @@ export class OpenClawAPI {
         });
     }
 
+    async listPlannerProfiles(signal = null) {
+        return this.fetch(this._path("/assist/planner/profiles"), {
+            headers: {
+                ...this._adminTokenHeaders(),
+            },
+            signal,
+        });
+    }
+
     async runPlannerStream(params, { signal = null, onEvent = null } = {}) {
         return this.streamSSEPost(this._path("/assist/planner/stream"), params, {
             signal,

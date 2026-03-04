@@ -6,7 +6,7 @@ export const PlannerTab = {
     title: "Planner",
     icon: "pi pi-pencil",
 
-    render(container) {
+    async render(container) {
         container.innerHTML = `
             <div class="openclaw-panel openclaw-panel moltbot-panel">
                 <div class="openclaw-scroll-area openclaw-scroll-area moltbot-scroll-area">
@@ -79,6 +79,38 @@ export const PlannerTab = {
                 }
             </style>
         `;
+
+        const profileSelect = container.querySelector("#planner-profile");
+        const fallbackProfiles = [
+            { id: "SDXL-v1", label: "SDXL v1" },
+            { id: "Flux-Dev", label: "Flux Dev" },
+        ];
+        const applyProfiles = (profiles, defaultProfile = "SDXL-v1") => {
+            const current = profileSelect.value;
+            profileSelect.innerHTML = "";
+            (profiles || []).forEach((profile) => {
+                const option = document.createElement("option");
+                option.value = profile.id;
+                option.textContent = profile.label || profile.id;
+                profileSelect.appendChild(option);
+            });
+            const desired = current && [...profileSelect.options].some((opt) => opt.value === current)
+                ? current
+                : defaultProfile;
+            if (desired) {
+                profileSelect.value = desired;
+            }
+        };
+        try {
+            const profileRes = await openclawApi.listPlannerProfiles();
+            if (profileRes.ok && Array.isArray(profileRes.data?.profiles) && profileRes.data.profiles.length > 0) {
+                applyProfiles(profileRes.data.profiles, profileRes.data.default_profile || "SDXL-v1");
+            } else {
+                applyProfiles(fallbackProfiles, "SDXL-v1");
+            }
+        } catch {
+            applyProfiles(fallbackProfiles, "SDXL-v1");
+        }
 
         const lifecycle = createRequestLifecycleController(container, {
             loading: "#planner-loading",

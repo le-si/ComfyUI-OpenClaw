@@ -1,0 +1,36 @@
+{
+  "version": 1,
+  "default_profile": "SDXL-v1",
+  "profiles": [
+    {
+      "id": "SDXL-v1",
+      "version": "1.0",
+      "label": "SDXL 1.0 Base",
+      "description": "Standard SDXL profile",
+      "prompt_guidance": "Width/height should target SDXL-friendly resolutions such as 1024x1024. Keep CFG around 7.0 and steps around 20-30 unless requirements strongly justify a deviation.",
+      "defaults": {
+        "width": 1024,
+        "height": 1024,
+        "steps": 24,
+        "cfg": 7.0,
+        "sampler_name": "euler",
+        "scheduler": "normal"
+      }
+    },
+    {
+      "id": "Flux-Dev",
+      "version": "1.0",
+      "label": "Flux Dev",
+      "description": "Flux Dev profile (high steps, lower cfg)",
+      "prompt_guidance": "Flux variants generally prefer lower CFG than SDXL. Keep CFG around 1.0-4.0 and use moderately higher steps only when needed.",
+      "defaults": {
+        "width": 1024,
+        "height": 1024,
+        "steps": 28,
+        "cfg": 3.5,
+        "sampler_name": "euler",
+        "scheduler": "normal"
+      }
+    }
+  ]
+}

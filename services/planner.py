@@ -4,11 +4,12 @@ from typing import Any, Callable, Dict, Optional, Tuple
 
 from .llm_client import LLMClient
 from .llm_output import extract_json_object, sanitize_string
+from .planner_registry import get_planner_registry
 
 try:
-    from ..models.schemas import GenerationParams, Profile
+    from ..models.schemas import GenerationParams
 except ImportError:
-    from models.schemas import GenerationParams, Profile
+    from models.schemas import GenerationParams
 
 from .metrics import metrics
 
@@ -29,22 +30,6 @@ logger = logging.getLogger("ComfyUI-OpenClaw.services.planner")
 # Allowed keys
 ALLOWED_RESPONSE_KEYS = {"positive_prompt", "negative_prompt", "params"}
 ALLOWED_PARAM_KEYS = {"width", "height", "steps", "cfg", "sampler_name", "scheduler"}
-
-# Default Profiles
-PROFILES = {
-    "SDXL-v1": Profile(
-        id="SDXL-v1",
-        version="1.0",
-        label="SDXL 1.0 Base",
-        description="Standard SDXL profile",
-    ),
-    "Flux-Dev": Profile(
-        id="Flux-Dev",
-        version="1.0",
-        label="Flux Dev",
-        description="Flux Dev profile (high steps, lower cfg)",
-    ),
-}
 
 
 class PlannerService:
@@ -77,9 +62,10 @@ class PlannerService:
             (positive_prompt, negative_prompt, params_dict)
         """
         metrics.increment("planner_calls")
+        registry = get_planner_registry()
 
         # 1. Select Profile
-        selected_profile = PROFILES.get(profile_id)
+        selected_profile = registry.get_profile(profile_id)
         if not selected_profile:
             # Fallback or error? Node raises ValueError.
             # We'll default to SDXL if unknown, or raise.
@@ -87,30 +73,7 @@ class PlannerService:
             raise ValueError(f"Unknown profile: {profile_id}")
 
         # 2. Construct System Prompt
-        system_prompt = f"""
-You are an expert stable diffusion prompt engineer.
-Your goal is to generate a detailed JSON plan for an image generation job based on the user's requirements.
-
-Output strict JSON only. No markdown fences.
-Expected JSON structure:
-{{
-  "positive_prompt": "string",
-  "negative_prompt": "string",
-  "params": {{
-    "width": int,
-    "height": int,
-    "steps": int,
-    "cfg": float,
-    "sampler_name": "euler" | "dpmpp_2m" | ...,
-    "scheduler": "normal" | "karras" | ...
-  }}
-}}
-
-Constraint Guidelines for {selected_profile.id}:
-- Width/Height should be optimized for this model (e.g. 1024x1024 for SDXL).
-- Steps: Default around 20-30.
-- CFG: 7.0 for SDXL, 1.0-4.0 for Flux.
-"""
+        system_prompt = registry.render_system_prompt(selected_profile.id)
 
         # 3. Construct User Message
         user_message = f"""

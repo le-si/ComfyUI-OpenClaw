@@ -851,6 +851,12 @@ def register_routes(server) -> None:
     if assist:
         for prefix in prefixes:
             register_dual_route(
+                server,
+                "GET",
+                f"{prefix}/assist/planner/profiles",
+                assist.planner_profiles_handler,
+            )
+            register_dual_route(
                 server, "POST", f"{prefix}/assist/planner", assist.planner_handler
             )
             register_dual_route(

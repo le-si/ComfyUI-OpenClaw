@@ -64,6 +64,55 @@ class TestAssistAPI(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(body["positive"], "pos")
             self.assertEqual(body["params"]["width"], 1024)
 
+    async def test_planner_profiles_success(self):
+        request = AsyncMock()
+
+        class _Profile:
+            def __init__(self, profile_id, label):
+                self.id = profile_id
+                self.label = label
+                self.description = f"{label} desc"
+                self.version = "1.0"
+
+        registry = MagicMock()
+        registry.list_profiles.return_value = [_Profile("P1", "Profile One")]
+        registry.get_default_profile_id.return_value = "P1"
+
+        with (
+            patch("api.assist.require_admin_token", return_value=(True, None)),
+            patch("api.assist.check_rate_limit", return_value=True),
+            patch("api.assist.get_planner_registry", return_value=registry),
+        ):
+            resp = await self.handler.planner_profiles_handler(request)
+
+        self.assertEqual(resp.status, 200)
+        body = json.loads(resp.body)
+        self.assertEqual(body["default_profile"], "P1")
+        self.assertEqual(body["profiles"][0]["id"], "P1")
+
+    async def test_planner_rejects_unknown_profile(self):
+        request = AsyncMock()
+        request.json = AsyncMock(
+            return_value={
+                "profile": "missing",
+                "requirements": "cat",
+                "style_directives": "photorealistic",
+            }
+        )
+        registry = MagicMock()
+        registry.get_default_profile_id.return_value = "SDXL-v1"
+        registry.get_profile.return_value = None
+
+        with (
+            patch("api.assist.require_admin_token", return_value=(True, None)),
+            patch("api.assist.get_planner_registry", return_value=registry),
+        ):
+            resp = await self.handler.planner_handler(request)
+
+        self.assertEqual(resp.status, 400)
+        body = json.loads(resp.body)
+        self.assertEqual(body["error"], "Unknown profile: missing")
+
     async def test_refiner_missing_image(self):
         """Test refiner rejects requests without image."""
         request = AsyncMock()

@@ -11,6 +11,7 @@ try:
     from ..services.async_utils import run_in_thread
     from ..services.automation_composer import AutomationComposerService
     from ..services.planner import PlannerService
+    from ..services.planner_registry import get_planner_registry
     from ..services.rate_limit import check_rate_limit
     from ..services.refiner import RefinerService
 except ImportError:
@@ -19,6 +20,7 @@ except ImportError:
     from services.async_utils import run_in_thread
     from services.automation_composer import AutomationComposerService
     from services.planner import PlannerService
+    from services.planner_registry import get_planner_registry
     from services.rate_limit import check_rate_limit
     from services.refiner import RefinerService
 
@@ -47,6 +49,22 @@ MAX_IMAGE_B64_LEN = 5 * 1024 * 1024  # ~5MB base64 string length
 MAX_STREAM_DELTA_CHARS = 256
 MAX_STREAM_PREVIEW_CHARS = 16_000
 STREAM_KEEPALIVE_SEC = 1.0
+
+
+def _planner_profiles_payload() -> Dict[str, Any]:
+    registry = get_planner_registry()
+    return {
+        "profiles": [
+            {
+                "id": profile.id,
+                "label": profile.label,
+                "description": profile.description,
+                "version": profile.version,
+            }
+            for profile in registry.list_profiles()
+        ],
+        "default_profile": registry.get_default_profile_id(),
+    }
 
 
 class AssistHandlers:
@@ -81,7 +99,8 @@ class AssistHandlers:
     def _validate_planner_payload(
         self, data: dict
     ) -> tuple[Optional[dict], Optional[web.Response]]:
-        profile = data.get("profile", "SDXL-v1")
+        registry = get_planner_registry()
+        profile = data.get("profile", registry.get_default_profile_id())
         requirements = data.get("requirements", "")
         style = data.get("style_directives", "")
         seed = data.get("seed", 0)
@@ -89,6 +108,10 @@ class AssistHandlers:
         if not isinstance(profile, str):
             return None, web.json_response(
                 {"error": "profile must be string"}, status=400
+            )
+        if not registry.get_profile(profile):
+            return None, web.json_response(
+                {"error": f"Unknown profile: {profile}"}, status=400
             )
         if not isinstance(requirements, str):
             return None, web.json_response(
@@ -295,6 +318,20 @@ class AssistHandlers:
                 with contextlib.suppress(BaseException):
                     await runner_task
         return response
+
+    @endpoint_metadata(
+        auth=AuthTier.ADMIN,
+        risk=RiskTier.LOW,
+        summary="List planner profiles",
+        description="Returns Prompt Planner profiles from the active registry.",
+        audit="assist.planner_profiles",
+        plane=RoutePlane.ADMIN,
+    )
+    async def planner_profiles_handler(self, request):
+        auth_resp = await self._require_admin_and_rate_limit(request)
+        if auth_resp:
+            return auth_resp
+        return web.json_response(_planner_profiles_payload())
 
     @endpoint_metadata(
         auth=AuthTier.ADMIN,

@@ -91,6 +91,17 @@ Deployment profiles and hardening checklists:
 
 <details>
 
+<summary><strong>Planner registry externalization with runtime-safe profile alignment</strong></summary>
+
+- Moved planner profiles and the planner system prompt into validated file-backed defaults under `data/planner/`, with state-dir override precedence for operator-managed customization without source edits.
+- Added a planner profile list API so the Assist planner route, Prompt Planner node, and Planner tab resolve profiles from one synchronized source-of-truth.
+- Kept runtime behavior fail-closed with schema validation, prompt placeholder validation, embedded fallback defaults, and lazy reload on planner file changes.
+- Completed full verification gate pass on `dev` (detect-secrets, pre-commit, backend unit suites, adversarial/retry/real-backend lanes, and frontend Playwright E2E).
+
+</details>
+
+<details>
+
 <summary><strong>Frontend quality baseline for Library and Approvals surfaces</strong></summary>
 
 - Canonicalized active frontend styling ownership around `openclaw-*`, including shell/tab-manager cleanup and a deterministic split of `web/openclaw.css` into core and legacy-alias modules.
@@ -774,6 +785,7 @@ Access control:
 - `POST /openclaw/llm/chat` -connector chat completion path (admin boundary)
 - `GET /openclaw/llm/models` -fetch model list for selected provider/base URL
 - `POST /openclaw/assist/planner` -planner structured prompt generation (admin boundary)
+- `GET /openclaw/assist/planner/profiles` -active planner profile registry metadata for node/UI alignment
 - `POST /openclaw/assist/refiner` -prompt refinement with optional image context (admin boundary)
 - `POST /openclaw/assist/planner/stream` -optional SSE-style planner streaming path (`text/event-stream`, admin boundary)
 - `POST /openclaw/assist/refiner/stream` -optional SSE-style refiner streaming path (`text/event-stream`, admin boundary)
@@ -782,6 +794,10 @@ Notes:
 
 - Queue submission uses `OPENCLAW_COMFYUI_URL` (default `http://127.0.0.1:8188`).
 - Planner/Refiner UI uses capability-gated assist streaming when available and falls back to the non-stream endpoints automatically.
+- Planner profiles/system prompt are file-backed:
+  - package defaults: `data/planner/profiles.json`, `data/planner/system_prompt.txt`
+  - operator overrides: `<OPENCLAW_STATE_DIR>/planner/profiles.json`, `<OPENCLAW_STATE_DIR>/planner/system_prompt.txt`
+  - invalid overrides fail closed to validated lower-precedence defaults
 - `PUT /openclaw/config` now returns apply metadata so callers can reason about what actually took effect:
   - `apply.ok`, `apply.requires_restart`, `apply.applied_keys`
   - `apply.effective_provider`, `apply.effective_model`

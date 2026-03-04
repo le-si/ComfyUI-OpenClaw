@@ -28,7 +28,9 @@ class TestS70SSRFPinningRegression(unittest.TestCase):
             captured["kwargs"] = kwargs
             raise RuntimeError("captured")
 
-        with patch.object(urllib.request.AbstractHTTPHandler, "do_open", _capture_do_open):
+        with patch.object(
+            urllib.request.AbstractHTTPHandler, "do_open", _capture_do_open
+        ):
             with self.assertRaises(RuntimeError) as ctx:
                 method(request)
 
@@ -87,7 +89,9 @@ class TestS70SSRFPinningRegression(unittest.TestCase):
                 "socket.create_connection",
                 side_effect=[OSError("first ip down"), raw_sock],
             ) as mock_create,
-            patch.object(context, "wrap_socket", return_value=wrapped_sock) as mock_wrap,
+            patch.object(
+                context, "wrap_socket", return_value=wrapped_sock
+            ) as mock_wrap,
         ):
             conn.connect()
 

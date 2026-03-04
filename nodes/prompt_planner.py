@@ -3,12 +3,14 @@ import logging
 from typing import Tuple
 
 try:
-    from ..services.planner import PROFILES, PlannerService
+    from ..services.planner import PlannerService
+    from ..services.planner_registry import get_planner_registry
 except ImportError as e:
     # Only fall back when ComfyUI loads this module without a proper package context.
     msg = str(e)
     if ("attempted relative import" in msg) or ("no known parent package" in msg):
-        from services.planner import PROFILES, PlannerService
+        from services.planner import PlannerService
+        from services.planner_registry import get_planner_registry
     else:
         raise
 
@@ -27,11 +29,13 @@ class OpenClawPromptPlanner:
 
     @classmethod
     def INPUT_TYPES(cls):
-        # Use keys from shared PROFILES
-        profile_keys = list(PROFILES.keys())
+        profile_keys = [
+            profile.id for profile in get_planner_registry().list_profiles()
+        ]
+        default_profile = get_planner_registry().get_default_profile_id()
         return {
             "required": {
-                "profile": (profile_keys, {"default": "SDXL-v1"}),
+                "profile": (profile_keys, {"default": default_profile}),
                 "requirements": (
                     "STRING",
                     {
