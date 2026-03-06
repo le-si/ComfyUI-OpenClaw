@@ -7,6 +7,7 @@ import shutil
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 from services.presets.models import Preset
 from services.presets.storage import PresetStore
@@ -76,6 +77,23 @@ class TestPresetStorage(unittest.TestCase):
         store2 = PresetStore(storage_dir=self.tmp_dir)
         loaded = store2.get_preset(p.id)
         self.assertEqual(loaded.name, "Persistent")
+
+    def test_multi_tenant_visibility_filter(self):
+        """S49: preset visibility must be tenant-isolated in multi-tenant mode."""
+        p1 = Preset.new("A", {})
+        p1.tenant_id = "tenant-a"
+        p2 = Preset.new("B", {})
+        p2.tenant_id = "tenant-b"
+        self.store.save_preset(p1)
+        self.store.save_preset(p2)
+
+        with patch.dict("os.environ", {"OPENCLAW_MULTI_TENANT_ENABLED": "1"}):
+            tenant_a = self.store.list_presets(tenant_id="tenant-a")
+            self.assertEqual(len(tenant_a), 1)
+            self.assertEqual(tenant_a[0].tenant_id, "tenant-a")
+
+            self.assertIsNone(self.store.get_preset(p2.id, tenant_id="tenant-a"))
+            self.assertFalse(self.store.delete_preset(p2.id, tenant_id="tenant-a"))
 
 
 if __name__ == "__main__":

@@ -30,6 +30,21 @@ try:
 except ImportError:
     from services.providers.catalog import get_provider_info  # type: ignore
 
+try:
+    from .tenant_context import (
+        DEFAULT_TENANT_ID,
+        get_current_tenant_id,
+        is_multi_tenant_enabled,
+        normalize_tenant_id,
+    )
+except ImportError:
+    from services.tenant_context import (  # type: ignore
+        DEFAULT_TENANT_ID,
+        get_current_tenant_id,
+        is_multi_tenant_enabled,
+        normalize_tenant_id,
+    )
+
 logger = logging.getLogger("ComfyUI-OpenClaw.services.secret_providers")
 
 _TRUTHY = {"1", "true", "yes", "on"}
@@ -57,7 +72,7 @@ def _env_value(
 class SecretProvider(Protocol):
     source: str
 
-    def get_secret(self, provider: str) -> Optional[str]: ...
+    def get_secret(self, provider: str, tenant_id: str) -> Optional[str]: ...
 
 
 class EnvSecretProvider:
@@ -74,7 +89,7 @@ class EnvSecretProvider:
         candidates.append(info.env_key_name)
         return candidates
 
-    def get_secret(self, provider: str) -> Optional[str]:
+    def get_secret(self, provider: str, tenant_id: str) -> Optional[str]:
         # Provider-specific first
         for env_name in self._provider_env_candidates(provider):
             value = os.environ.get(env_name)
@@ -119,11 +134,14 @@ class OnePasswordSecretProvider:
         ).strip()
 
     def _item_template(self) -> str:
+        default_template = "openclaw/{provider}"
+        if is_multi_tenant_enabled():
+            default_template = "openclaw/{tenant}/{provider}"
         return str(
             _env_value(
                 "OPENCLAW_1PASSWORD_ITEM_TEMPLATE",
                 "MOLTBOT_1PASSWORD_ITEM_TEMPLATE",
-                "openclaw/{provider}",
+                default_template,
             )
             or ""
         ).strip()
@@ -182,16 +200,21 @@ class OnePasswordSecretProvider:
                 "S11: 1Password item template must include '{provider}'; fail-closed."
             )
             return False
+        if is_multi_tenant_enabled() and "{tenant}" not in template:
+            logger.warning(
+                "S49/S11: 1Password item template must include '{tenant}' in multi-tenant mode; fail-closed."
+            )
+            return False
         return True
 
-    def _build_ref(self, provider: str) -> Optional[str]:
+    def _build_ref(self, provider: str, tenant_id: str) -> Optional[str]:
         if not _PROVIDER_ID_RE.fullmatch(provider):
             logger.warning(
                 "S11: Invalid provider id for 1Password lookup; fail-closed."
             )
             return None
         template = self._item_template()
-        item = template.format(provider=provider)
+        item = template.format(provider=provider, tenant=tenant_id)
         if not item or not _ITEM_RE.fullmatch(item) or ".." in item:
             logger.warning("S11: 1Password item name is invalid; fail-closed.")
             return None
@@ -237,18 +260,18 @@ class OnePasswordSecretProvider:
         value = (completed.stdout or "").strip()
         return value or None
 
-    def get_secret(self, provider: str) -> Optional[str]:
+    def get_secret(self, provider: str, tenant_id: str) -> Optional[str]:
         if not self.is_available():
             return None
 
-        provider_ref = self._build_ref(provider)
+        provider_ref = self._build_ref(provider, tenant_id)
         if provider_ref:
             value = self._read_ref(provider_ref, provider)
             if value:
                 return value
 
         if provider != "generic":
-            generic_ref = self._build_ref("generic")
+            generic_ref = self._build_ref("generic", tenant_id)
             if generic_ref:
                 return self._read_ref(generic_ref, "generic")
         return None
@@ -257,7 +280,7 @@ class OnePasswordSecretProvider:
 class ServerStoreSecretProvider:
     source = "server_store"
 
-    def get_secret(self, provider: str) -> Optional[str]:
+    def get_secret(self, provider: str, tenant_id: str) -> Optional[str]:
         try:
             from .secret_store import get_secret_store
         except ImportError:
@@ -265,11 +288,11 @@ class ServerStoreSecretProvider:
 
         try:
             store = get_secret_store()
-            value = store.get_secret(provider)
+            value = store.get_secret(provider, tenant_id=tenant_id)
             if value:
                 return value
             if provider != "generic":
-                return store.get_secret("generic")
+                return store.get_secret("generic", tenant_id=tenant_id)
         except Exception as exc:
             logger.debug(
                 "S25/S11: secret store lookup failed (non-fatal): %s",
@@ -287,15 +310,21 @@ def get_secret_providers() -> list[SecretProvider]:
     ]
 
 
-def resolve_provider_secret(provider: str) -> tuple[Optional[str], Optional[str]]:
+def resolve_provider_secret(
+    provider: str, tenant_id: Optional[str] = None
+) -> tuple[Optional[str], Optional[str]]:
     """
     Resolve a provider secret through the configured provider chain.
 
     Returns:
         (secret, source) where source in {"env","onepassword","server_store"} or None.
     """
+    effective_tenant = normalize_tenant_id(
+        tenant_id or get_current_tenant_id() or DEFAULT_TENANT_ID
+    )
+
     for resolver in get_secret_providers():
-        secret = resolver.get_secret(provider)
+        secret = resolver.get_secret(provider, effective_tenant)
         if secret:
             return secret, resolver.source
     return None, None

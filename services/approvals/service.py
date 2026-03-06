@@ -8,6 +8,11 @@ import os
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional
 
+from ..tenant_context import (
+    DEFAULT_TENANT_ID,
+    get_current_tenant_id,
+    normalize_tenant_id,
+)
 from ..trace import generate_trace_id
 from .models import ApprovalRequest, ApprovalSource, ApprovalStatus
 from .storage import get_approval_store
@@ -38,6 +43,7 @@ class ApprovalService:
         inputs: Dict[str, Any],
         source: ApprovalSource = ApprovalSource.TRIGGER,
         trace_id: Optional[str] = None,
+        tenant_id: Optional[str] = None,
         requested_by: Optional[str] = None,
         delivery: Optional[Dict[str, Any]] = None,
         ttl_sec: Optional[int] = None,
@@ -65,6 +71,9 @@ class ApprovalService:
         # Generate IDs
         approval_id = ApprovalRequest.generate_id()
         trace_id = trace_id or generate_trace_id()
+        resolved_tenant = normalize_tenant_id(
+            tenant_id or get_current_tenant_id() or DEFAULT_TENANT_ID
+        )
 
         # Calculate expiration
         ttl = ttl_sec if ttl_sec is not None else DEFAULT_TTL_SEC
@@ -77,6 +86,7 @@ class ApprovalService:
             inputs=inputs,
             source=source,
             trace_id=trace_id,
+            tenant_id=resolved_tenant,
             status=ApprovalStatus.PENDING,
             requested_by=requested_by,
             expires_at=expires_at,
@@ -89,20 +99,30 @@ class ApprovalService:
             raise ValueError(f"Failed to create approval request: {approval_id}")
 
         logger.info(
-            f"Created approval request: {approval_id} (template={template_id}, source={source.value})"
+            "Created approval request: %s (template=%s, source=%s, tenant=%s)",
+            approval_id,
+            template_id,
+            source.value,
+            resolved_tenant,
         )
         return request
 
-    def get(self, approval_id: str) -> Optional[ApprovalRequest]:
+    def get(
+        self, approval_id: str, tenant_id: Optional[str] = None
+    ) -> Optional[ApprovalRequest]:
         """Get an approval request by ID."""
-        return self._store.get(approval_id)
+        return self._store.get(approval_id, tenant_id=tenant_id)
 
-    def list_pending(self, limit: int = 100) -> List[ApprovalRequest]:
+    def list_pending(
+        self, limit: int = 100, tenant_id: Optional[str] = None
+    ) -> List[ApprovalRequest]:
         """List pending approval requests."""
         # First expire any due requests
         self._store.expire_due()
 
-        pending = self._store.list_by_status(ApprovalStatus.PENDING)
+        pending = self._store.list_by_status(
+            ApprovalStatus.PENDING, tenant_id=tenant_id
+        )
 
         # Sort by requested_at (oldest first)
         pending.sort(key=lambda x: x.requested_at)
@@ -114,14 +134,15 @@ class ApprovalService:
         status: Optional[ApprovalStatus] = None,
         limit: int = 100,
         offset: int = 0,
+        tenant_id: Optional[str] = None,
     ) -> List[ApprovalRequest]:
         """List approval requests with optional status filter."""
         self._store.expire_due()
 
         if status:
-            approvals = self._store.list_by_status(status)
+            approvals = self._store.list_by_status(status, tenant_id=tenant_id)
         else:
-            approvals = self._store.list_all()
+            approvals = self._store.list_all(tenant_id=tenant_id)
 
         # Sort by requested_at (newest first for history)
         approvals.sort(key=lambda x: x.requested_at, reverse=True)
@@ -132,6 +153,7 @@ class ApprovalService:
         self,
         approval_id: str,
         actor: Optional[str] = None,
+        tenant_id: Optional[str] = None,
     ) -> ApprovalRequest:
         """
         Approve a pending request.
@@ -146,7 +168,7 @@ class ApprovalService:
         Raises:
             ValueError: If request not found or not pending.
         """
-        request = self._store.get(approval_id)
+        request = self._store.get(approval_id, tenant_id=tenant_id)
 
         if not request:
             raise ValueError(f"Approval request not found: {approval_id}")
@@ -170,6 +192,7 @@ class ApprovalService:
         self,
         approval_id: str,
         actor: Optional[str] = None,
+        tenant_id: Optional[str] = None,
     ) -> ApprovalRequest:
         """
         Reject a pending request.
@@ -184,7 +207,7 @@ class ApprovalService:
         Raises:
             ValueError: If request not found or not pending.
         """
-        request = self._store.get(approval_id)
+        request = self._store.get(approval_id, tenant_id=tenant_id)
 
         if not request:
             raise ValueError(f"Approval request not found: {approval_id}")
@@ -204,6 +227,7 @@ class ApprovalService:
         prompt_id: str,
         trace_id: Optional[str] = None,
         actor: Optional[str] = None,
+        tenant_id: Optional[str] = None,
     ) -> ApprovalRequest:
         """
         Record execution metadata after an approval is executed.
@@ -211,7 +235,7 @@ class ApprovalService:
         NOTE: The chat connector relies on executed_prompt_id to deliver images
         when approvals are done in the UI. Do not remove without updating connector.
         """
-        request = self._store.get(approval_id)
+        request = self._store.get(approval_id, tenant_id=tenant_id)
 
         if not request:
             raise ValueError(f"Approval request not found: {approval_id}")
@@ -233,10 +257,10 @@ class ApprovalService:
         )
         return request
 
-    def count_pending(self) -> int:
+    def count_pending(self, tenant_id: Optional[str] = None) -> int:
         """Count pending approval requests."""
         self._store.expire_due()
-        return self._store.count_pending()
+        return self._store.count_pending(tenant_id=tenant_id)
 
 
 # Singleton instance

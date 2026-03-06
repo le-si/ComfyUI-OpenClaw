@@ -14,10 +14,22 @@ try:
     from .audit import emit_audit_event
     from .secret_store import SecretStore, get_secret_store
     from .state_dir import get_state_dir
+    from .tenant_context import (
+        DEFAULT_TENANT_ID,
+        get_current_tenant_id,
+        is_multi_tenant_enabled,
+        normalize_tenant_id,
+    )
 except ImportError:
     from services.audit import emit_audit_event  # type: ignore
     from services.secret_store import SecretStore, get_secret_store  # type: ignore
     from services.state_dir import get_state_dir  # type: ignore
+    from services.tenant_context import (  # type: ignore
+        DEFAULT_TENANT_ID,
+        get_current_tenant_id,
+        is_multi_tenant_enabled,
+        normalize_tenant_id,
+    )
 
 logger = logging.getLogger("ComfyUI-OpenClaw.services.connector_installation_registry")
 
@@ -44,6 +56,7 @@ class ConnectorInstallation:
     platform: str
     workspace_id: str
     installation_id: str
+    tenant_id: str = DEFAULT_TENANT_ID
     token_refs: Dict[str, str] = field(default_factory=dict)
     status: str = InstallationStatus.CREATED.value
     updated_at: float = field(default_factory=time.time)
@@ -54,6 +67,7 @@ class ConnectorInstallation:
     def to_public_dict(self) -> Dict[str, Any]:
         return {
             "platform": self.platform,
+            "tenant_id": self.tenant_id,
             "workspace_id": self.workspace_id,
             "installation_id": self.installation_id,
             "token_refs": dict(self.token_refs),
@@ -71,6 +85,7 @@ class InstallationAuditEvent:
     action: str
     installation_id: str
     platform: str
+    tenant_id: str
     workspace_id: str
     status: str
     details: Dict[str, Any] = field(default_factory=dict)
@@ -81,6 +96,7 @@ class InstallationAuditEvent:
             "action": self.action,
             "installation_id": self.installation_id,
             "platform": self.platform,
+            "tenant_id": self.tenant_id,
             "workspace_id": self.workspace_id,
             "status": self.status,
             "details": dict(self.details),
@@ -132,14 +148,14 @@ class ConnectorInstallationRegistry:
         return self._normalize_identifier(platform, "platform").lower()
 
     def _store_token_refs(
-        self, installation_id: str, token_values: Dict[str, str]
+        self, installation_id: str, token_values: Dict[str, str], tenant_id: str
     ) -> Dict[str, str]:
         refs: Dict[str, str] = {}
         for key, value in (token_values or {}).items():
             name = self._normalize_identifier(key, "token_name")
             secret_value = self._normalize_identifier(value, f"token:{name}")
             ref = f"connector_installation:{installation_id}:{name}"
-            self._secret_store.set_secret(ref, secret_value)
+            self._secret_store.set_secret(ref, secret_value, tenant_id=tenant_id)
             refs[name] = ref
         return refs
 
@@ -154,6 +170,7 @@ class ConnectorInstallationRegistry:
             action=action,
             installation_id=installation.installation_id,
             platform=installation.platform,
+            tenant_id=installation.tenant_id,
             workspace_id=installation.workspace_id,
             status=installation.status,
             details=details,
@@ -168,6 +185,7 @@ class ConnectorInstallationRegistry:
             status_code=200,
             details={
                 "platform": installation.platform,
+                "tenant_id": installation.tenant_id,
                 "workspace_id": installation.workspace_id,
                 "status": installation.status,
                 **details,
@@ -185,6 +203,7 @@ class ConnectorInstallationRegistry:
             for item in installations:
                 inst = ConnectorInstallation(
                     platform=item.get("platform", ""),
+                    tenant_id=item.get("tenant_id", DEFAULT_TENANT_ID),
                     workspace_id=item.get("workspace_id", ""),
                     installation_id=item.get("installation_id", ""),
                     token_refs=dict(item.get("token_refs", {}) or {}),
@@ -202,6 +221,7 @@ class ConnectorInstallationRegistry:
                     action=item.get("action", "unknown"),
                     installation_id=item.get("installation_id", ""),
                     platform=item.get("platform", ""),
+                    tenant_id=item.get("tenant_id", DEFAULT_TENANT_ID),
                     workspace_id=item.get("workspace_id", ""),
                     status=item.get("status", ""),
                     details=dict(item.get("details", {}) or {}),
@@ -228,6 +248,7 @@ class ConnectorInstallationRegistry:
         self,
         *,
         platform: str,
+        tenant_id: str = DEFAULT_TENANT_ID,
         workspace_id: str,
         installation_id: str,
         token_values: Optional[Dict[str, str]] = None,
@@ -238,6 +259,7 @@ class ConnectorInstallationRegistry:
     ) -> ConnectorInstallation:
         with self._lock:
             normalized_platform = self._normalize_platform(platform)
+            normalized_tenant = normalize_tenant_id(tenant_id)
             normalized_workspace = self._normalize_identifier(
                 workspace_id, "workspace_id"
             )
@@ -248,7 +270,9 @@ class ConnectorInstallationRegistry:
             refs = dict(token_refs or {})
             if token_values:
                 refs.update(
-                    self._store_token_refs(normalized_installation, token_values)
+                    self._store_token_refs(
+                        normalized_installation, token_values, normalized_tenant
+                    )
                 )
             existing = self._installations.get(normalized_installation)
             if existing is None:
@@ -259,6 +283,7 @@ class ConnectorInstallationRegistry:
                     refs = dict(existing.token_refs)
             inst = ConnectorInstallation(
                 platform=normalized_platform,
+                tenant_id=normalized_tenant,
                 workspace_id=normalized_workspace,
                 installation_id=normalized_installation,
                 token_refs=refs,
@@ -273,15 +298,25 @@ class ConnectorInstallationRegistry:
             self._save()
             return inst
 
-    def get_installation(self, installation_id: str) -> Optional[ConnectorInstallation]:
+    def get_installation(
+        self, installation_id: str, tenant_id: Optional[str] = None
+    ) -> Optional[ConnectorInstallation]:
         with self._lock:
             inst = self._installations.get(str(installation_id).strip())
+            if (
+                inst is not None
+                and is_multi_tenant_enabled()
+                and tenant_id is not None
+                and inst.tenant_id != normalize_tenant_id(tenant_id)
+            ):
+                return None
             return None if inst is None else ConnectorInstallation(**asdict(inst))
 
     def list_installations(
         self,
         *,
         platform: Optional[str] = None,
+        tenant_id: Optional[str] = None,
         workspace_id: Optional[str] = None,
         status: Optional[str] = None,
     ) -> List[ConnectorInstallation]:
@@ -291,6 +326,9 @@ class ConnectorInstallationRegistry:
                 items = [
                     i for i in items if i.platform == self._normalize_platform(platform)
                 ]
+            if tenant_id:
+                normalized_tenant = normalize_tenant_id(tenant_id)
+                items = [i for i in items if i.tenant_id == normalized_tenant]
             if workspace_id:
                 items = [
                     i for i in items if i.workspace_id == str(workspace_id).strip()
@@ -300,6 +338,7 @@ class ConnectorInstallationRegistry:
             items.sort(
                 key=lambda inst: (
                     inst.platform,
+                    inst.tenant_id,
                     inst.workspace_id,
                     inst.installation_id,
                 )
@@ -349,7 +388,11 @@ class ConnectorInstallationRegistry:
             if inst is None:
                 raise ValueError(f"Installation not found: {installation_id}")
             refs = dict(inst.token_refs)
-            refs.update(self._store_token_refs(inst.installation_id, token_values))
+            refs.update(
+                self._store_token_refs(
+                    inst.installation_id, token_values, inst.tenant_id
+                )
+            )
             inst.token_refs = refs
             inst.status = InstallationStatus.ROTATING.value
             inst.status_reason = reason
@@ -392,7 +435,7 @@ class ConnectorInstallationRegistry:
             if inst is None:
                 raise ValueError(f"Installation not found: {installation_id}")
             for ref in list(inst.token_refs.values()):
-                self._secret_store.clear_secret(ref)
+                self._secret_store.clear_secret(ref, tenant_id=inst.tenant_id)
             inst.status = InstallationStatus.UNINSTALLED.value
             inst.status_reason = reason
             inst.updated_at = time.time()
@@ -402,12 +445,15 @@ class ConnectorInstallationRegistry:
             return ConnectorInstallation(**asdict(inst))
 
     def resolve_installation(
-        self, platform: str, workspace_id: str
+        self, platform: str, workspace_id: str, tenant_id: Optional[str] = None
     ) -> InstallationResolution:
         with self._lock:
             normalized_platform = self._normalize_platform(platform)
             normalized_workspace = self._normalize_identifier(
                 workspace_id, "workspace_id"
+            )
+            normalized_tenant = normalize_tenant_id(
+                tenant_id or get_current_tenant_id() or DEFAULT_TENANT_ID
             )
             matches = [
                 inst
@@ -415,6 +461,17 @@ class ConnectorInstallationRegistry:
                 if inst.platform == normalized_platform
                 and inst.workspace_id == normalized_workspace
             ]
+            if is_multi_tenant_enabled():
+                tenant_matches = [
+                    inst for inst in matches if inst.tenant_id == normalized_tenant
+                ]
+                if not tenant_matches and matches:
+                    return InstallationResolution(
+                        ok=False,
+                        reject_reason="tenant_mismatch",
+                        audit_code="conn_install.resolve_tenant_mismatch",
+                    )
+                matches = tenant_matches
             eligible = [inst for inst in matches if inst.status in _RESOLVABLE_STATUSES]
             if len(eligible) > 1:
                 return InstallationResolution(
@@ -436,7 +493,7 @@ class ConnectorInstallationRegistry:
                 )
             inst = eligible[0]
             for token_name, ref in inst.token_refs.items():
-                if not self._secret_store.get_secret(ref):
+                if not self._secret_store.get_secret(ref, tenant_id=inst.tenant_id):
                     return InstallationResolution(
                         ok=False,
                         reject_reason=f"stale_token_ref:{token_name}",
@@ -452,6 +509,7 @@ class ConnectorInstallationRegistry:
         self,
         *,
         installation_id: Optional[str] = None,
+        tenant_id: Optional[str] = None,
         limit: int = 100,
     ) -> List[Dict[str, Any]]:
         with self._lock:
@@ -462,15 +520,24 @@ class ConnectorInstallationRegistry:
                     for event in items
                     if event.installation_id == str(installation_id).strip()
                 ]
+            if tenant_id:
+                normalized_tenant = normalize_tenant_id(tenant_id)
+                items = [
+                    event for event in items if event.tenant_id == normalized_tenant
+                ]
             return [event.to_dict() for event in items[-max(1, min(limit, 500)) :]]
 
-    def diagnostics(self) -> Dict[str, Any]:
+    def diagnostics(self, tenant_id: Optional[str] = None) -> Dict[str, Any]:
         with self._lock:
             counts: Dict[str, int] = {}
-            for inst in self._installations.values():
+            items = list(self._installations.values())
+            if tenant_id:
+                normalized_tenant = normalize_tenant_id(tenant_id)
+                items = [inst for inst in items if inst.tenant_id == normalized_tenant]
+            for inst in items:
                 counts[inst.status] = counts.get(inst.status, 0) + 1
             return {
-                "installation_count": len(self._installations),
+                "installation_count": len(items),
                 "status_counts": counts,
                 "audit_events": len(self._audit_trail),
             }

@@ -9,6 +9,11 @@ from pathlib import Path
 from typing import Dict, List, Optional
 
 from ..paths import get_presets_dir
+from ..tenant_context import (
+    DEFAULT_TENANT_ID,
+    is_multi_tenant_enabled,
+    normalize_tenant_id,
+)
 from .models import Preset
 
 logger = logging.getLogger("ComfyUI-OpenClaw.services.presets")
@@ -25,8 +30,25 @@ class PresetStore:
     def _get_path(self, preset_id: str) -> Path:
         return self.storage_dir / f"{preset_id}.json"
 
+    def _resolve_tenant_id(self, tenant_id: Optional[str]) -> Optional[str]:
+        if not is_multi_tenant_enabled():
+            return None
+        try:
+            return normalize_tenant_id(tenant_id or DEFAULT_TENANT_ID)
+        except Exception:
+            return DEFAULT_TENANT_ID
+
+    def _is_visible_to_tenant(self, preset: Preset, tenant_id: Optional[str]) -> bool:
+        resolved = self._resolve_tenant_id(tenant_id)
+        if resolved is None:
+            return True
+        return preset.tenant_id == resolved
+
     def list_presets(
-        self, category: Optional[str] = None, tag: Optional[str] = None
+        self,
+        category: Optional[str] = None,
+        tag: Optional[str] = None,
+        tenant_id: Optional[str] = None,
     ) -> List[Preset]:
         """List all presets, optionally filtered."""
         presets = []
@@ -35,6 +57,8 @@ class PresetStore:
                 try:
                     p = self._load_file(file_path)
                     if p:
+                        if not self._is_visible_to_tenant(p, tenant_id):
+                            continue
                         if category and p.category != category:
                             continue
                         if tag and tag not in p.tags:
@@ -50,15 +74,29 @@ class PresetStore:
         presets.sort(key=lambda x: x.updated_at, reverse=True)
         return presets
 
-    def get_preset(self, preset_id: str) -> Optional[Preset]:
+    def get_preset(
+        self, preset_id: str, tenant_id: Optional[str] = None
+    ) -> Optional[Preset]:
         """Get a specific preset."""
         path = self._get_path(preset_id)
         if not path.exists():
             return None
-        return self._load_file(path)
+        preset = self._load_file(path)
+        if preset is None:
+            return None
+        if not self._is_visible_to_tenant(preset, tenant_id):
+            return None
+        return preset
 
     def save_preset(self, preset: Preset) -> bool:
         """Save/Update a preset."""
+        try:
+            preset.tenant_id = normalize_tenant_id(
+                getattr(preset, "tenant_id", DEFAULT_TENANT_ID),
+                field_name="tenant_id",
+            )
+        except Exception:
+            preset.tenant_id = DEFAULT_TENANT_ID
         path = self._get_path(preset.id)
         try:
             with open(path, "w", encoding="utf-8") as f:
@@ -69,10 +107,13 @@ class PresetStore:
             logger.error(f"Failed to save preset {preset.id}: {e}")
             return False
 
-    def delete_preset(self, preset_id: str) -> bool:
+    def delete_preset(self, preset_id: str, tenant_id: Optional[str] = None) -> bool:
         """Delete a preset."""
         path = self._get_path(preset_id)
         if not path.exists():
+            return False
+        preset = self._load_file(path)
+        if preset is not None and not self._is_visible_to_tenant(preset, tenant_id):
             return False
         try:
             path.unlink()

@@ -11,7 +11,7 @@ from typing import Optional
 from aiohttp import web
 
 try:
-    from ..services.access_control import require_admin_token
+    from ..services.access_control import require_admin_token, resolve_token_info
     from ..services.endpoint_manifest import (
         AuthTier,
         RiskTier,
@@ -19,9 +19,10 @@ try:
         endpoint_metadata,
     )
     from ..services.presets import Preset, preset_store
+    from ..services.tenant_context import TenantBoundaryError, request_tenant_scope
 except ImportError:
     # Fallback for ComfyUI's non-package loader or ad-hoc imports.
-    from services.access_control import require_admin_token
+    from services.access_control import require_admin_token, resolve_token_info
     from services.endpoint_manifest import (
         AuthTier,
         RiskTier,
@@ -29,6 +30,7 @@ except ImportError:
         endpoint_metadata,
     )
     from services.presets import Preset, preset_store
+    from services.tenant_context import TenantBoundaryError, request_tenant_scope
 
 logger = logging.getLogger("ComfyUI-OpenClaw.api.presets")
 
@@ -73,9 +75,24 @@ class PresetHandlers:
 
         category = request.query.get("category")
         tag = request.query.get("tag")
-
-        presets = preset_store.list_presets(category=category, tag=tag)
-        return web.json_response([p.to_dict() for p in presets])
+        token_info = resolve_token_info(request)
+        try:
+            with request_tenant_scope(
+                request=request,
+                token_info=token_info,
+                allow_default_when_missing=True,
+            ) as tenant:
+                presets = preset_store.list_presets(
+                    category=category,
+                    tag=tag,
+                    tenant_id=tenant.tenant_id,
+                )
+                return web.json_response([p.to_dict() for p in presets])
+        except TenantBoundaryError as exc:
+            return web.json_response(
+                {"error": exc.code, "message": str(exc)},
+                status=403,
+            )
 
     @endpoint_metadata(
         auth=AuthTier.PUBLIC,  # Conditionally public
@@ -108,11 +125,23 @@ class PresetHandlers:
         if not preset_id:
             return web.json_response({"error": "Missing ID"}, status=400)
 
-        preset = preset_store.get_preset(preset_id)
-        if not preset:
-            return web.json_response({"error": "Not Found"}, status=404)
+        token_info = resolve_token_info(request)
+        try:
+            with request_tenant_scope(
+                request=request,
+                token_info=token_info,
+                allow_default_when_missing=True,
+            ) as tenant:
+                preset = preset_store.get_preset(preset_id, tenant_id=tenant.tenant_id)
+                if not preset:
+                    return web.json_response({"error": "Not Found"}, status=404)
 
-        return web.json_response(preset.to_dict())
+                return web.json_response(preset.to_dict())
+        except TenantBoundaryError as exc:
+            return web.json_response(
+                {"error": exc.code, "message": str(exc)},
+                status=403,
+            )
 
     @endpoint_metadata(
         auth=AuthTier.ADMIN,
@@ -138,28 +167,40 @@ class PresetHandlers:
 
         if not name or not content:
             return web.json_response({"error": "Name and Content required"}, status=400)
+        token_info = resolve_token_info(request)
         try:
-            # Create object
-            preset = Preset.new(
-                name=data["name"],
-                content=data["content"],
-                category=data.get("category", "general"),
-                tags=data.get("tags", []),
-            )
-
-            # Milestone E: Schema Validation
-            try:
-                preset.validate_content()
-            except ValueError as e:
-                return web.json_response(
-                    {"error": f"Validation Error: {str(e)}"}, status=400
+            with request_tenant_scope(
+                request=request,
+                token_info=token_info,
+                allow_default_when_missing=True,
+            ) as tenant:
+                # Create object
+                preset = Preset.new(
+                    name=data["name"],
+                    content=data["content"],
+                    category=data.get("category", "general"),
+                    tags=data.get("tags", []),
                 )
+                preset.tenant_id = tenant.tenant_id
 
-            # Save
-            preset_store.save_preset(preset)
-            logger.info(f"Created preset {preset.id} ({preset.name})")
+                # Milestone E: Schema Validation
+                try:
+                    preset.validate_content()
+                except ValueError as e:
+                    return web.json_response(
+                        {"error": f"Validation Error: {str(e)}"}, status=400
+                    )
 
-            return web.json_response(preset.to_dict(), status=201)
+                # Save
+                preset_store.save_preset(preset)
+                logger.info(f"Created preset {preset.id} ({preset.name})")
+
+                return web.json_response(preset.to_dict(), status=201)
+        except TenantBoundaryError as exc:
+            return web.json_response(
+                {"error": exc.code, "message": str(exc)},
+                status=403,
+            )
         except Exception as e:
             logger.error(f"Failed to create preset: {e}")
             return web.json_response({"error": str(e)}, status=500)
@@ -182,37 +223,49 @@ class PresetHandlers:
         if not preset_id:
             return web.json_response({"error": "Missing ID"}, status=400)
 
-        preset = preset_store.get_preset(preset_id)
-        if not preset:
-            return web.json_response({"error": "Not Found"}, status=404)
-
+        token_info = resolve_token_info(request)
         try:
-            data = await request.json()
-        except Exception:
-            return web.json_response({"error": "Invalid JSON"}, status=400)
+            with request_tenant_scope(
+                request=request,
+                token_info=token_info,
+                allow_default_when_missing=True,
+            ) as tenant:
+                preset = preset_store.get_preset(preset_id, tenant_id=tenant.tenant_id)
+                if not preset:
+                    return web.json_response({"error": "Not Found"}, status=404)
 
-        # Update fields
-        if "name" in data:
-            preset.name = data["name"]
-        if "content" in data:
-            preset.content = data["content"]
-        if "category" in data:
-            preset.category = data["category"]
-        if "tags" in data:
-            preset.tags = data["tags"]
+                try:
+                    data = await request.json()
+                except Exception:
+                    return web.json_response({"error": "Invalid JSON"}, status=400)
 
-        # Milestone E: Schema Validation
-        try:
-            preset.validate_content()
-        except ValueError as e:
+                # Update fields
+                if "name" in data:
+                    preset.name = data["name"]
+                if "content" in data:
+                    preset.content = data["content"]
+                if "category" in data:
+                    preset.category = data["category"]
+                if "tags" in data:
+                    preset.tags = data["tags"]
+
+                # Milestone E: Schema Validation
+                try:
+                    preset.validate_content()
+                except ValueError as e:
+                    return web.json_response(
+                        {"error": f"Validation Error: {str(e)}"}, status=400
+                    )
+
+                preset.updated_at = time.time()
+                preset_store.save_preset(preset)
+
+                return web.json_response(preset.to_dict())
+        except TenantBoundaryError as exc:
             return web.json_response(
-                {"error": f"Validation Error: {str(e)}"}, status=400
+                {"error": exc.code, "message": str(exc)},
+                status=403,
             )
-
-        preset.updated_at = time.time()
-        preset_store.save_preset(preset)
-
-        return web.json_response(preset.to_dict())
 
     @endpoint_metadata(
         auth=AuthTier.ADMIN,
@@ -232,10 +285,21 @@ class PresetHandlers:
         if not preset_id:
             return web.json_response({"error": "Missing ID"}, status=400)
 
-        if preset_store.delete_preset(preset_id):
-            return web.json_response({"ok": True})
-        else:
-            return web.json_response({"error": "Not Found or Failed"}, status=404)
+        token_info = resolve_token_info(request)
+        try:
+            with request_tenant_scope(
+                request=request,
+                token_info=token_info,
+                allow_default_when_missing=True,
+            ) as tenant:
+                if preset_store.delete_preset(preset_id, tenant_id=tenant.tenant_id):
+                    return web.json_response({"ok": True})
+                return web.json_response({"error": "Not Found or Failed"}, status=404)
+        except TenantBoundaryError as exc:
+            return web.json_response(
+                {"error": exc.code, "message": str(exc)},
+                status=403,
+            )
 
 
 def register_preset_routes(app: web.Application):

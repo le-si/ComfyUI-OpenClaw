@@ -9,6 +9,7 @@ import ipaddress
 import logging
 import os
 import uuid
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from typing import Dict, List, Optional, Set, Tuple
 
@@ -18,6 +19,12 @@ except ImportError:
     web = None
 
 from .request_ip import get_client_ip
+from .tenant_context import (
+    DEFAULT_TENANT_ID,
+    extract_tenant_from_headers,
+    is_multi_tenant_enabled,
+    normalize_tenant_id,
+)
 
 # S46: Scoped RBAC & Tiered Access
 try:
@@ -97,6 +104,7 @@ class TokenInfo:
     scopes: Set[str] = field(default_factory=set)
     created_at: float = 0.0
     expires_at: Optional[float] = None
+    tenant_id: str = DEFAULT_TENANT_ID
 
     def has_scope(self, required: str) -> bool:
         """Check if token has scope, supporting wildcards."""
@@ -123,12 +131,17 @@ class TokenRegistry:
 
     @classmethod
     def issue(
-        cls, role: "AuthTier", scopes: List[str], ttl_seconds: int = 0
+        cls,
+        role: "AuthTier",
+        scopes: List[str],
+        ttl_seconds: int = 0,
+        tenant_id: str = DEFAULT_TENANT_ID,
     ) -> Tuple[str, TokenInfo]:
         """Issue a new token."""
         secret = f"oc_{role.value}_{uuid.uuid4().hex}"
         now = datetime.datetime.now().timestamp()
         expires = (now + ttl_seconds) if ttl_seconds > 0 else None
+        normalized_tenant = normalize_tenant_id(tenant_id)
 
         info = TokenInfo(
             token_id=f"kid-{uuid.uuid4().hex[:8]}",
@@ -136,6 +149,7 @@ class TokenRegistry:
             scopes=set(scopes),
             created_at=now,
             expires_at=expires,
+            tenant_id=normalized_tenant,
         )
         cls._tokens[secret] = info
         return secret, info
@@ -153,18 +167,42 @@ class TokenRegistry:
         return cls._tokens.get(secret)
 
 
+def _header_token_value(headers: Mapping[str, str], key: str) -> str:
+    value = headers.get(key)
+    if value is None:
+        return ""
+    return str(value).strip()
+
+
+def _resolve_header_tenant(request) -> str:
+    if not is_multi_tenant_enabled():
+        return DEFAULT_TENANT_ID
+    headers = getattr(request, "headers", None)
+    if not isinstance(headers, Mapping):
+        return DEFAULT_TENANT_ID
+    try:
+        tenant = extract_tenant_from_headers(headers)
+    except Exception:
+        return DEFAULT_TENANT_ID
+    return tenant or DEFAULT_TENANT_ID
+
+
 def resolve_token_info(request) -> Optional[TokenInfo]:
     """
     Resolve the request's authentication token into a TokenInfo object.
     1. Check TokenRegistry (Dynamic)
     2. Check Environment Variables (Static)
     """
+    headers = getattr(request, "headers", None)
+    if not isinstance(headers, Mapping):
+        headers = {}
+
     # Extract token from headers
     client_token = ""
-    if request.headers.get("X-OpenClaw-Admin-Token"):
-        client_token = request.headers.get("X-OpenClaw-Admin-Token")
-    elif request.headers.get("X-Moltbot-Admin-Token"):
-        client_token = request.headers.get("X-Moltbot-Admin-Token")
+    if _header_token_value(headers, "X-OpenClaw-Admin-Token"):
+        client_token = _header_token_value(headers, "X-OpenClaw-Admin-Token")
+    elif _header_token_value(headers, "X-Moltbot-Admin-Token"):
+        client_token = _header_token_value(headers, "X-Moltbot-Admin-Token")
         try:
             from .metrics import metrics
 
@@ -175,10 +213,10 @@ def resolve_token_info(request) -> Optional[TokenInfo]:
         logger.warning(
             "DEPRECATION WARNING: Legacy header X-Moltbot-Admin-Token used. Please migrate to X-OpenClaw-Admin-Token."
         )
-    elif request.headers.get("X-OpenClaw-Obs-Token"):
-        client_token = request.headers.get("X-OpenClaw-Obs-Token")
-    elif request.headers.get("X-Moltbot-Obs-Token"):
-        client_token = request.headers.get("X-Moltbot-Obs-Token")
+    elif _header_token_value(headers, "X-OpenClaw-Obs-Token"):
+        client_token = _header_token_value(headers, "X-OpenClaw-Obs-Token")
+    elif _header_token_value(headers, "X-Moltbot-Obs-Token"):
+        client_token = _header_token_value(headers, "X-Moltbot-Obs-Token")
         try:
             from .metrics import metrics
 
@@ -189,6 +227,8 @@ def resolve_token_info(request) -> Optional[TokenInfo]:
         logger.warning(
             "DEPRECATION WARNING: Legacy header X-Moltbot-Obs-Token used. Please migrate to X-OpenClaw-Obs-Token."
         )
+
+    request_tenant = _resolve_header_tenant(request)
 
     # 1. Registry Check
     if client_token:
@@ -206,7 +246,12 @@ def resolve_token_info(request) -> Optional[TokenInfo]:
 
     if admin_token and client_token:
         if hmac.compare_digest(client_token, admin_token):
-            return TokenInfo(token_id="env-admin", role=AuthTier.ADMIN, scopes={"*"})
+            return TokenInfo(
+                token_id="env-admin",
+                role=AuthTier.ADMIN,
+                scopes={"*"},
+                tenant_id=request_tenant,
+            )
 
     # Observability
     obs_token = (
@@ -223,6 +268,7 @@ def resolve_token_info(request) -> Optional[TokenInfo]:
                 token_id="env-obs",
                 role=AuthTier.OBSERVABILITY,
                 scopes={"read:*"},  # S46: Wildcard for Obs
+                tenant_id=request_tenant,
             )
 
     # 3. Loopback
@@ -230,12 +276,18 @@ def resolve_token_info(request) -> Optional[TokenInfo]:
     if is_loopback(remote):
         is_admin_configured = bool(admin_token)
         if not is_admin_configured:
-            return TokenInfo(token_id="local-admin", role=AuthTier.ADMIN, scopes={"*"})
+            return TokenInfo(
+                token_id="local-admin",
+                role=AuthTier.ADMIN,
+                scopes={"*"},
+                tenant_id=request_tenant,
+            )
         else:
             return TokenInfo(
                 token_id="local-internal",
                 role=AuthTier.INTERNAL,
                 scopes={"internal:call"},
+                tenant_id=request_tenant,
             )
 
     return None

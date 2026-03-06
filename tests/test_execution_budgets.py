@@ -33,6 +33,7 @@ class TestBudgetConfig(unittest.TestCase):
         self.assertEqual(config.max_inflight_trigger, 1)
         self.assertEqual(config.max_inflight_scheduler, 1)
         self.assertEqual(config.max_inflight_bridge, 1)
+        self.assertEqual(config.max_inflight_per_tenant, 1)
         self.assertEqual(config.max_rendered_workflow_bytes, 512 * 1024)
 
     @patch.dict(
@@ -210,6 +211,37 @@ class TestExecutionBudgetLimiter(unittest.IsolatedAsyncioTestCase):
             stats = limiter.get_stats()
             self.assertEqual(stats["total"], 1)
             self.assertEqual(stats["unknown"], 1)
+
+    async def test_tenant_concurrency_cap_in_multi_tenant_mode(self):
+        """S49: per-tenant concurrency cap should be fail-closed."""
+        from services.execution_budgets import BudgetConfig
+
+        config = BudgetConfig(
+            max_inflight_total=10,
+            max_inflight_webhook=10,
+            max_inflight_trigger=10,
+            max_inflight_scheduler=10,
+            max_inflight_bridge=10,
+            max_inflight_per_tenant=1,
+            max_rendered_workflow_bytes=512 * 1024,
+        )
+        limiter = ExecutionBudgetLimiter(config)
+
+        with patch.dict("os.environ", {"OPENCLAW_MULTI_TENANT_ENABLED": "1"}):
+            async with limiter.acquire("webhook", trace_id="trc_1", tenant_id="team-a"):
+                with self.assertRaises(BudgetExceededError) as ctx:
+                    async with limiter.acquire(
+                        "trigger", trace_id="trc_2", tenant_id="team-a"
+                    ):
+                        pass
+                self.assertEqual(ctx.exception.budget_type, "tenant_concurrency")
+
+                # Different tenant should still be allowed under same global budget.
+                async with limiter.acquire(
+                    "trigger", trace_id="trc_3", tenant_id="team-b"
+                ):
+                    stats = limiter.get_stats()
+                    self.assertEqual(stats["total"], 2)
 
 
 class TestGlobalLimiterSingleton(unittest.TestCase):

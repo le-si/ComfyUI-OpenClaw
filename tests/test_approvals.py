@@ -9,6 +9,7 @@ import time
 import unittest
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+from unittest.mock import patch
 
 # Set up test state directory
 _repo_root = Path(__file__).resolve().parent.parent
@@ -292,6 +293,22 @@ class TestApprovalService(unittest.TestCase):
         rejected = service.reject(request.approval_id)
 
         self.assertEqual(rejected.status, ApprovalStatus.REJECTED)
+
+    def test_multi_tenant_request_isolation(self):
+        """S49: approval service should deny cross-tenant object access."""
+        from services.approvals.service import ApprovalService
+
+        service = ApprovalService()
+        with patch.dict("os.environ", {"OPENCLAW_MULTI_TENANT_ENABLED": "1"}):
+            request = service.create_request(
+                template_id="template_tenant_test",
+                inputs={},
+                tenant_id="tenant-a",
+            )
+
+            self.assertIsNone(service.get(request.approval_id, tenant_id="tenant-b"))
+            with self.assertRaises(ValueError):
+                service.approve(request.approval_id, tenant_id="tenant-b")
 
 
 if __name__ == "__main__":

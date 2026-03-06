@@ -20,7 +20,9 @@ GENERIC_KEY_NAMES = [
 ]
 
 
-def get_api_key_for_provider(provider: str) -> Optional[str]:
+def get_api_key_for_provider(
+    provider: str, tenant_id: Optional[str] = None
+) -> Optional[str]:
     """
     Get API key for a specific provider.
 
@@ -32,7 +34,7 @@ def get_api_key_for_provider(provider: str) -> Optional[str]:
 
     Returns None if no key found (acceptable for local providers).
     """
-    key, _source = resolve_provider_secret(provider)
+    key, _source = resolve_provider_secret(provider, tenant_id=tenant_id)
     return key
 
 
@@ -55,7 +57,7 @@ def mask_api_key(key: str) -> str:
     return f"{key[:4]}...{key[-4:]}"
 
 
-def get_all_configured_keys() -> dict:
+def get_all_configured_keys(tenant_id: Optional[str] = None) -> dict:
     """
     Get a summary of configured keys (masked).
     Used for diagnostics, never returns actual key values.
@@ -70,7 +72,7 @@ def get_all_configured_keys() -> dict:
         from ..secret_store import get_secret_store
 
         store = get_secret_store()
-        store_status = store.get_status()
+        store_status = store.get_status(tenant_id=tenant_id)
     except Exception as e:
         logger.debug(f"S25: Failed to get secret store status (non-fatal): {e}")
 
@@ -106,7 +108,9 @@ def get_all_configured_keys() -> dict:
                 source = "server_store"
 
             if key is None and source is None:
-                resolved, resolved_source = resolve_provider_secret(provider_id)
+                resolved, resolved_source = resolve_provider_secret(
+                    provider_id, tenant_id=tenant_id
+                )
                 if resolved:
                     key = resolved
                     source = resolved_source
@@ -137,7 +141,9 @@ def get_all_configured_keys() -> dict:
     if generic_key is None and "generic" in store_status:
         generic_source = "server_store"
     if generic_key is None and generic_source is None:
-        resolved, resolved_source = resolve_provider_secret("generic")
+        resolved, resolved_source = resolve_provider_secret(
+            "generic", tenant_id=tenant_id
+        )
         if resolved:
             generic_key = resolved
             generic_source = resolved_source

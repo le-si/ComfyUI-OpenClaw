@@ -12,6 +12,35 @@ from urllib.parse import urlparse
 
 logger = logging.getLogger("ComfyUI-OpenClaw.services.runtime_config")
 
+# S49: tenant context + namespace-aware config resolution.
+try:
+    from .tenant_context import (
+        DEFAULT_TENANT_ID,
+        get_current_tenant_id,
+        is_multi_tenant_enabled,
+        normalize_tenant_id,
+    )
+except ImportError:
+    try:
+        from services.tenant_context import (  # type: ignore
+            DEFAULT_TENANT_ID,
+            get_current_tenant_id,
+            is_multi_tenant_enabled,
+            normalize_tenant_id,
+        )
+    except ImportError:
+        DEFAULT_TENANT_ID = "default"
+
+        def get_current_tenant_id():  # type: ignore
+            return DEFAULT_TENANT_ID
+
+        def is_multi_tenant_enabled():  # type: ignore
+            return False
+
+        def normalize_tenant_id(value):  # type: ignore
+            return str(value or DEFAULT_TENANT_ID).strip().lower() or DEFAULT_TENANT_ID
+
+
 # R70: Settings schema registry (type coercion + unknown-key rejection)
 try:
     from .settings_schema import coerce_dict as _schema_coerce
@@ -389,6 +418,52 @@ def _get_constraint_range(key: str) -> Tuple[int, int]:
     return min_val, max_val
 
 
+def _resolve_active_tenant_id(tenant_id: Optional[str] = None) -> str:
+    if not is_multi_tenant_enabled():
+        return DEFAULT_TENANT_ID
+    if tenant_id is None:
+        tenant_id = get_current_tenant_id()
+    try:
+        return normalize_tenant_id(tenant_id)
+    except Exception:
+        return DEFAULT_TENANT_ID
+
+
+def _allow_tenant_config_fallback() -> bool:
+    value = (
+        os.environ.get("OPENCLAW_MULTI_TENANT_ALLOW_CONFIG_FALLBACK")
+        or os.environ.get("MOLTBOT_MULTI_TENANT_ALLOW_CONFIG_FALLBACK")
+        or "0"
+    )
+    return str(value).strip().lower() in ("1", "true", "yes", "on")
+
+
+def _runtime_override_section(tenant_id: Optional[str] = None) -> str:
+    resolved = _resolve_active_tenant_id(tenant_id)
+    if resolved == DEFAULT_TENANT_ID:
+        return "llm"
+    return f"llm::{resolved}"
+
+
+def _tenant_llm_config_view(
+    config_blob: Dict[str, Any], tenant_id: str
+) -> Dict[str, Any]:
+    llm_global = config_blob.get("llm", {})
+    if tenant_id == DEFAULT_TENANT_ID:
+        return llm_global if isinstance(llm_global, dict) else {}
+
+    tenants = config_blob.get("tenants", {})
+    tenant_cfg = {}
+    if isinstance(tenants, dict):
+        tenant_cfg = tenants.get(tenant_id, {})
+    tenant_llm = tenant_cfg.get("llm", {}) if isinstance(tenant_cfg, dict) else {}
+    if isinstance(tenant_llm, dict) and tenant_llm:
+        return tenant_llm
+    if _allow_tenant_config_fallback() and isinstance(llm_global, dict):
+        return llm_global
+    return {}
+
+
 def _load_file_config() -> Dict[str, Any]:
     """Load config from file if exists."""
     if os.path.exists(CONFIG_FILE):
@@ -584,12 +659,14 @@ def _normalize_llm_layer_value(key: str, value: Any, source: str) -> Any:
     return value
 
 
-def get_runtime_overrides() -> Dict[str, Any]:
+def get_runtime_overrides(tenant_id: Optional[str] = None) -> Dict[str, Any]:
     """Get current in-memory runtime overrides for the LLM section."""
-    return _get_runtime_overrides("llm")
+    return _get_runtime_overrides(_runtime_override_section(tenant_id))
 
 
-def set_runtime_overrides(updates: Dict[str, Any]) -> Tuple[bool, list]:
+def set_runtime_overrides(
+    updates: Dict[str, Any], tenant_id: Optional[str] = None
+) -> Tuple[bool, list]:
     """
     Set in-memory runtime overrides for LLM config (non-persisted).
 
@@ -598,16 +675,20 @@ def set_runtime_overrides(updates: Dict[str, Any]) -> Tuple[bool, list]:
     sanitized, errors = validate_config_update(updates)
     if errors:
         return False, errors
-    _set_runtime_overrides("llm", sanitized)
+    _set_runtime_overrides(_runtime_override_section(tenant_id), sanitized)
     return True, []
 
 
-def clear_runtime_overrides(keys: Optional[List[str]] = None) -> None:
+def clear_runtime_overrides(
+    keys: Optional[List[str]] = None, tenant_id: Optional[str] = None
+) -> None:
     """Clear all runtime overrides (or only selected keys) for LLM config."""
-    _clear_runtime_overrides("llm", keys=keys)
+    _clear_runtime_overrides(_runtime_override_section(tenant_id), keys=keys)
 
 
-def get_effective_config() -> Tuple[Dict[str, Any], Dict[str, str]]:
+def get_effective_config(
+    tenant_id: Optional[str] = None,
+) -> Tuple[Dict[str, Any], Dict[str, str]]:
     """
     Get effective LLM config with precedence:
     ENV > runtime_override > persisted file > defaults.
@@ -615,8 +696,10 @@ def get_effective_config() -> Tuple[Dict[str, Any], Dict[str, str]]:
     Returns:
         Tuple of (effective_config, sources) where sources maps each key to its origin.
     """
-    file_config = _load_file_config().get("llm", {})
-    runtime_overrides = get_runtime_overrides()
+    active_tenant = _resolve_active_tenant_id(tenant_id)
+    file_blob = _load_file_config()
+    file_config = _tenant_llm_config_view(file_blob, active_tenant)
+    runtime_overrides = get_runtime_overrides(active_tenant)
 
     ordered_keys = list(LLM_KEY_ORDER) + [
         k for k in sorted(ALLOWED_LLM_KEYS) if k not in ENV_MAPPINGS
@@ -883,7 +966,9 @@ def _merge_config_value(base: Any, patch: Any, key: str = "") -> Any:
     return patch
 
 
-def update_config(updates: Dict[str, Any]) -> Tuple[bool, list]:
+def update_config(
+    updates: Dict[str, Any], tenant_id: Optional[str] = None
+) -> Tuple[bool, list]:
     """
     Update LLM config, persisting to file.
 
@@ -898,16 +983,32 @@ def update_config(updates: Dict[str, Any]) -> Tuple[bool, list]:
     if not sanitized:
         return True, []  # Nothing to update
 
-    # R94: Non-destructive merge with existing file config
+    tenant_id = _resolve_active_tenant_id(tenant_id)
+
+    # R94/S49: Non-destructive merge with existing file config
     file_config = _load_file_config()
-    if "llm" not in file_config:
-        file_config["llm"] = {}
+    if tenant_id == DEFAULT_TENANT_ID:
+        if "llm" not in file_config:
+            file_config["llm"] = {}
+        target = file_config["llm"]
+    else:
+        tenants = file_config.get("tenants")
+        if not isinstance(tenants, dict):
+            tenants = {}
+            file_config["tenants"] = tenants
+        tenant_cfg = tenants.get(tenant_id)
+        if not isinstance(tenant_cfg, dict):
+            tenant_cfg = {}
+            tenants[tenant_id] = tenant_cfg
+        if "llm" not in tenant_cfg or not isinstance(tenant_cfg.get("llm"), dict):
+            tenant_cfg["llm"] = {}
+        target = tenant_cfg["llm"]
 
     for k, v in sanitized.items():
-        file_config["llm"][k] = _merge_config_value(file_config["llm"].get(k), v, key=k)
+        target[k] = _merge_config_value(target.get(k), v, key=k)
 
     if _save_file_config(file_config):
-        logger.info(f"Updated config: {list(sanitized.keys())}")
+        logger.info("Updated config: %s (tenant=%s)", list(sanitized.keys()), tenant_id)
         return True, []
     else:
         return False, ["Failed to save config file"]

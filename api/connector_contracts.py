@@ -24,17 +24,23 @@ except ImportError:  # pragma: no cover
     web = _MockWeb()  # type: ignore
 
 if __package__ and "." in __package__:
-    from ..services.access_control import require_admin_token
+    from ..services.access_control import require_admin_token, resolve_token_info
     from ..services.connector_installation_registry import (
         get_connector_installation_registry,
     )
     from ..services.rate_limit import check_rate_limit
+    from ..services.tenant_context import TenantBoundaryError, request_tenant_scope
 else:  # pragma: no cover
     from services.access_control import require_admin_token  # type: ignore
+    from services.access_control import resolve_token_info  # type: ignore
     from services.connector_installation_registry import (  # type: ignore
         get_connector_installation_registry,
     )
     from services.rate_limit import check_rate_limit  # type: ignore
+    from services.tenant_context import (  # type: ignore
+        TenantBoundaryError,
+        request_tenant_scope,
+    )
 
 if __package__ and "." in __package__:
     from ..services.endpoint_manifest import (
@@ -82,16 +88,30 @@ async def connector_installations_list_handler(request):
     platform = request.query.get("platform")
     workspace_id = request.query.get("workspace_id")
     status = request.query.get("status")
-    installations = registry.list_installations(
-        platform=platform, workspace_id=workspace_id, status=status
-    )
-    return web.json_response(
-        {
-            "ok": True,
-            "installations": [inst.to_public_dict() for inst in installations],
-            "diagnostics": registry.diagnostics(),
-        }
-    )
+    token_info = resolve_token_info(request)
+    try:
+        with request_tenant_scope(
+            request=request, token_info=token_info, allow_default_when_missing=True
+        ) as tenant:
+            installations = registry.list_installations(
+                platform=platform,
+                tenant_id=tenant.tenant_id,
+                workspace_id=workspace_id,
+                status=status,
+            )
+            return web.json_response(
+                {
+                    "ok": True,
+                    "tenant_id": tenant.tenant_id,
+                    "installations": [inst.to_public_dict() for inst in installations],
+                    "diagnostics": registry.diagnostics(tenant_id=tenant.tenant_id),
+                }
+            )
+    except TenantBoundaryError as exc:
+        return web.json_response(
+            {"ok": False, "error": exc.code, "message": str(exc)},
+            status=403,
+        )
 
 
 @endpoint_metadata(
@@ -107,12 +127,30 @@ async def connector_installation_get_handler(request):
         return guard
     installation_id = request.match_info.get("installation_id", "")
     registry = get_connector_installation_registry()
-    installation = registry.get_installation(installation_id)
-    if installation is None:
-        return web.json_response({"ok": False, "error": "not_found"}, status=404)
-    return web.json_response(
-        {"ok": True, "installation": installation.to_public_dict()}
-    )
+    token_info = resolve_token_info(request)
+    try:
+        with request_tenant_scope(
+            request=request, token_info=token_info, allow_default_when_missing=True
+        ) as tenant:
+            installation = registry.get_installation(
+                installation_id, tenant_id=tenant.tenant_id
+            )
+            if installation is None:
+                return web.json_response(
+                    {"ok": False, "error": "not_found"}, status=404
+                )
+            return web.json_response(
+                {
+                    "ok": True,
+                    "tenant_id": tenant.tenant_id,
+                    "installation": installation.to_public_dict(),
+                }
+            )
+    except TenantBoundaryError as exc:
+        return web.json_response(
+            {"ok": False, "error": exc.code, "message": str(exc)},
+            status=403,
+        )
 
 
 @endpoint_metadata(
@@ -134,12 +172,28 @@ async def connector_installation_resolve_handler(request):
             status=400,
         )
     registry = get_connector_installation_registry()
-    resolution = registry.resolve_installation(platform, workspace_id)
-    status_code = 200 if resolution.ok else 409
-    return web.json_response(
-        {"ok": resolution.ok, "resolution": resolution.to_public_dict()},
-        status=status_code,
-    )
+    token_info = resolve_token_info(request)
+    try:
+        with request_tenant_scope(
+            request=request, token_info=token_info, allow_default_when_missing=True
+        ) as tenant:
+            resolution = registry.resolve_installation(
+                platform, workspace_id, tenant_id=tenant.tenant_id
+            )
+            status_code = 200 if resolution.ok else 409
+            return web.json_response(
+                {
+                    "ok": resolution.ok,
+                    "tenant_id": tenant.tenant_id,
+                    "resolution": resolution.to_public_dict(),
+                },
+                status=status_code,
+            )
+    except TenantBoundaryError as exc:
+        return web.json_response(
+            {"ok": False, "error": exc.code, "message": str(exc)},
+            status=403,
+        )
 
 
 @endpoint_metadata(
@@ -159,11 +213,24 @@ async def connector_installation_audit_handler(request):
         limit = int(request.query.get("limit") or 100)
     except Exception:
         limit = 100
-    return web.json_response(
-        {
-            "ok": True,
-            "events": registry.get_audit_trail(
-                installation_id=installation_id, limit=limit
-            ),
-        }
-    )
+    token_info = resolve_token_info(request)
+    try:
+        with request_tenant_scope(
+            request=request, token_info=token_info, allow_default_when_missing=True
+        ) as tenant:
+            return web.json_response(
+                {
+                    "ok": True,
+                    "tenant_id": tenant.tenant_id,
+                    "events": registry.get_audit_trail(
+                        installation_id=installation_id,
+                        tenant_id=tenant.tenant_id,
+                        limit=limit,
+                    ),
+                }
+            )
+    except TenantBoundaryError as exc:
+        return web.json_response(
+            {"ok": False, "error": exc.code, "message": str(exc)},
+            status=403,
+        )
