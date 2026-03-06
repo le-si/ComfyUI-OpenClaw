@@ -74,6 +74,14 @@ class TestRuntimeConfig(unittest.TestCase):
         ]:
             os.environ.pop(key, None)
 
+        # R139: runtime overrides are process-local; clear before each case.
+        try:
+            from services.runtime_config import clear_runtime_overrides
+
+            clear_runtime_overrides()
+        except Exception:
+            pass
+
     def test_defaults(self):
         """Should use defaults when no env or file config."""
         from services.runtime_config import DEFAULTS, get_effective_config
@@ -134,6 +142,32 @@ class TestRuntimeConfig(unittest.TestCase):
             effective, sources = get_effective_config()
             self.assertEqual(effective["provider"], "openclaw-provider")
             # Should NOT log warning if primary is found (legacy is ignored)
+
+    def test_runtime_override_applies_without_env(self):
+        """R139: runtime override should win over persisted/default when env is absent."""
+        from services.runtime_config import get_effective_config, set_runtime_overrides
+
+        ok, errors = set_runtime_overrides({"provider": "openrouter"})
+        self.assertTrue(ok)
+        self.assertEqual(errors, [])
+
+        effective, sources = get_effective_config()
+        self.assertEqual(effective["provider"], "openrouter")
+        self.assertEqual(sources["provider"], "runtime_override")
+
+    def test_env_beats_runtime_override(self):
+        """R139: env remains highest precedence over runtime override."""
+        from services.runtime_config import get_effective_config, set_runtime_overrides
+
+        ok, errors = set_runtime_overrides({"provider": "openrouter"})
+        self.assertTrue(ok)
+        self.assertEqual(errors, [])
+
+        with patch.dict(os.environ, {"OPENCLAW_LLM_PROVIDER": "anthropic"}):
+            effective, sources = get_effective_config()
+
+        self.assertEqual(effective["provider"], "anthropic")
+        self.assertEqual(sources["provider"], "env")
 
     def test_validate_provider(self):
         """Should reject unknown providers."""

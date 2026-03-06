@@ -10,7 +10,7 @@ This document defines the authoritative configuration contract for OpenClaw. It 
 
 ## 1. Configuration Principles
 
-1. **Environment First**: Environment variables (`OPENCLAW_*`) always take precedence over file-based config or defaults.
+1. **Environment First**: Environment variables (`OPENCLAW_*`) always take precedence over runtime/file-based config layers.
 2. **Secure by Default**: Missing optional secrets result in disabled features (fail-closed), not insecure open access.
 3. **No Plaintext Storage**: Secrets MUST NOT be stored in plaintext config files committed to version control. They should be injected via environment variables or a secure secrets manager.
 4. **Legacy Compatibility**: `MOLTBOT_*` keys are supported for backward compatibility but are deprecated. `OPENCLAW_*` keys are preferred.
@@ -146,15 +146,17 @@ To rotate a secret (e.g., `OPENCLAW_ADMIN_TOKEN` or `OPENCLAW_LLM_API_KEY`):
 
 ### 3.2 Key Precedence
 
-If multiple keys are configured for the same purpose, the following order applies:
+If multiple layers are configured for the same purpose, the following order applies:
 
 1. `OPENCLAW_<KEY>` (Highest priority)
 2. `MOLTBOT_<KEY>` (Legacy fallback)
-3. File-based config / Defaults (Lowest priority)
+3. Runtime override (process-local, non-persisted)
+4. File-based config (`OPENCLAW_STATE_DIR/config.json`)
+5. Defaults (Lowest priority)
 
 ### 3.3 Persistence
 
-Non-secret configuration (such as enabled/disabled flags, feature toggles) may be persisted in the `OPENCLAW_STATE_DIR/config.json` via the Settings API. However, **environment variables always override persisted settings**.
+Non-secret configuration (such as enabled/disabled flags, feature toggles) may be persisted in the `OPENCLAW_STATE_DIR/config.json` via the Settings API. Runtime overrides (if enabled by internal callers) are process-local and non-persisted. **Environment variables always override runtime and persisted settings**.
 
 Persistence guardrails:
 - Runtime-only guardrail fields (for example `runtime_guardrails` and legacy guardrail aliases) are stripped/ignored when loading persisted config and rejected on `/config` write requests.
