@@ -171,4 +171,3 @@ def build_advisory_status(
 ) -> Dict[str, Any]:
     advisories = load_advisories(advisory_file=advisory_file)
     return evaluate_advisories(current_version=current_version, advisories=advisories)
-

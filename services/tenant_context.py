@@ -201,4 +201,3 @@ def request_tenant_scope(
         yield ctx
     finally:
         _CURRENT_TENANT.reset(token)
-

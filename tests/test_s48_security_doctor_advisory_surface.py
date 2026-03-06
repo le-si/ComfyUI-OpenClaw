@@ -52,4 +52,3 @@ class TestS48SecurityDoctorAdvisorySurface(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
-

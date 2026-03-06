@@ -44,4 +44,3 @@ describe("openclaw security advisory banner helper", () => {
         });
     });
 });
-

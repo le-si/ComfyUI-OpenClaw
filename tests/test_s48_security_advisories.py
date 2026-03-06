@@ -42,7 +42,9 @@ class TestS48SecurityAdvisories(unittest.TestCase):
         self.assertTrue(result["affected"])
         self.assertEqual(result["high_severity_affected"], 1)
         self.assertEqual(result["mitigation"], "Upgrade to >=0.3.4 immediately.")
-        affected_ids = {entry["id"] for entry in result["advisories"] if entry["affected"]}
+        affected_ids = {
+            entry["id"] for entry in result["advisories"] if entry["affected"]
+        }
         self.assertEqual(affected_ids, {"OPENCLAW-2026-0001"})
 
     def test_evaluate_advisories_unaffected(self):
@@ -64,4 +66,3 @@ class TestS48SecurityAdvisories(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
-

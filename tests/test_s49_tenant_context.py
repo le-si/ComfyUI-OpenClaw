@@ -29,7 +29,9 @@ class TestTenantContext(unittest.IsolatedAsyncioTestCase):
 
     def test_multi_tenant_header_resolution(self):
         with patch.dict("os.environ", {"OPENCLAW_MULTI_TENANT_ENABLED": "1"}):
-            ctx = resolve_tenant_context(request=_Req({"X-OpenClaw-Tenant-Id": "team-a"}))
+            ctx = resolve_tenant_context(
+                request=_Req({"X-OpenClaw-Tenant-Id": "team-a"})
+            )
             self.assertEqual(ctx.tenant_id, "team-a")
 
     def test_multi_tenant_mismatch_fail_closed(self):
