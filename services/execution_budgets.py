@@ -20,6 +20,13 @@ from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from typing import Dict, Optional
 
+from .tenant_context import (
+    DEFAULT_TENANT_ID,
+    get_current_tenant_id,
+    is_multi_tenant_enabled,
+    normalize_tenant_id,
+)
+
 logger = logging.getLogger("ComfyUI-OpenClaw.services.execution_budgets")
 
 # Global concurrency budgets (tuneable via env vars)
@@ -28,6 +35,7 @@ DEFAULT_MAX_INFLIGHT_WEBHOOK = 1
 DEFAULT_MAX_INFLIGHT_TRIGGER = 1
 DEFAULT_MAX_INFLIGHT_SCHEDULER = 1
 DEFAULT_MAX_INFLIGHT_BRIDGE = 1
+DEFAULT_MAX_INFLIGHT_PER_TENANT = 1
 
 # Render size budget (512KB default)
 DEFAULT_MAX_RENDERED_WORKFLOW_BYTES = 512 * 1024  # 512KB
@@ -54,7 +62,8 @@ class BudgetConfig:
     max_inflight_trigger: int
     max_inflight_scheduler: int
     max_inflight_bridge: int
-    max_rendered_workflow_bytes: int
+    max_inflight_per_tenant: int = DEFAULT_MAX_INFLIGHT_PER_TENANT
+    max_rendered_workflow_bytes: int = DEFAULT_MAX_RENDERED_WORKFLOW_BYTES
 
 
 def load_budget_config() -> BudgetConfig:
@@ -74,6 +83,10 @@ def load_budget_config() -> BudgetConfig:
         ),
         max_inflight_bridge=_get_env_int(
             "OPENCLAW_MAX_INFLIGHT_SUBMITS_BRIDGE", DEFAULT_MAX_INFLIGHT_BRIDGE
+        ),
+        max_inflight_per_tenant=_get_env_int(
+            "OPENCLAW_MAX_INFLIGHT_SUBMITS_PER_TENANT",
+            DEFAULT_MAX_INFLIGHT_PER_TENANT,
         ),
         max_rendered_workflow_bytes=_get_env_int(
             "OPENCLAW_MAX_RENDERED_WORKFLOW_BYTES", DEFAULT_MAX_RENDERED_WORKFLOW_BYTES
@@ -109,6 +122,9 @@ class ExecutionBudgetLimiter:
             "scheduler": asyncio.Semaphore(self.config.max_inflight_scheduler),
             "bridge": asyncio.Semaphore(self.config.max_inflight_bridge),
         }
+        # S49: optional per-tenant semaphores (created lazily).
+        self._tenant_semaphores: Dict[str, asyncio.Semaphore] = {}
+        self._tenant_lock = asyncio.Lock()
 
         # Tracking counters (for observability)
         self._inflight_total = 0
@@ -119,9 +135,25 @@ class ExecutionBudgetLimiter:
             "bridge": 0,
             "unknown": 0,
         }
+        self._inflight_by_tenant: Dict[str, int] = {}
+
+    async def _get_tenant_semaphore(self, tenant_id: str) -> asyncio.Semaphore:
+        async with self._tenant_lock:
+            existing = self._tenant_semaphores.get(tenant_id)
+            if existing is not None:
+                return existing
+            cap = max(1, int(self.config.max_inflight_per_tenant))
+            semaphore = asyncio.Semaphore(cap)
+            self._tenant_semaphores[tenant_id] = semaphore
+            return semaphore
 
     @asynccontextmanager
-    async def acquire(self, source: str = "unknown", trace_id: Optional[str] = None):
+    async def acquire(
+        self,
+        source: str = "unknown",
+        trace_id: Optional[str] = None,
+        tenant_id: Optional[str] = None,
+    ):
         """
         Acquire concurrency slots for execution (best-effort non-blocking).
 
@@ -146,6 +178,9 @@ class ExecutionBudgetLimiter:
         source = source.lower() if source else "unknown"
         if source not in self._source_semaphores:
             source = "unknown"
+        tenant = DEFAULT_TENANT_ID
+        if is_multi_tenant_enabled():
+            tenant = normalize_tenant_id(tenant_id or get_current_tenant_id())
 
         # Check global budget (locked check + manual acquire)
         if self._global_semaphore.locked():
@@ -195,7 +230,27 @@ class ExecutionBudgetLimiter:
                 retry_after=1,
             )
 
-        # Acquire both semaphores manually (explicit control)
+        # S49: Optional per-tenant concurrency cap.
+        tenant_semaphore = None
+        if is_multi_tenant_enabled():
+            tenant_semaphore = await self._get_tenant_semaphore(tenant)
+            if tenant_semaphore.locked():
+                limit = max(1, int(self.config.max_inflight_per_tenant))
+                logger.warning(
+                    "Tenant concurrency budget exhausted for tenant=%s (max=%s), denying %s submission (trace_id=%s)",
+                    tenant,
+                    limit,
+                    source,
+                    trace_id,
+                )
+                raise BudgetExceededError(
+                    budget_type="tenant_concurrency",
+                    limit=limit,
+                    source=source,
+                    retry_after=1,
+                )
+
+        # Acquire semaphores manually (explicit control)
         try:
             await self._global_semaphore.acquire()
         except Exception:
@@ -205,12 +260,23 @@ class ExecutionBudgetLimiter:
         global_acquired = True
 
         try:
+            tenant_acquired = False
+            if tenant_semaphore is not None:
+                try:
+                    await tenant_semaphore.acquire()
+                    tenant_acquired = True
+                except Exception:
+                    self._global_semaphore.release()
+                    raise
+
             if source_semaphore:
                 try:
                     await source_semaphore.acquire()
                     source_acquired = True
                 except Exception:
                     # Failed to acquire source, release global and re-raise
+                    if tenant_acquired and tenant_semaphore is not None:
+                        tenant_semaphore.release()
                     self._global_semaphore.release()
                     raise
             else:
@@ -220,6 +286,9 @@ class ExecutionBudgetLimiter:
             self._inflight_total += 1
             self._inflight_by_source[source] = (
                 self._inflight_by_source.get(source, 0) + 1
+            )
+            self._inflight_by_tenant[tenant] = (
+                self._inflight_by_tenant.get(tenant, 0) + 1
             )
 
             logger.debug(
@@ -233,9 +302,16 @@ class ExecutionBudgetLimiter:
                 # Release and update tracking (always runs)
                 self._inflight_total -= 1
                 self._inflight_by_source[source] -= 1
+                self._inflight_by_tenant[tenant] = max(
+                    0, self._inflight_by_tenant.get(tenant, 0) - 1
+                )
+                if self._inflight_by_tenant[tenant] == 0:
+                    self._inflight_by_tenant.pop(tenant, None)
 
                 if source_acquired and source_semaphore:
                     source_semaphore.release()
+                if tenant_acquired and tenant_semaphore is not None:
+                    tenant_semaphore.release()
                 self._global_semaphore.release()
 
                 logger.debug(
@@ -252,6 +328,7 @@ class ExecutionBudgetLimiter:
         return {
             "total": self._inflight_total,
             **self._inflight_by_source,
+            "tenant_count": len(self._inflight_by_tenant),
         }
 
 

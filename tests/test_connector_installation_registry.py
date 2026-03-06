@@ -1,6 +1,7 @@
 import os
 import tempfile
 import unittest
+from unittest.mock import patch
 
 from services.connector_installation_registry import (
     ConnectorInstallationRegistry,
@@ -136,6 +137,28 @@ class TestConnectorInstallationRegistry(unittest.TestCase):
             encoding="utf-8",
         ).read()
         self.assertNotIn("xoxb-secret", raw)
+
+    def test_multi_tenant_resolve_mismatch_fail_closed(self):
+        with patch.dict("os.environ", {"OPENCLAW_MULTI_TENANT_ENABLED": "1"}):
+            self.registry.upsert_installation(
+                platform="slack",
+                tenant_id="tenant-a",
+                workspace_id="T1",
+                installation_id="inst-tenant",
+                token_values={"bot_token": "xoxb-tenant"},
+                status=InstallationStatus.ACTIVE.value,
+            )
+
+            mismatch = self.registry.resolve_installation(
+                "slack", "T1", tenant_id="tenant-b"
+            )
+            self.assertFalse(mismatch.ok)
+            self.assertEqual(mismatch.reject_reason, "tenant_mismatch")
+
+            matched = self.registry.resolve_installation(
+                "slack", "T1", tenant_id="tenant-a"
+            )
+            self.assertTrue(matched.ok)
 
 
 if __name__ == "__main__":

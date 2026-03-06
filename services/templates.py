@@ -10,10 +10,16 @@ Loads manifest and renders templates for execution.
 import copy
 import logging
 import os
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional
 
 from .safe_io import resolve_under_root, safe_read_json
+from .tenant_context import (
+    DEFAULT_TENANT_ID,
+    get_current_tenant_id,
+    is_multi_tenant_enabled,
+    normalize_tenant_id,
+)
 
 logger = logging.getLogger("ComfyUI-OpenClaw.services.templates")
 
@@ -31,6 +37,7 @@ class TemplateConfig:
     path: str
     allowed_inputs: List[str]
     defaults: Dict[str, Any]
+    tenants: List[str] = field(default_factory=list)
 
 
 class TemplateService:
@@ -105,10 +112,25 @@ class TemplateService:
 
             self.manifest.clear()
             for t_id, t_cfg in data.get("templates", {}).items():
+                tenants = t_cfg.get("tenants", [])
+                if not isinstance(tenants, list):
+                    tenants = []
+                normalized_tenants: List[str] = []
+                for value in tenants:
+                    try:
+                        normalized_tenants.append(
+                            normalize_tenant_id(value, field_name=f"{t_id}.tenants")
+                        )
+                    except Exception:
+                        logger.warning(
+                            "S49: ignoring invalid template tenant binding for %s",
+                            t_id,
+                        )
                 self.manifest[t_id] = TemplateConfig(
                     path=t_cfg["path"],
                     allowed_inputs=t_cfg.get("allowed_inputs", []),
                     defaults=t_cfg.get("defaults", {}),
+                    tenants=normalized_tenants,
                 )
             try:
                 self._manifest_mtime = os.path.getmtime(self._manifest_abspath)
@@ -146,11 +168,26 @@ class TemplateService:
 
     def get_template_config(self, template_id: str) -> Optional[TemplateConfig]:
         self._maybe_reload_manifest()
+        try:
+            tenant_id = normalize_tenant_id(get_current_tenant_id())
+        except Exception:
+            tenant_id = DEFAULT_TENANT_ID
         cfg = self.manifest.get(template_id)
         if cfg is not None:
+            if (
+                is_multi_tenant_enabled()
+                and cfg.tenants
+                and tenant_id not in cfg.tenants
+            ):
+                return None
             return cfg
 
         # No manifest entry: treat `<template_id>.json` as runnable if present.
+        if is_multi_tenant_enabled():
+            # IMPORTANT: in multi-tenant mode, discovery-only templates are hidden by
+            # default because they cannot express explicit tenant visibility.
+            return None
+
         rel_path = f"{template_id}.json"
         try:
             abs_path = resolve_under_root(self.templates_root, rel_path)
@@ -160,7 +197,7 @@ class TemplateService:
         if not os.path.isfile(abs_path):
             return None
 
-        return TemplateConfig(path=rel_path, allowed_inputs=[], defaults={})
+        return TemplateConfig(path=rel_path, allowed_inputs=[], defaults={}, tenants=[])
 
     def render_template(
         self, template_id: str, inputs: Dict[str, Any]

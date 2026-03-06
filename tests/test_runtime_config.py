@@ -291,6 +291,30 @@ class TestRuntimeConfig(unittest.TestCase):
         with patch.dict(os.environ, {"OPENCLAW_ADMIN_TOKEN": "newsecret"}):
             self.assertTrue(validate_admin_token("newsecret"))
 
+    def test_multi_tenant_config_namespace_isolation(self):
+        """S49: persisted/runtime config should isolate tenant branches."""
+        from services.runtime_config import get_effective_config, update_config
+        from services.tenant_context import tenant_scope
+
+        with patch.dict(os.environ, {"OPENCLAW_MULTI_TENANT_ENABLED": "1"}):
+            with tenant_scope("tenant-a"):
+                ok, errors = update_config({"model": "model-a"})
+                self.assertTrue(ok)
+                self.assertEqual(errors, [])
+                effective_a, _ = get_effective_config()
+                self.assertEqual(effective_a["model"], "model-a")
+
+            with tenant_scope("tenant-b"):
+                ok, errors = update_config({"model": "model-b"})
+                self.assertTrue(ok)
+                self.assertEqual(errors, [])
+                effective_b, _ = get_effective_config()
+                self.assertEqual(effective_b["model"], "model-b")
+
+            with tenant_scope("tenant-a"):
+                effective_a, _ = get_effective_config()
+                self.assertEqual(effective_a["model"], "model-a")
+
 
 if __name__ == "__main__":
     unittest.main()

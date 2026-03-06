@@ -10,6 +10,17 @@ from datetime import datetime, timezone
 from enum import Enum
 from typing import Any, Dict, Optional
 
+try:
+    from ..tenant_context import DEFAULT_TENANT_ID, normalize_tenant_id
+except Exception:  # pragma: no cover
+    DEFAULT_TENANT_ID = "default"
+
+    def normalize_tenant_id(value, *, field_name="tenant_id"):  # type: ignore
+        text = str(value or "").strip().lower()
+        if not text:
+            raise ValueError(f"{field_name} must be non-empty")
+        return text
+
 
 class ApprovalStatus(str, Enum):
     """Status of an approval request."""
@@ -57,6 +68,7 @@ class ApprovalRequest:
     inputs: Dict[str, Any] = field(default_factory=dict)
     source: ApprovalSource = ApprovalSource.TRIGGER
     trace_id: Optional[str] = None
+    tenant_id: str = DEFAULT_TENANT_ID
 
     status: ApprovalStatus = ApprovalStatus.PENDING
 
@@ -100,6 +112,8 @@ class ApprovalRequest:
         # Validate status
         if isinstance(self.status, str):
             self.status = ApprovalStatus(self.status)
+
+        self.tenant_id = normalize_tenant_id(self.tenant_id, field_name="tenant_id")
 
     @staticmethod
     def generate_id() -> str:
@@ -167,6 +181,7 @@ class ApprovalRequest:
                 else self.source
             ),
             "trace_id": self.trace_id,
+            "tenant_id": self.tenant_id,
             "status": (
                 self.status.value
                 if isinstance(self.status, ApprovalStatus)
@@ -191,6 +206,7 @@ class ApprovalRequest:
             inputs=data.get("inputs", {}),
             source=ApprovalSource(data.get("source", "trigger")),
             trace_id=data.get("trace_id"),
+            tenant_id=data.get("tenant_id", DEFAULT_TENANT_ID),
             status=ApprovalStatus(data.get("status", "pending")),
             requested_at=data.get(
                 "requested_at", datetime.now(timezone.utc).isoformat()

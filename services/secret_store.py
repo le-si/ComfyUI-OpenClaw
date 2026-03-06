@@ -23,6 +23,34 @@ from pathlib import Path
 from typing import Any, Dict, Optional
 
 try:
+    from .tenant_context import (
+        DEFAULT_TENANT_ID,
+        get_current_tenant_id,
+        is_multi_tenant_enabled,
+        normalize_tenant_id,
+    )
+except ImportError:
+    try:
+        from services.tenant_context import (  # type: ignore
+            DEFAULT_TENANT_ID,
+            get_current_tenant_id,
+            is_multi_tenant_enabled,
+            normalize_tenant_id,
+        )
+    except ImportError:
+        DEFAULT_TENANT_ID = "default"
+
+        def get_current_tenant_id():  # type: ignore
+            return DEFAULT_TENANT_ID
+
+        def is_multi_tenant_enabled():  # type: ignore
+            return False
+
+        def normalize_tenant_id(value):  # type: ignore
+            return str(value or DEFAULT_TENANT_ID).strip().lower() or DEFAULT_TENANT_ID
+
+
+try:
     from .state_dir import get_state_dir
 except ImportError:
     from state_dir import get_state_dir
@@ -75,6 +103,30 @@ class SecretStore:
             enc = _get_encryption_module()
             self._encryption_key = enc._load_or_create_key(self._state_dir)
         return self._encryption_key
+
+    def _resolve_tenant_id(self, tenant_id: Optional[str]) -> str:
+        if tenant_id is not None:
+            return normalize_tenant_id(tenant_id)
+        if is_multi_tenant_enabled():
+            try:
+                return normalize_tenant_id(get_current_tenant_id())
+            except Exception:
+                return DEFAULT_TENANT_ID
+        return DEFAULT_TENANT_ID
+
+    def _tenant_key(self, provider_id: str, tenant_id: Optional[str] = None) -> str:
+        tenant = self._resolve_tenant_id(tenant_id)
+        if tenant == DEFAULT_TENANT_ID:
+            return provider_id
+        return f"tenant::{tenant}::{provider_id}"
+
+    def _allow_legacy_fallback(self) -> bool:
+        value = (
+            os.environ.get("OPENCLAW_MULTI_TENANT_ALLOW_LEGACY_SECRET_FALLBACK")
+            or os.environ.get("MOLTBOT_MULTI_TENANT_ALLOW_LEGACY_SECRET_FALLBACK")
+            or "0"
+        )
+        return str(value).strip().lower() in ("1", "true", "yes", "on")
 
     def _migrate_legacy(self) -> bool:
         """Migrate legacy plaintext secrets.json to encrypted format."""
@@ -178,7 +230,9 @@ class SecretStore:
                 logger.error(f"S57: Failed to save encrypted store: {e}")
                 raise
 
-    def get_secret(self, provider_id: str) -> Optional[str]:
+    def get_secret(
+        self, provider_id: str, tenant_id: Optional[str] = None
+    ) -> Optional[str]:
         """
         Get secret for provider.
 
@@ -188,10 +242,21 @@ class SecretStore:
         Returns:
             Secret value or None if not found
         """
+        tenant = self._resolve_tenant_id(tenant_id)
+        scoped_key = self._tenant_key(provider_id, tenant)
         with self._lock:
-            return self._secrets.get(provider_id)
+            value = self._secrets.get(scoped_key)
+            if value:
+                return value
+            # S49: Optional compatibility fallback (explicit only) when tenant data
+            # has not been migrated yet.
+            if tenant != DEFAULT_TENANT_ID and self._allow_legacy_fallback():
+                return self._secrets.get(provider_id)
+            return None
 
-    def set_secret(self, provider_id: str, secret: str) -> None:
+    def set_secret(
+        self, provider_id: str, secret: str, tenant_id: Optional[str] = None
+    ) -> None:
         """
         Set secret for provider.
 
@@ -202,14 +267,18 @@ class SecretStore:
         if not isinstance(secret, str) or not secret.strip():
             raise ValueError("Secret must be non-empty string")
 
+        tenant = self._resolve_tenant_id(tenant_id)
+        scoped_key = self._tenant_key(provider_id, tenant)
         with self._lock:
-            self._secrets[provider_id] = secret.strip()
+            self._secrets[scoped_key] = secret.strip()
             self._save()
 
         # Never log secret value
-        logger.info(f"S25: Set secret for provider '{provider_id}'")
+        logger.info(
+            "S25/S49: Set secret for provider '%s' (tenant=%s)", provider_id, tenant
+        )
 
-    def clear_secret(self, provider_id: str) -> bool:
+    def clear_secret(self, provider_id: str, tenant_id: Optional[str] = None) -> bool:
         """
         Clear secret for provider.
 
@@ -219,11 +288,17 @@ class SecretStore:
         Returns:
             True if secret was removed, False if not found
         """
+        tenant = self._resolve_tenant_id(tenant_id)
+        scoped_key = self._tenant_key(provider_id, tenant)
         with self._lock:
-            if provider_id in self._secrets:
-                del self._secrets[provider_id]
+            if scoped_key in self._secrets:
+                del self._secrets[scoped_key]
                 self._save()
-                logger.info(f"S25: Cleared secret for provider '{provider_id}'")
+                logger.info(
+                    "S25/S49: Cleared secret for provider '%s' (tenant=%s)",
+                    provider_id,
+                    tenant,
+                )
                 return True
             return False
 
@@ -241,16 +316,27 @@ class SecretStore:
             logger.info(f"S25: Cleared all secrets ({count} total)")
             return count
 
-    def get_status(self) -> Dict[str, Dict[str, Any]]:
+    def get_status(self, tenant_id: Optional[str] = None) -> Dict[str, Dict[str, Any]]:
         """
         Get secret status (NO SECRET VALUES).
 
         Returns:
             Dict of {provider_id: {configured: bool, source: "server_store"}}
         """
+        tenant = self._resolve_tenant_id(tenant_id)
+        prefix = f"tenant::{tenant}::"
         with self._lock:
             status = {}
-            for provider_id in self._secrets.keys():
+            for key in self._secrets.keys():
+                provider_id = None
+                if tenant == DEFAULT_TENANT_ID:
+                    if key.startswith("tenant::"):
+                        continue
+                    provider_id = key
+                elif key.startswith(prefix):
+                    provider_id = key[len(prefix) :]
+                if not provider_id:
+                    continue
                 status[provider_id] = {"configured": True, "source": "server_store"}
             return status
 

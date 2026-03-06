@@ -8,6 +8,17 @@ import uuid
 from dataclasses import asdict, dataclass, field
 from typing import Any, Dict, List, Optional
 
+try:
+    from ..tenant_context import DEFAULT_TENANT_ID, normalize_tenant_id
+except Exception:  # pragma: no cover
+    DEFAULT_TENANT_ID = "default"
+
+    def normalize_tenant_id(value, *, field_name="tenant_id"):  # type: ignore
+        text = str(value or "").strip().lower()
+        if not text:
+            raise ValueError(f"{field_name} must be non-empty")
+        return text
+
 
 @dataclass
 class Preset:
@@ -21,6 +32,7 @@ class Preset:
     category: str = "general"  # e.g., "prompt", "parameters", "full"
     tags: List[str] = field(default_factory=list)
     content: Dict[str, Any] = field(default_factory=dict)
+    tenant_id: str = DEFAULT_TENANT_ID
 
     created_at: float = field(default_factory=time.time)
     updated_at: float = field(default_factory=time.time)
@@ -39,6 +51,7 @@ class Preset:
             content=content,
             category=category,
             tags=tags or [],
+            tenant_id=DEFAULT_TENANT_ID,
         )
 
     def to_dict(self) -> Dict[str, Any]:
@@ -71,4 +84,9 @@ class Preset:
 
     @staticmethod
     def from_dict(data: Dict[str, Any]) -> "Preset":
-        return Preset(**data)
+        if "tenant_id" not in data:
+            data = dict(data)
+            data["tenant_id"] = DEFAULT_TENANT_ID
+        preset = Preset(**data)
+        preset.tenant_id = normalize_tenant_id(preset.tenant_id, field_name="tenant_id")
+        return preset

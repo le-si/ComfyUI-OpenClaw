@@ -17,6 +17,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
@@ -229,6 +230,25 @@ class TestKeyResolution(unittest.TestCase):
         # Should use store
         key = get_api_key_for_provider("openai")
         self.assertEqual(key, "sk-store-key")
+
+    def test_multi_tenant_secret_isolation(self):
+        """S49: secret store should isolate provider secrets per tenant."""
+        from services.secret_store import SecretStore
+
+        store = SecretStore(state_dir=self.test_dir)
+        with patch.dict("os.environ", {"OPENCLAW_MULTI_TENANT_ENABLED": "1"}):
+            store.set_secret("openai", "sk-tenant-a", tenant_id="tenant-a")
+            store.set_secret("openai", "sk-tenant-b", tenant_id="tenant-b")
+
+            self.assertEqual(
+                store.get_secret("openai", tenant_id="tenant-a"),
+                "sk-tenant-a",
+            )
+            self.assertEqual(
+                store.get_secret("openai", tenant_id="tenant-b"),
+                "sk-tenant-b",
+            )
+            self.assertIsNone(store.get_secret("openai", tenant_id="tenant-c"))
 
 
 if __name__ == "__main__":

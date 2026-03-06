@@ -13,6 +13,7 @@ from unittest.mock import MagicMock, patch
 sys.path.append(os.getcwd())
 
 from services.templates import TemplateService
+from services.tenant_context import tenant_scope
 
 
 class TestTemplateService(unittest.TestCase):
@@ -83,6 +84,34 @@ class TestTemplateService(unittest.TestCase):
         """Templates present as `<id>.json` should be runnable even if not in manifest.json."""
         rendered = self.service.render_template("t2", {"input_any": "hello"})
         self.assertEqual(rendered["node1"]["inputs"]["text"], "hello")
+
+    def test_multi_tenant_manifest_visibility(self):
+        """S49: manifest tenant bindings should gate visibility in multi-tenant mode."""
+        manifest = {
+            "version": 1,
+            "templates": {
+                "t1": {
+                    "path": "t1.json",
+                    "allowed_inputs": ["input1"],
+                    "tenants": ["tenant-a"],
+                }
+            },
+        }
+        with open(os.path.join(self.test_dir, "manifest.json"), "w") as f:
+            json.dump(manifest, f)
+        self.service._load_manifest()
+
+        with patch.dict("os.environ", {"OPENCLAW_MULTI_TENANT_ENABLED": "1"}):
+            with tenant_scope("tenant-a"):
+                self.assertIsNotNone(self.service.get_template_config("t1"))
+            with tenant_scope("tenant-b"):
+                self.assertIsNone(self.service.get_template_config("t1"))
+
+    def test_multi_tenant_hides_discovery_only_templates(self):
+        """S49: discovery-only templates are hidden in multi-tenant mode."""
+        with patch.dict("os.environ", {"OPENCLAW_MULTI_TENANT_ENABLED": "1"}):
+            with tenant_scope("tenant-a"):
+                self.assertIsNone(self.service.get_template_config("t2"))
 
 
 if __name__ == "__main__":

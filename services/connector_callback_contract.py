@@ -28,6 +28,14 @@ except ImportError:
         get_connector_installation_registry,
     )
 
+try:
+    from .tenant_context import DEFAULT_TENANT_ID, get_current_tenant_id
+except ImportError:
+    from services.tenant_context import (  # type: ignore
+        DEFAULT_TENANT_ID,
+        get_current_tenant_id,
+    )
+
 logger = logging.getLogger("ComfyUI-OpenClaw.services.connector_callback_contract")
 
 DEFAULT_CALLBACK_TIMESTAMP_DRIFT_SEC = 300
@@ -48,6 +56,7 @@ class CallbackDecisionCode(str, Enum):
     REJECT_AMBIGUOUS_INSTALLATION = "cb_reject_ambiguous_installation"
     REJECT_INACTIVE_INSTALLATION = "cb_reject_inactive_installation"
     REJECT_STALE_TOKEN_REF = "cb_reject_stale_token_ref"
+    REJECT_TENANT_MISMATCH = "cb_reject_tenant_mismatch"
     REJECT_POLICY_DENIED = "cb_reject_policy_denied"
     REJECT_INVALID_ENVELOPE = "cb_reject_invalid_envelope"
 
@@ -57,6 +66,7 @@ class CallbackActorContext:
     is_admin: bool = False
     is_trusted: bool = False
     user_id: str = ""
+    tenant_id: str = DEFAULT_TENANT_ID
 
 
 @dataclass
@@ -189,6 +199,8 @@ class ConnectorCallbackContract:
             code = CallbackDecisionCode.REJECT_INACTIVE_INSTALLATION.value
         elif reason.startswith("stale_token_ref"):
             code = CallbackDecisionCode.REJECT_STALE_TOKEN_REF.value
+        elif reason == "tenant_mismatch":
+            code = CallbackDecisionCode.REJECT_TENANT_MISMATCH.value
         else:
             code = CallbackDecisionCode.REJECT_INVALID_ENVELOPE.value
         return CallbackDecision(ok=False, decision_code=code, message=reason)
@@ -302,7 +314,9 @@ class ConnectorCallbackContract:
             return decision
 
         resolution = self._installation_registry.resolve_installation(
-            platform, envelope.workspace_id
+            platform,
+            envelope.workspace_id,
+            tenant_id=(actor.tenant_id or get_current_tenant_id()),
         )
         if not resolution.ok or resolution.installation is None:
             decision = self._map_installation_reject(resolution)

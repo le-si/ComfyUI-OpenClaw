@@ -147,6 +147,15 @@ except Exception:
     ),
 )
 (
+    TenantBoundaryError,
+    request_tenant_scope,
+) = import_attrs_dual(
+    __package__,
+    "..services.tenant_context",
+    "services.tenant_context",
+    ("TenantBoundaryError", "request_tenant_scope"),
+)
+(
     CODE_RUNTIME_ONLY_PERSIST_FORBIDDEN,
     payload_contains_runtime_guardrails,
 ) = import_attrs_dual(
@@ -167,6 +176,13 @@ from collections import OrderedDict
 _MODEL_LIST_CACHE: OrderedDict = OrderedDict()
 _MODEL_LIST_TTL_SEC = 600  # 10 minutes
 _MODEL_LIST_MAX_ENTRIES = 16
+
+
+def _build_model_cache_key(provider: str, base_url: str, tenant_id: str) -> tuple:
+    # S49: keep single-tenant key shape stable while isolating multi-tenant entries.
+    if str(tenant_id).strip().lower() in ("", "default"):
+        return (provider, base_url)
+    return (tenant_id, provider, base_url)
 
 
 def _cache_put(key: tuple, models: list) -> None:
@@ -277,36 +293,46 @@ async def config_get_handler(request: web.Request) -> web.Response:
             {"ok": False, "error": "Rate limit exceeded"}, status=429
         )
 
+    token_info = resolve_token_info(request)
     try:
-        effective, sources = get_effective_config()
-        guardrails = get_runtime_guardrails()
-        if guardrails.get("status") != "ok":
-            token_info = resolve_token_info(request)
-            emit_audit_event(
-                action="runtime.guardrails",
-                target="runtime_guardrails",
-                outcome="warn",
-                token_info=token_info,
-                status_code=200,
-                details={
-                    "code": guardrails.get("code"),
-                    "violations": guardrails.get("violations", []),
-                },
-                request=request,
-            )
+        with request_tenant_scope(
+            request=request, token_info=token_info, allow_default_when_missing=True
+        ) as tenant:
+            effective, sources = get_effective_config(tenant_id=tenant.tenant_id)
+            guardrails = get_runtime_guardrails()
+            if guardrails.get("status") != "ok":
+                emit_audit_event(
+                    action="runtime.guardrails",
+                    target="runtime_guardrails",
+                    outcome="warn",
+                    token_info=token_info,
+                    status_code=200,
+                    details={
+                        "tenant_id": tenant.tenant_id,
+                        "code": guardrails.get("code"),
+                        "violations": guardrails.get("violations", []),
+                    },
+                    request=request,
+                )
 
+            return web.json_response(
+                {
+                    "ok": True,
+                    "tenant_id": tenant.tenant_id,
+                    "config": effective,
+                    "sources": sources,
+                    "runtime_guardrails": guardrails,
+                    "providers": PROVIDER_CATALOG,
+                    # R70: Settings schema for frontend type coercion / validation
+                    "schema": get_settings_schema(),
+                    # Simplified UX: writes are controlled by admin access policy, not a separate env "enable" flag.
+                    "write_enabled": True,
+                }
+            )
+    except TenantBoundaryError as e:
         return web.json_response(
-            {
-                "ok": True,
-                "config": effective,
-                "sources": sources,
-                "runtime_guardrails": guardrails,
-                "providers": PROVIDER_CATALOG,
-                # R70: Settings schema for frontend type coercion / validation
-                "schema": get_settings_schema(),
-                # Simplified UX: writes are controlled by admin access policy, not a separate env "enable" flag.
-                "write_enabled": True,
-            }
+            {"ok": False, "error": e.code, "message": str(e)},
+            status=403,
         )
     except Exception as e:
         logger.exception("Error getting config")
@@ -408,224 +434,267 @@ async def llm_models_handler(request: web.Request) -> web.Response:
             {"ok": False, "error": "Rate limit exceeded"}, status=429
         )
 
-    # Admin boundary
-    allowed, err = require_admin_token(request)
-    if not allowed:
-        emit_audit_event(
-            action="config.update",
-            target="config.json",
-            outcome="deny",
-            token_info=token_info,
-            status_code=403,
-            details={"reason": err or "unauthorized"},
-            request=request,
-        )
-        return web.json_response(
-            {
-                "ok": False,
-                "error": err or "Unauthorized",
-            },
-            status=403,
-        )
-
-    # Optional loopback check (match config_put behavior)
-    import os
-
-    allow_remote = (
-        os.environ.get("OPENCLAW_ALLOW_REMOTE_ADMIN")
-        or os.environ.get("MOLTBOT_ALLOW_REMOTE_ADMIN")
-        or ""
-    ).lower()
-    if allow_remote not in ("1", "true", "yes", "on"):
-        remote = request.remote or ""
-        if not is_loopback_client(remote):
-            return web.json_response(
-                {
-                    "ok": False,
-                    "error": "Remote admin access denied. Set OPENCLAW_ALLOW_REMOTE_ADMIN=1 (or legacy MOLTBOT_ALLOW_REMOTE_ADMIN=1) to allow.",
-                },
-                status=403,
-            )
-
-    provider_override = (request.query.get("provider") or "").strip().lower()
-    effective, _sources = get_effective_config()
-    provider = provider_override or (effective.get("provider") or "openai")
-
-    # Resolve Base URL (Runtime config > Catalog Default)
-    # Allows users to override base_url for standard providers (e.g. self-hosted OpenAI compat)
-    runtime_base_url = (effective.get("base_url") or "").strip()
-
+    token_info = resolve_token_info(request)
     try:
-        from ..services.providers.catalog import ProviderType, get_provider_info
-        from ..services.providers.keys import get_api_key_for_provider, requires_api_key
-    except ImportError:
-        from services.providers.catalog import ProviderType, get_provider_info
-        from services.providers.keys import get_api_key_for_provider, requires_api_key
+        with request_tenant_scope(
+            request=request, token_info=token_info, allow_default_when_missing=True
+        ) as tenant:
+            # Admin boundary
+            allowed, err = require_admin_token(request)
+            if not allowed:
+                emit_audit_event(
+                    action="config.update",
+                    target="config.json",
+                    outcome="deny",
+                    token_info=token_info,
+                    status_code=403,
+                    details={
+                        "tenant_id": tenant.tenant_id,
+                        "reason": err or "unauthorized",
+                    },
+                    request=request,
+                )
+                return web.json_response(
+                    {
+                        "ok": False,
+                        "error": err or "Unauthorized",
+                    },
+                    status=403,
+                )
 
-    info = get_provider_info(provider)
-    if not info:
-        return web.json_response(
-            {"ok": False, "error": f"Unknown provider: {provider}"}, status=400
-        )
+            # Optional loopback check (match config_put behavior)
+            import os
 
-    if info.api_type != ProviderType.OPENAI_COMPAT:
-        return web.json_response(
-            {
-                "ok": False,
-                "error": "Model list is only supported for OpenAI-compatible providers.",
-            },
-            status=400,
-        )
+            allow_remote = (
+                os.environ.get("OPENCLAW_ALLOW_REMOTE_ADMIN")
+                or os.environ.get("MOLTBOT_ALLOW_REMOTE_ADMIN")
+                or ""
+            ).lower()
+            if allow_remote not in ("1", "true", "yes", "on"):
+                remote = request.remote or ""
+                if not is_loopback_client(remote):
+                    return web.json_response(
+                        {
+                            "ok": False,
+                            "error": "Remote admin access denied. Set OPENCLAW_ALLOW_REMOTE_ADMIN=1 (or legacy MOLTBOT_ALLOW_REMOTE_ADMIN=1) to allow.",
+                        },
+                        status=403,
+                    )
 
-    # Priority: Runtime URL -> Info Default
-    base_url = runtime_base_url if runtime_base_url else info.base_url
-    if not base_url:
-        return web.json_response(
-            {
-                "ok": False,
-                "error": f"No base URL configured for provider '{provider}'.",
-            },
-            status=400,
-        )
+            provider_override = (request.query.get("provider") or "").strip().lower()
+            effective, _sources = get_effective_config(tenant_id=tenant.tenant_id)
+            provider = provider_override or (effective.get("provider") or "openai")
 
-    # R60: Cache key includes provider + base_url to avoid cross-provider staleness.
-    cache_key = (provider, base_url)
+            # Resolve Base URL (Runtime config > Catalog Default)
+            # Allows users to override base_url for standard providers (e.g. self-hosted OpenAI compat)
+            runtime_base_url = (effective.get("base_url") or "").strip()
 
-    # R60: Check bounded TTL+LRU cache
-    cached_entry = _cache_get(cache_key)
-    if cached_entry:
-        _ts, models = cached_entry
-        if isinstance(models, list):
-            return web.json_response(
-                {"ok": True, "provider": provider, "models": models, "cached": True}
-            )
+            try:
+                from ..services.providers.catalog import ProviderType, get_provider_info
+                from ..services.providers.keys import (
+                    get_api_key_for_provider,
+                    requires_api_key,
+                )
+            except ImportError:
+                from services.providers.catalog import ProviderType, get_provider_info
+                from services.providers.keys import (
+                    get_api_key_for_provider,
+                    requires_api_key,
+                )
 
-    api_key = get_api_key_for_provider(provider)
-    # CRITICAL:
-    # Local providers (e.g. ollama/lmstudio) intentionally work without API keys.
-    # Do not change this gate back to `if not api_key`, or local model-list loading
-    # will regress with false 400 errors.
-    if requires_api_key(provider) and not api_key:
-        return web.json_response(
-            {"ok": False, "error": f"No API key configured for provider '{provider}'."},
-            status=400,
-        )
+            info = get_provider_info(provider)
+            if not info:
+                return web.json_response(
+                    {"ok": False, "error": f"Unknown provider: {provider}"}, status=400
+                )
 
-    # SSRF policy
-    try:
-        try:
-            from ..services.safe_io import (
-                STANDARD_OUTBOUND_POLICY,
-                validate_outbound_url,
-            )
-        except ImportError:
-            from services.safe_io import STANDARD_OUTBOUND_POLICY, validate_outbound_url
+            if info.api_type != ProviderType.OPENAI_COMPAT:
+                return web.json_response(
+                    {
+                        "ok": False,
+                        "error": "Model list is only supported for OpenAI-compatible providers.",
+                    },
+                    status=400,
+                )
 
-        controls = get_llm_egress_controls(provider, base_url)
-        validate_outbound_url(
-            base_url,
-            allow_hosts=controls.get("allow_hosts"),
-            allow_any_public_host=bool(controls.get("allow_any_public_host")),
-            allow_loopback_hosts=controls.get("allow_loopback_hosts"),
-            policy=STANDARD_OUTBOUND_POLICY,
-        )
-    except Exception as e:
-        return web.json_response(
-            {"ok": False, "error": f"SSRF policy blocked outbound URL: {e}"}, status=403
-        )
+            # Priority: Runtime URL -> Info Default
+            base_url = runtime_base_url if runtime_base_url else info.base_url
+            if not base_url:
+                return web.json_response(
+                    {
+                        "ok": False,
+                        "error": f"No base URL configured for provider '{provider}'.",
+                    },
+                    status=400,
+                )
 
-    # Fetch /models
-    try:
-        try:
-            from ..services.safe_io import (
-                STANDARD_OUTBOUND_POLICY,
-                SSRFError,
-                safe_request_json,
-            )
-        except ImportError:
-            from services.safe_io import (
-                STANDARD_OUTBOUND_POLICY,
-                SSRFError,
-                safe_request_json,
-            )
+            # R60: Cache key includes provider + base_url to avoid cross-provider staleness.
+            cache_key = _build_model_cache_key(provider, base_url, tenant.tenant_id)
 
-        url = f"{base_url.rstrip('/')}/models"
-        request_headers = {
-            "User-Agent": f"ComfyUI-OpenClaw/{PACK_VERSION}",
-            "Accept": "application/json",
-        }
-        if api_key:
-            request_headers["Authorization"] = f"Bearer {api_key}"
+            # R60: Check bounded TTL+LRU cache
+            cached_entry = _cache_get(cache_key)
+            if cached_entry:
+                _ts, models = cached_entry
+                if isinstance(models, list):
+                    return web.json_response(
+                        {
+                            "ok": True,
+                            "tenant_id": tenant.tenant_id,
+                            "provider": provider,
+                            "models": models,
+                            "cached": True,
+                        }
+                    )
 
-        # S65: Enforce outbound policy via safe_io
-        payload = safe_request_json(
-            method="GET",
-            url=url,
-            json_body=None,
-            headers=request_headers,
-            timeout_sec=10,
-            policy=STANDARD_OUTBOUND_POLICY,
-            allow_hosts=controls.get("allow_hosts"),
-            allow_any_public_host=bool(controls.get("allow_any_public_host")),
-            allow_loopback_hosts=controls.get("allow_loopback_hosts"),
-        )
+            api_key = get_api_key_for_provider(provider, tenant_id=tenant.tenant_id)
+            # CRITICAL:
+            # Local providers (e.g. ollama/lmstudio) intentionally work without API keys.
+            # Do not change this gate back to `if not api_key`, or local model-list loading
+            # will regress with false 400 errors.
+            if requires_api_key(provider) and not api_key:
+                return web.json_response(
+                    {
+                        "ok": False,
+                        "error": f"No API key configured for provider '{provider}'.",
+                    },
+                    status=400,
+                )
 
-        models = _extract_models_from_payload(payload)
+            # SSRF policy
+            try:
+                try:
+                    from ..services.safe_io import (
+                        STANDARD_OUTBOUND_POLICY,
+                        validate_outbound_url,
+                    )
+                except ImportError:
+                    from services.safe_io import (  # type: ignore
+                        STANDARD_OUTBOUND_POLICY,
+                        validate_outbound_url,
+                    )
 
-        # R60: Insert/update bounded cache
-        _cache_put(cache_key, models)
+                controls = get_llm_egress_controls(provider, base_url)
+                validate_outbound_url(
+                    base_url,
+                    allow_hosts=controls.get("allow_hosts"),
+                    allow_any_public_host=bool(controls.get("allow_any_public_host")),
+                    allow_loopback_hosts=controls.get("allow_loopback_hosts"),
+                    policy=STANDARD_OUTBOUND_POLICY,
+                )
+            except Exception as e:
+                return web.json_response(
+                    {"ok": False, "error": f"SSRF policy blocked outbound URL: {e}"},
+                    status=403,
+                )
 
-        return web.json_response(
-            {"ok": True, "provider": provider, "models": models, "cached": False}
-        )
-    except SSRFError as e:
-        return web.json_response(
-            {"ok": False, "error": f"SSRF policy blocked outbound URL: {e}"}, status=403
-        )
-    except RuntimeError as e:
-        # safe_request_json raises RuntimeError for HTTP errors (non-200) contextually
-        # check if it looks like an HTTP error
-        str_e = str(e)
-        if "HTTP" in str_e:
-            # Fallback: serve stale cache entry (if any) on fetch failure
-            stale = _MODEL_LIST_CACHE.get(cache_key)
-            if stale:
-                _ts, models = stale
-                warning = f"Using cached list (refresh failed: {str_e})"
+            # Fetch /models
+            try:
+                try:
+                    from ..services.safe_io import (
+                        STANDARD_OUTBOUND_POLICY,
+                        SSRFError,
+                        safe_request_json,
+                    )
+                except ImportError:
+                    from services.safe_io import (  # type: ignore
+                        STANDARD_OUTBOUND_POLICY,
+                        SSRFError,
+                        safe_request_json,
+                    )
+
+                url = f"{base_url.rstrip('/')}/models"
+                request_headers = {
+                    "User-Agent": f"ComfyUI-OpenClaw/{PACK_VERSION}",
+                    "Accept": "application/json",
+                }
+                if api_key:
+                    request_headers["Authorization"] = f"Bearer {api_key}"
+
+                # S65: Enforce outbound policy via safe_io
+                payload = safe_request_json(
+                    method="GET",
+                    url=url,
+                    json_body=None,
+                    headers=request_headers,
+                    timeout_sec=10,
+                    policy=STANDARD_OUTBOUND_POLICY,
+                    allow_hosts=controls.get("allow_hosts"),
+                    allow_any_public_host=bool(controls.get("allow_any_public_host")),
+                    allow_loopback_hosts=controls.get("allow_loopback_hosts"),
+                )
+
+                models = _extract_models_from_payload(payload)
+
+                # R60: Insert/update bounded cache
+                _cache_put(cache_key, models)
+
                 return web.json_response(
                     {
                         "ok": True,
+                        "tenant_id": tenant.tenant_id,
                         "provider": provider,
                         "models": models,
-                        "cached": True,
-                        "warning": warning,
+                        "cached": False,
                     }
                 )
-            return web.json_response(
-                {"ok": False, "error": f"Upstream error: {str_e}"}, status=502
-            )
-        raise e
+            except SSRFError as e:
+                return web.json_response(
+                    {"ok": False, "error": f"SSRF policy blocked outbound URL: {e}"},
+                    status=403,
+                )
+            except RuntimeError as e:
+                # safe_request_json raises RuntimeError for HTTP errors (non-200) contextually
+                # check if it looks like an HTTP error
+                str_e = str(e)
+                if "HTTP" in str_e:
+                    # Fallback: serve stale cache entry (if any) on fetch failure
+                    stale = _MODEL_LIST_CACHE.get(cache_key)
+                    if stale:
+                        _ts, models = stale
+                        warning = f"Using cached list (refresh failed: {str_e})"
+                        return web.json_response(
+                            {
+                                "ok": True,
+                                "tenant_id": tenant.tenant_id,
+                                "provider": provider,
+                                "models": models,
+                                "cached": True,
+                                "warning": warning,
+                            }
+                        )
+                    return web.json_response(
+                        {"ok": False, "error": f"Upstream error: {str_e}"}, status=502
+                    )
+                raise e
 
-    except Exception as e:
-        stale = _MODEL_LIST_CACHE.get(cache_key)
-        if stale:
-            # IMPORTANT:
-            # Test path intentionally injects network failures to verify cache fallback.
-            # Keep this as warning (no traceback) to avoid noisy false-alarm logs.
-            logger.warning("Model list refresh failed, serving cached list: %s", e)
-            _ts, models = stale
-            warning = f"Using cached list (refresh failed: {str(e)})"
-            return web.json_response(
-                {
-                    "ok": True,
-                    "provider": provider,
-                    "models": models,
-                    "cached": True,
-                    "warning": warning,
-                }
-            )
-        logger.exception("Failed to fetch model list")
-        return web.json_response({"ok": False, "error": str(e)}, status=500)
+            except Exception as e:
+                stale = _MODEL_LIST_CACHE.get(cache_key)
+                if stale:
+                    # IMPORTANT:
+                    # Test path intentionally injects network failures to verify cache fallback.
+                    # Keep this as warning (no traceback) to avoid noisy false-alarm logs.
+                    logger.warning(
+                        "Model list refresh failed, serving cached list: %s", e
+                    )
+                    _ts, models = stale
+                    warning = f"Using cached list (refresh failed: {str(e)})"
+                    return web.json_response(
+                        {
+                            "ok": True,
+                            "tenant_id": tenant.tenant_id,
+                            "provider": provider,
+                            "models": models,
+                            "cached": True,
+                            "warning": warning,
+                        }
+                    )
+                logger.exception("Failed to fetch model list")
+                return web.json_response({"ok": False, "error": str(e)}, status=500)
+    except TenantBoundaryError as e:
+        return web.json_response(
+            {"ok": False, "error": e.code, "message": str(e)},
+            status=403,
+        )
 
 
 @endpoint_metadata(
@@ -708,87 +777,111 @@ async def config_put_handler(request: web.Request) -> web.Response:
             )
 
     try:
-        body = await request.json()
-    except json.JSONDecodeError:
-        return web.json_response(
-            {
-                "ok": False,
-                "error": "Invalid JSON body",
-            },
-            status=400,
-        )
+        with request_tenant_scope(
+            request=request, token_info=token_info, allow_default_when_missing=True
+        ) as tenant:
+            try:
+                body = await request.json()
+            except json.JSONDecodeError:
+                return web.json_response(
+                    {
+                        "ok": False,
+                        "error": "Invalid JSON body",
+                    },
+                    status=400,
+                )
 
-    # S66: Runtime guardrails are ENV-driven + runtime-only and must never be
-    # persisted via config writes (prevents config drift / silent downgrade paths).
-    if payload_contains_runtime_guardrails(body):
+            # S66: Runtime guardrails are ENV-driven + runtime-only and must never be
+            # persisted via config writes (prevents config drift / silent downgrade paths).
+            if payload_contains_runtime_guardrails(body):
+                emit_audit_event(
+                    action="config.update",
+                    target="config.json",
+                    outcome="deny",
+                    token_info=token_info,
+                    status_code=400,
+                    details={
+                        "tenant_id": tenant.tenant_id,
+                        "reason": "runtime_guardrails_runtime_only",
+                        "code": CODE_RUNTIME_ONLY_PERSIST_FORBIDDEN,
+                    },
+                    request=request,
+                )
+                return web.json_response(
+                    {
+                        "ok": False,
+                        "error": "runtime_guardrails are runtime-only (ENV-driven) and cannot be persisted via /config",
+                        "code": CODE_RUNTIME_ONLY_PERSIST_FORBIDDEN,
+                    },
+                    status=400,
+                )
+
+            # Extract LLM config updates
+            updates = body.get("llm", body)  # Support both { llm: {...} } and {...}
+            if not isinstance(updates, dict):
+                return web.json_response(
+                    {
+                        "ok": False,
+                        "error": "Expected object with config fields",
+                    },
+                    status=400,
+                )
+
+            success, errors = update_config(updates, tenant_id=tenant.tenant_id)
+
+            # R99: Standardized Audit Emission
+            emit_audit_event(
+                action="config.update",
+                target="config.json",
+                outcome="allow" if success else "error",
+                token_info=token_info,
+                status_code=200 if success else 400,
+                details=(
+                    {"tenant_id": tenant.tenant_id, "errors": errors}
+                    if errors
+                    else {"tenant_id": tenant.tenant_id}
+                ),
+                request=request,
+            )
+
+            if not success:
+                return web.json_response(
+                    {
+                        "ok": False,
+                        "errors": errors,
+                    },
+                    status=400,
+                )
+
+            # Return updated config
+            effective, sources = get_effective_config(tenant_id=tenant.tenant_id)
+
+            # R53: Calculate apply semantics
+            apply_info = get_apply_semantics(list(updates.keys()))
+
+            return web.json_response(
+                {
+                    "ok": True,
+                    "tenant_id": tenant.tenant_id,
+                    "config": effective,
+                    "sources": sources,
+                    "apply": apply_info,
+                }
+            )
+    except TenantBoundaryError as e:
         emit_audit_event(
             action="config.update",
             target="config.json",
             outcome="deny",
             token_info=token_info,
-            status_code=400,
-            details={
-                "reason": "runtime_guardrails_runtime_only",
-                "code": CODE_RUNTIME_ONLY_PERSIST_FORBIDDEN,
-            },
+            status_code=403,
+            details={"reason": e.code},
             request=request,
         )
         return web.json_response(
-            {
-                "ok": False,
-                "error": "runtime_guardrails are runtime-only (ENV-driven) and cannot be persisted via /config",
-                "code": CODE_RUNTIME_ONLY_PERSIST_FORBIDDEN,
-            },
-            status=400,
+            {"ok": False, "error": e.code, "message": str(e)},
+            status=403,
         )
-
-    # Extract LLM config updates
-    updates = body.get("llm", body)  # Support both { llm: {...} } and {...}
-    if not isinstance(updates, dict):
-        return web.json_response(
-            {
-                "ok": False,
-                "error": "Expected object with config fields",
-            },
-            status=400,
-        )
-
-    success, errors = update_config(updates)
-
-    # R99: Standardized Audit Emission
-    emit_audit_event(
-        action="config.update",
-        target="config.json",
-        outcome="allow" if success else "error",
-        token_info=token_info,
-        status_code=200 if success else 400,
-        details={"errors": errors} if errors else None,
-        request=request,
-    )
-
-    if not success:
-        return web.json_response(
-            {
-                "ok": False,
-                "errors": errors,
-            },
-            status=400,
-        )
-
-    # Return updated config
-    effective, sources = get_effective_config()
-
-    # R53: Calculate apply semantics
-    apply_info = get_apply_semantics(list(updates.keys()))
-
-    return web.json_response(
-        {
-            "ok": True,
-            "config": effective,
-            "sources": sources,
-            "apply": apply_info,
-        }
-    )
 
 
 @endpoint_metadata(
@@ -852,103 +945,111 @@ async def llm_test_handler(request: web.Request) -> web.Response:
         )
 
     try:
-        # IMPORTANT (Settings UX / provider mismatch):
-        # - The Settings UI allows selecting provider/model/base_url without persisting config immediately.
-        # - If this endpoint only uses effective config, "Test Connection" can misleadingly test the
-        #   previous provider (often "openai") and report: "API key not configured for provider 'openai'"
-        #   even when the UI is set to Gemini and a Gemini key is stored.
-        # Therefore, accept optional overrides in the JSON body.
-        #
-        # Contract:
-        # - Empty body -> test effective config
-        # - Body may include: provider, model, base_url, timeout_sec, max_retries
-        try:
-            body = await request.json()
-            if body is None:
+        with request_tenant_scope(
+            request=request, token_info=token_info, allow_default_when_missing=True
+        ) as tenant:
+            # IMPORTANT (Settings UX / provider mismatch):
+            # - The Settings UI allows selecting provider/model/base_url without persisting config immediately.
+            # - If this endpoint only uses effective config, "Test Connection" can misleadingly test the
+            #   previous provider (often "openai") and report: "API key not configured for provider 'openai'"
+            #   even when the UI is set to Gemini and a Gemini key is stored.
+            # Therefore, accept optional overrides in the JSON body.
+            #
+            # Contract:
+            # - Empty body -> test effective config
+            # - Body may include: provider, model, base_url, timeout_sec, max_retries
+            try:
+                body = await request.json()
+                if body is None:
+                    body = {}
+            except Exception:
                 body = {}
-        except Exception:
-            body = {}
 
-        if body and not isinstance(body, dict):
-            return web.json_response(
-                {"ok": False, "error": "Expected JSON object body (or empty body)"},
-                status=400,
-            )
-
-        provider = (
-            body.get("provider") if isinstance(body.get("provider"), str) else None
-        )
-        model = body.get("model") if isinstance(body.get("model"), str) else None
-        base_url = (
-            body.get("base_url") if isinstance(body.get("base_url"), str) else None
-        )
-
-        timeout_val = body.get("timeout_sec")
-        timeout_sec = None
-        if (
-            isinstance(timeout_val, (int, float, str))
-            and str(timeout_val).strip() != ""
-        ):
-            try:
-                timeout_sec = int(timeout_val)
-            except Exception:
+            if body and not isinstance(body, dict):
                 return web.json_response(
-                    {"ok": False, "error": "timeout_sec must be an integer"},
+                    {"ok": False, "error": "Expected JSON object body (or empty body)"},
                     status=400,
                 )
 
-        retries_val = body.get("max_retries")
-        max_retries = None
-        if (
-            isinstance(retries_val, (int, float, str))
-            and str(retries_val).strip() != ""
-        ):
-            try:
-                max_retries = int(retries_val)
-            except Exception:
+            provider = (
+                body.get("provider") if isinstance(body.get("provider"), str) else None
+            )
+            model = body.get("model") if isinstance(body.get("model"), str) else None
+            base_url = (
+                body.get("base_url") if isinstance(body.get("base_url"), str) else None
+            )
+
+            timeout_val = body.get("timeout_sec")
+            timeout_sec = None
+            if (
+                isinstance(timeout_val, (int, float, str))
+                and str(timeout_val).strip() != ""
+            ):
+                try:
+                    timeout_sec = int(timeout_val)
+                except Exception:
+                    return web.json_response(
+                        {"ok": False, "error": "timeout_sec must be an integer"},
+                        status=400,
+                    )
+
+            retries_val = body.get("max_retries")
+            max_retries = None
+            if (
+                isinstance(retries_val, (int, float, str))
+                and str(retries_val).strip() != ""
+            ):
+                try:
+                    max_retries = int(retries_val)
+                except Exception:
+                    return web.json_response(
+                        {"ok": False, "error": "max_retries must be an integer"},
+                        status=400,
+                    )
+
+            # Initialize client (uses effective config by default; overrides if provided)
+            client = LLMClient(
+                provider=provider,
+                base_url=base_url,
+                model=model,
+                timeout=timeout_sec,
+                max_retries=max_retries,
+            )
+
+            # Run test in a worker thread since LLMClient is sync
+            result = await run_in_thread(
+                client.complete,
+                system="You are a test assistant.",
+                user_message="Respond with exactly: OK",
+                max_tokens=10,
+            )
+
+            # Check result
+            if result and "text" in result:
+                emit_audit_event(
+                    action="llm.test_connection",
+                    target=f"{client.provider}:{client.model}",
+                    outcome="allow",
+                    token_info=token_info,
+                    status_code=200,
+                    details={
+                        "tenant_id": tenant.tenant_id,
+                        "provider": client.provider,
+                        "model": client.model,
+                    },
+                    request=request,
+                )
                 return web.json_response(
-                    {"ok": False, "error": "max_retries must be an integer"},
-                    status=400,
+                    {
+                        "ok": True,
+                        "tenant_id": tenant.tenant_id,
+                        "message": "Connection successful",
+                        "response": result["text"].strip(),
+                        "provider": client.provider,
+                        "model": client.model,
+                    }
                 )
 
-        # Initialize client (uses effective config by default; overrides if provided)
-        client = LLMClient(
-            provider=provider,
-            base_url=base_url,
-            model=model,
-            timeout=timeout_sec,
-            max_retries=max_retries,
-        )
-
-        # Run test in a worker thread since LLMClient is sync
-        result = await run_in_thread(
-            client.complete,
-            system="You are a test assistant.",
-            user_message="Respond with exactly: OK",
-            max_tokens=10,
-        )
-
-        # Check result
-        if result and "text" in result:
-            emit_audit_event(
-                action="llm.test_connection",
-                target=f"{client.provider}:{client.model}",
-                outcome="allow",
-                token_info=token_info,
-                status_code=200,
-                details={"provider": client.provider, "model": client.model},
-                request=request,
-            )
-            return web.json_response(
-                {
-                    "ok": True,
-                    "message": "Connection successful",
-                    "response": result["text"].strip(),
-                    "provider": client.provider,
-                    "model": client.model,
-                }
-            )
-        else:
             emit_audit_event(
                 action="llm.test_connection",
                 target=f"{client.provider}:{client.model}",
@@ -956,6 +1057,7 @@ async def llm_test_handler(request: web.Request) -> web.Response:
                 token_info=token_info,
                 status_code=500,
                 details={
+                    "tenant_id": tenant.tenant_id,
                     "provider": client.provider,
                     "model": client.model,
                     "error": "Empty response",
@@ -968,6 +1070,20 @@ async def llm_test_handler(request: web.Request) -> web.Response:
                     "error": "Empty or invalid response from LLM",
                 }
             )
+    except TenantBoundaryError as e:
+        emit_audit_event(
+            action="llm.test_connection",
+            target="llm",
+            outcome="deny",
+            token_info=token_info,
+            status_code=403,
+            details={"reason": e.code},
+            request=request,
+        )
+        return web.json_response(
+            {"ok": False, "error": e.code, "message": str(e)},
+            status=403,
+        )
     except Exception as e:
         logger.exception("LLM test failed")
         emit_audit_event(
@@ -1030,6 +1146,7 @@ async def llm_chat_handler(request: web.Request) -> web.Response:
     # NOTE: Keep this server-side. Connector cannot access UI-stored secrets directly.
     # This endpoint ensures keys are resolved via backend config + secret store.
     # S13: Validate admin boundary (or loopback if no admin token configured)
+    token_info = resolve_token_info(request)
     allowed, err = require_admin_token(request)
     if not allowed:
         return web.json_response(
@@ -1082,21 +1199,31 @@ async def llm_chat_handler(request: web.Request) -> web.Response:
     )
 
     try:
-        client = LLMClient()
+        with request_tenant_scope(
+            request=request, token_info=token_info, allow_default_when_missing=True
+        ) as tenant:
+            client = LLMClient()
 
-        def _run():
-            return client.complete(
-                system=system,
-                user_message=user_message,
-                temperature=temperature,
-                max_tokens=max_tokens,
+            def _run():
+                return client.complete(
+                    system=system,
+                    user_message=user_message,
+                    temperature=temperature,
+                    max_tokens=max_tokens,
+                )
+
+            result = await run_in_thread(_run)
+            text = ""
+            if isinstance(result, dict):
+                text = result.get("text") or ""
+            return web.json_response(
+                {"ok": True, "tenant_id": tenant.tenant_id, "text": text}
             )
-
-        result = await run_in_thread(_run)
-        text = ""
-        if isinstance(result, dict):
-            text = result.get("text") or ""
-        return web.json_response({"ok": True, "text": text})
+    except TenantBoundaryError as e:
+        return web.json_response(
+            {"ok": False, "error": e.code, "message": str(e)},
+            status=403,
+        )
     except ValueError as e:
         # Common: missing API key for selected provider
         return web.json_response(

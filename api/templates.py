@@ -18,13 +18,24 @@ except ImportError:  # pragma: no cover (optional for unit tests)
 # - ComfyUI runtime: package-relative imports only (prevents collisions with other custom nodes).
 # - Unit tests: allow top-level fallbacks.
 if __package__ and "." in __package__:
-    from ..services.access_control import require_observability_access
+    from ..services.access_control import (
+        require_observability_access,
+        resolve_token_info,
+    )
     from ..services.rate_limit import check_rate_limit
     from ..services.templates import get_template_service
+    from ..services.tenant_context import TenantBoundaryError, request_tenant_scope
 else:  # pragma: no cover (test-only import mode)
-    from services.access_control import require_observability_access  # type: ignore
+    from services.access_control import (  # type: ignore
+        require_observability_access,
+        resolve_token_info,
+    )
     from services.rate_limit import check_rate_limit  # type: ignore
     from services.templates import get_template_service  # type: ignore
+    from services.tenant_context import (  # type: ignore
+        TenantBoundaryError,
+        request_tenant_scope,
+    )
 
 # R98: Endpoint Metadata
 if __package__ and "." in __package__:
@@ -105,33 +116,42 @@ async def templates_list_handler(request: web.Request) -> web.Response:
 
     try:
         svc = get_template_service()
-        items = []
-        # Prefer runtime discovery (file-based templates) so operators don't need
-        # to maintain a separate allowlist file.
-        for template_id in svc.get_debug_info().get("discovered_template_ids", []):  # type: ignore[call-arg]
-            cfg = svc.get_template_config(template_id)  # type: ignore[arg-type]
-            if cfg is None:
-                continue
-            items.append(
-                {
-                    "id": template_id,
-                    "allowed_inputs": list(cfg.allowed_inputs or []),
-                    "defaults": dict(cfg.defaults or {}),
-                }
-            )
-        items.sort(key=lambda x: x["id"])
-        resp: dict = {"ok": True, "templates": items, "count": len(items)}
+        token_info = resolve_token_info(request)
+        with request_tenant_scope(
+            request=request, token_info=token_info, allow_default_when_missing=True
+        ):
+            items = []
+            # Prefer runtime discovery (file-based templates) so operators don't need
+            # to maintain a separate allowlist file.
+            for template_id in svc.get_debug_info().get("discovered_template_ids", []):  # type: ignore[call-arg]
+                cfg = svc.get_template_config(template_id)  # type: ignore[arg-type]
+                if cfg is None:
+                    continue
+                items.append(
+                    {
+                        "id": template_id,
+                        "allowed_inputs": list(cfg.allowed_inputs or []),
+                        "defaults": dict(cfg.defaults or {}),
+                    }
+                )
+            items.sort(key=lambda x: x["id"])
+            resp: dict = {"ok": True, "templates": items, "count": len(items)}
 
-        # Optional diagnostics. This reveals absolute paths, so keep it opt-in.
-        debug = request.query.get("debug", "").strip() in ("1", "true", "yes")
-        if debug:
-            try:
-                resp["debug"] = svc.get_debug_info()  # type: ignore[attr-defined]
-            except Exception:
-                # If TemplateService interface changes, don't break the endpoint.
-                resp["debug"] = {"error": "debug_info_unavailable"}
+            # Optional diagnostics. This reveals absolute paths, so keep it opt-in.
+            debug = request.query.get("debug", "").strip() in ("1", "true", "yes")
+            if debug:
+                try:
+                    resp["debug"] = svc.get_debug_info()  # type: ignore[attr-defined]
+                except Exception:
+                    # If TemplateService interface changes, don't break the endpoint.
+                    resp["debug"] = {"error": "debug_info_unavailable"}
 
-        return web.json_response(resp)
+            return web.json_response(resp)
+    except TenantBoundaryError as e:
+        return web.json_response(
+            {"ok": False, "error": e.code, "message": str(e)},
+            status=403,
+        )
     except Exception as e:
         logger.exception("Failed to list templates")
         return web.json_response({"ok": False, "error": str(e)}, status=500)

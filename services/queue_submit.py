@@ -46,6 +46,11 @@ configure_logger_for_structured_output(logger)
 
 import os
 
+try:
+    from .tenant_context import get_current_tenant_id
+except ImportError:
+    from services.tenant_context import get_current_tenant_id  # type: ignore
+
 # ComfyUI internal server URL fallback
 COMFYUI_URL = (
     os.environ.get("OPENCLAW_COMFYUI_URL")
@@ -60,6 +65,7 @@ async def submit_prompt(
     extra_data: Optional[Dict[str, Any]] = None,
     source: str = "unknown",  # R33: Source tracking
     trace_id: Optional[str] = None,  # R33: Trace ID for logging
+    tenant_id: Optional[str] = None,  # S49: tenant context for budget + audit metadata
 ) -> Dict[str, Any]:
     """
     Submit a prompt workflow to ComfyUI with execution budgets (R33).
@@ -85,6 +91,7 @@ async def submit_prompt(
             "source": source,
             "trace_id": trace_id,
             "has_extra_data": bool(extra_data),
+            "tenant_id": tenant_id or get_current_tenant_id(),
         },
     )
     # NOTE: Must try relative import first. In ComfyUI runtime, `services` is not a top-level module.
@@ -107,6 +114,10 @@ async def submit_prompt(
 
     if extra_data:
         payload["extra_data"] = extra_data
+
+    # S49: keep tenant context in queue metadata for cross-service traceability.
+    openclaw_extra = payload.setdefault("extra_data", {}).setdefault("openclaw", {})
+    openclaw_extra.setdefault("tenant_id", tenant_id or get_current_tenant_id())
 
     # NOTE: Debug-only full payload logging for troubleshooting mismatched outputs.
     # Enable with OPENCLAW_DEBUG_PROMPT_PAYLOAD=1. This may include sensitive prompt content.
@@ -132,7 +143,11 @@ async def submit_prompt(
 
     # R33: Acquire concurrency budget
     limiter = get_limiter()
-    async with limiter.acquire(source=source, trace_id=trace_id):
+    async with limiter.acquire(
+        source=source,
+        trace_id=trace_id,
+        tenant_id=tenant_id or get_current_tenant_id(),
+    ):
         # Use aiohttp to post to local ComfyUI instance
         # We assume we are running INSIDE ComfyUI process, but for HTTP access we use localhost
         # unless we can hook internal server entry point.

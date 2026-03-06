@@ -11,6 +11,11 @@ from datetime import datetime, timezone
 from typing import Dict, List, Optional
 
 from ..state_dir import get_state_dir
+from ..tenant_context import (
+    DEFAULT_TENANT_ID,
+    is_multi_tenant_enabled,
+    normalize_tenant_id,
+)
 from .models import ApprovalRequest, ApprovalStatus
 
 logger = logging.getLogger("ComfyUI-OpenClaw.services.approvals")
@@ -129,11 +134,29 @@ class ApprovalStore:
             self._approvals = load_approvals()
             self._loaded = True
 
-    def get(self, approval_id: str) -> Optional[ApprovalRequest]:
+    def _match_tenant(
+        self, approval: ApprovalRequest, tenant_id: Optional[str]
+    ) -> bool:
+        if not is_multi_tenant_enabled() or tenant_id is None:
+            return True
+        try:
+            expected = normalize_tenant_id(tenant_id)
+        except Exception:
+            expected = DEFAULT_TENANT_ID
+        return approval.tenant_id == expected
+
+    def get(
+        self, approval_id: str, tenant_id: Optional[str] = None
+    ) -> Optional[ApprovalRequest]:
         """Get an approval by ID."""
         with self._lock:
             self._ensure_loaded()
-            return self._approvals.get(approval_id)
+            approval = self._approvals.get(approval_id)
+            if approval is None:
+                return None
+            if not self._match_tenant(approval, tenant_id):
+                return None
+            return approval
 
     def add(self, approval: ApprovalRequest) -> bool:
         """Add a new approval."""
@@ -179,19 +202,27 @@ class ApprovalStore:
             del self._approvals[approval_id]
             return save_approvals(self._approvals)
 
-    def list_all(self) -> List[ApprovalRequest]:
+    def list_all(self, tenant_id: Optional[str] = None) -> List[ApprovalRequest]:
         """List all approvals."""
         with self._lock:
             self._ensure_loaded()
-            return list(self._approvals.values())
+            return [
+                a for a in self._approvals.values() if self._match_tenant(a, tenant_id)
+            ]
 
-    def list_by_status(self, status: ApprovalStatus) -> List[ApprovalRequest]:
+    def list_by_status(
+        self, status: ApprovalStatus, tenant_id: Optional[str] = None
+    ) -> List[ApprovalRequest]:
         """List approvals by status."""
         with self._lock:
             self._ensure_loaded()
-            return [a for a in self._approvals.values() if a.status == status]
+            return [
+                a
+                for a in self._approvals.values()
+                if a.status == status and self._match_tenant(a, tenant_id)
+            ]
 
-    def count_pending(self) -> int:
+    def count_pending(self, tenant_id: Optional[str] = None) -> int:
         """Count pending approvals."""
         with self._lock:
             self._ensure_loaded()
@@ -199,6 +230,7 @@ class ApprovalStore:
                 1
                 for a in self._approvals.values()
                 if a.status == ApprovalStatus.PENDING
+                and self._match_tenant(a, tenant_id)
             )
 
     def expire_due(self) -> int:
