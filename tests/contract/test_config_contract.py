@@ -8,7 +8,7 @@ import pytest
 # Contract: Config Precedence
 def test_config_precedence():
     """
-    Contract: OPENCLAW_* env vars > MOLTBOT_* env vars > file config > defaults.
+    Contract: OPENCLAW_* env vars > MOLTBOT_* env vars > runtime override > file config > defaults.
     """
     # Mocking json load to avoid file I/O dependencies
     mock_json_load = MagicMock(return_value={})
@@ -31,6 +31,28 @@ def test_config_precedence():
             # might depend on implementation details of sources dict population.
             # services/runtime_config.py sets sources[key] = "env".
             assert sources["provider"] == "env"
+
+
+def test_runtime_override_precedence_without_env():
+    """
+    Contract: runtime override wins over persisted/default when env overrides are absent.
+    """
+    from services.runtime_config import (
+        clear_runtime_overrides,
+        get_effective_config,
+        set_runtime_overrides,
+    )
+
+    clear_runtime_overrides()
+    ok, errors = set_runtime_overrides({"provider": "openrouter"})
+    assert ok is True
+    assert errors == []
+    try:
+        config, sources = get_effective_config()
+        assert config["provider"] == "openrouter"
+        assert sources["provider"] == "runtime_override"
+    finally:
+        clear_runtime_overrides()
 
 
 # Contract: Secret Safety

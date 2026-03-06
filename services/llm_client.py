@@ -45,31 +45,43 @@ except ImportError:
 
 
 def get_configured_provider() -> str:
-    """Get the configured provider from environment or default."""
-    return (
-        os.environ.get("OPENCLAW_LLM_PROVIDER")
-        or os.environ.get("MOLTBOT_LLM_PROVIDER")
-        or DEFAULT_PROVIDER
-    ).lower()
+    """Get configured provider from the unified runtime-config surface."""
+    try:
+        from ..services.runtime_config import get_effective_config
+    except ImportError:
+        from services.runtime_config import get_effective_config
+
+    effective, _sources = get_effective_config()
+    return str(effective.get("provider") or DEFAULT_PROVIDER).lower()
 
 
 def get_configured_model(provider: str) -> str:
-    """Get the configured model for a provider."""
-    env_model = os.environ.get("OPENCLAW_LLM_MODEL") or os.environ.get(
-        "MOLTBOT_LLM_MODEL"
-    )
-    if env_model:
-        return env_model
+    """Get configured model for a provider via unified runtime-config snapshot."""
+    try:
+        from ..services.runtime_config import get_effective_config
+    except ImportError:
+        from services.runtime_config import get_effective_config
+
+    effective, _sources = get_effective_config()
+    current_provider = str(effective.get("provider") or "").lower()
+    configured_model = effective.get("model")
+    if configured_model and str(provider).lower() == current_provider:
+        return str(configured_model)
     return DEFAULT_MODEL_BY_PROVIDER.get(provider, "default")
 
 
 def get_configured_base_url(provider: str) -> str:
-    """Get the configured base URL for a provider."""
-    env_url = os.environ.get("OPENCLAW_LLM_BASE_URL") or os.environ.get(
-        "MOLTBOT_LLM_BASE_URL"
-    )
-    if env_url:
-        return env_url
+    """Get configured base URL via unified runtime-config snapshot."""
+    try:
+        from ..services.runtime_config import get_effective_config
+    except ImportError:
+        from services.runtime_config import get_effective_config
+
+    effective, _sources = get_effective_config()
+    current_provider = str(effective.get("provider") or "").lower()
+    configured_base_url = str(effective.get("base_url") or "").strip()
+    if configured_base_url and str(provider).lower() == current_provider:
+        return configured_base_url
 
     info = get_provider_info(provider)
     if info:

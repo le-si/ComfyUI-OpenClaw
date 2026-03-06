@@ -5,6 +5,33 @@ import time
 from logging.handlers import RotatingFileHandler
 from typing import Optional
 
+# R139: centralized env-alias helpers for config surface compatibility.
+try:
+    from .services.config_layers import (
+        GENERIC_LLM_API_KEY_ENV_KEYS,
+        get_first_present_env,
+    )
+except Exception:
+    try:
+        from services.config_layers import (  # type: ignore
+            GENERIC_LLM_API_KEY_ENV_KEYS,
+            get_first_present_env,
+        )
+    except Exception:
+        GENERIC_LLM_API_KEY_ENV_KEYS = (
+            "OPENCLAW_LLM_API_KEY",
+            "MOLTBOT_LLM_API_KEY",
+            "CLAWDBOT_LLM_API_KEY",
+        )
+
+        def get_first_present_env(keys, *, env=None):  # type: ignore
+            env_map = env or os.environ
+            for key in keys:
+                if key in env_map:
+                    return env_map.get(key)
+            return None
+
+
 # Pack metadata
 PACK_NAME = "ComfyUI-OpenClaw"
 PACK_START_TIME = time.time()
@@ -59,9 +86,9 @@ def _read_pyproject_version() -> Optional[str]:
 PACK_VERSION = _read_pyproject_version() or "0.1.0"
 
 # Environment variable for the API key
-ENV_API_KEY = "OPENCLAW_LLM_API_KEY"
-LEGACY_ENV_API_KEY = "MOLTBOT_LLM_API_KEY"
-LEGACY2_ENV_API_KEY = "CLAWDBOT_LLM_API_KEY"
+ENV_API_KEY = GENERIC_LLM_API_KEY_ENV_KEYS[0]
+LEGACY_ENV_API_KEY = GENERIC_LLM_API_KEY_ENV_KEYS[1]
+LEGACY2_ENV_API_KEY = GENERIC_LLM_API_KEY_ENV_KEYS[2]
 
 # Data directory (R11: use portable state directory)
 try:
@@ -145,14 +172,8 @@ def get_api_key() -> Optional[str]:
     2) (legacy) MOLTBOT_LLM_API_KEY
     3) (legacy) CLAWDBOT_LLM_API_KEY
     """
-    # Respect explicit empty string overrides by checking env var presence.
-    if ENV_API_KEY in os.environ:
-        return os.environ.get(ENV_API_KEY) or None
-    if LEGACY_ENV_API_KEY in os.environ:
-        return os.environ.get(LEGACY_ENV_API_KEY) or None
-    if LEGACY2_ENV_API_KEY in os.environ:
-        return os.environ.get(LEGACY2_ENV_API_KEY) or None
-    return None
+    value = get_first_present_env(GENERIC_LLM_API_KEY_ENV_KEYS)
+    return value or None
 
 
 def setup_logger(name: str = "ComfyUI-OpenClaw") -> logging.Logger:

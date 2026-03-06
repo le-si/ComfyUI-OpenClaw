@@ -87,6 +87,148 @@ except ImportError:
             return config_blob, []
 
 
+# R139: Layered config resolver + compatibility env alias helpers.
+try:
+    from .config_layers import (
+        ADMIN_TOKEN_ENV_KEYS,
+        LLM_ENV_MAPPINGS,
+        SOURCE_ENV,
+        SOURCE_PERSISTED,
+        SOURCE_RUNTIME_OVERRIDE,
+    )
+    from .config_layers import clear_runtime_overrides as _clear_runtime_overrides
+    from .config_layers import get_first_present_env, get_preferred_env_value
+    from .config_layers import get_runtime_overrides as _get_runtime_overrides
+    from .config_layers import resolve_layered_config
+    from .config_layers import set_runtime_overrides as _set_runtime_overrides
+except ImportError:
+    try:
+        from services.config_layers import (
+            ADMIN_TOKEN_ENV_KEYS,
+            LLM_ENV_MAPPINGS,
+            SOURCE_ENV,
+            SOURCE_PERSISTED,
+            SOURCE_RUNTIME_OVERRIDE,
+        )
+        from services.config_layers import (
+            clear_runtime_overrides as _clear_runtime_overrides,  # type: ignore
+        )
+        from services.config_layers import (
+            get_first_present_env,
+            get_preferred_env_value,
+        )
+        from services.config_layers import (
+            get_runtime_overrides as _get_runtime_overrides,
+        )
+        from services.config_layers import resolve_layered_config
+        from services.config_layers import (
+            set_runtime_overrides as _set_runtime_overrides,
+        )
+    except ImportError:
+        # Compatibility fallback for constrained test environments.
+        ADMIN_TOKEN_ENV_KEYS = ("OPENCLAW_ADMIN_TOKEN", "MOLTBOT_ADMIN_TOKEN")
+        SOURCE_ENV = "env"
+        SOURCE_PERSISTED = "persisted"
+        SOURCE_RUNTIME_OVERRIDE = "runtime_override"
+        LLM_ENV_MAPPINGS = {
+            "provider": ("OPENCLAW_LLM_PROVIDER", "MOLTBOT_LLM_PROVIDER"),
+            "model": ("OPENCLAW_LLM_MODEL", "MOLTBOT_LLM_MODEL"),
+            "base_url": ("OPENCLAW_LLM_BASE_URL", "MOLTBOT_LLM_BASE_URL"),
+            "timeout_sec": ("OPENCLAW_LLM_TIMEOUT", "MOLTBOT_LLM_TIMEOUT"),
+            "max_retries": ("OPENCLAW_LLM_MAX_RETRIES", "MOLTBOT_LLM_MAX_RETRIES"),
+            "fallback_models": (
+                "OPENCLAW_FALLBACK_MODELS",
+                "MOLTBOT_FALLBACK_MODELS",
+            ),
+            "fallback_providers": (
+                "OPENCLAW_FALLBACK_PROVIDERS",
+                "MOLTBOT_FALLBACK_PROVIDERS",
+            ),
+            "max_failover_candidates": (
+                "OPENCLAW_MAX_FAILOVER_CANDIDATES",
+                "MOLTBOT_MAX_FAILOVER_CANDIDATES",
+            ),
+        }
+
+        def get_first_present_env(keys, *, env=None):  # type: ignore
+            env_map = env or os.environ
+            for key in keys:
+                if key in env_map:
+                    return env_map.get(key)
+            return None
+
+        def get_preferred_env_value(primary, legacy, *, env=None):  # type: ignore
+            env_map = env or os.environ
+            if primary in env_map:
+                return env_map.get(primary), False
+            if legacy and legacy in env_map:
+                return env_map.get(legacy), True
+            return None, False
+
+        _RUNTIME_OVERRIDES: Dict[str, Dict[str, Any]] = {}
+
+        def _get_runtime_overrides(section):  # type: ignore
+            return dict(_RUNTIME_OVERRIDES.get(section, {}))
+
+        def _set_runtime_overrides(section, updates):  # type: ignore
+            current = dict(_RUNTIME_OVERRIDES.get(section, {}))
+            for key, value in updates.items():
+                if value is None:
+                    current.pop(key, None)
+                else:
+                    current[key] = value
+            if current:
+                _RUNTIME_OVERRIDES[section] = current
+            else:
+                _RUNTIME_OVERRIDES.pop(section, None)
+            return dict(current)
+
+        def _clear_runtime_overrides(section, keys=None):  # type: ignore
+            if keys is None:
+                _RUNTIME_OVERRIDES.pop(section, None)
+                return
+            current = _RUNTIME_OVERRIDES.get(section)
+            if not current:
+                return
+            for key in keys:
+                current.pop(key, None)
+            if not current:
+                _RUNTIME_OVERRIDES.pop(section, None)
+
+        def resolve_layered_config(  # type: ignore
+            *,
+            ordered_keys,
+            defaults,
+            persisted=None,
+            runtime_overrides=None,
+            env_getter=None,
+            normalize_value=None,
+        ):
+            persisted = dict(persisted or {})
+            runtime_overrides = dict(runtime_overrides or {})
+            effective = {}
+            sources = {}
+            for key in ordered_keys:
+                value = defaults.get(key)
+                source = "default"
+                if key in persisted:
+                    value = persisted.get(key)
+                    source = SOURCE_PERSISTED
+                if key in runtime_overrides:
+                    value = runtime_overrides.get(key)
+                    source = SOURCE_RUNTIME_OVERRIDE
+                if env_getter is not None:
+                    env_value = env_getter(key)
+                    if env_value is not None:
+                        value = env_value
+                        source = SOURCE_ENV
+                if normalize_value is not None:
+                    value = normalize_value(key, value, source)
+                effective[key] = value
+                sources[key] = source
+            return effective, sources
+
+
 # Config file location (under state dir)
 try:
     # Prefer package-relative imports when running as a ComfyUI custom node pack.
@@ -194,20 +336,8 @@ SCHEDULER_CONSTRAINTS = {
 }
 
 # Environment variable mappings (new, legacy)
-ENV_MAPPINGS = {
-    "provider": ("OPENCLAW_LLM_PROVIDER", "MOLTBOT_LLM_PROVIDER"),
-    "model": ("OPENCLAW_LLM_MODEL", "MOLTBOT_LLM_MODEL"),
-    "base_url": ("OPENCLAW_LLM_BASE_URL", "MOLTBOT_LLM_BASE_URL"),
-    "timeout_sec": ("OPENCLAW_LLM_TIMEOUT", "MOLTBOT_LLM_TIMEOUT"),
-    "max_retries": ("OPENCLAW_LLM_MAX_RETRIES", "MOLTBOT_LLM_MAX_RETRIES"),
-    # R14: Failover env vars
-    "fallback_models": ("OPENCLAW_FALLBACK_MODELS", "MOLTBOT_FALLBACK_MODELS"),
-    "fallback_providers": ("OPENCLAW_FALLBACK_PROVIDERS", "MOLTBOT_FALLBACK_PROVIDERS"),
-    "max_failover_candidates": (
-        "OPENCLAW_MAX_FAILOVER_CANDIDATES",
-        "MOLTBOT_MAX_FAILOVER_CANDIDATES",
-    ),
-}
+# R139: defined in services.config_layers as the single source-of-truth.
+ENV_MAPPINGS = dict(LLM_ENV_MAPPINGS)
 
 SCHEDULER_ENV_MAPPINGS = {
     "startup_jitter_sec": ("OPENCLAW_SCHEDULER_STARTUP_JITTER_SEC", ""),
@@ -307,25 +437,21 @@ def _get_env_value(key: str) -> Optional[str]:
     if not env_vars:
         return None
     primary, legacy = env_vars
+    value, used_legacy = get_preferred_env_value(primary, legacy)
+    if not used_legacy:
+        return value
 
-    # Respect explicit empty-string overrides: treat "present in env" as an override.
-    if primary in os.environ:
-        return os.environ.get(primary)
+    # Check if we've already warned for this key to avoid spam.
+    if not getattr(_get_env_value, "_warned_legacy", None):
+        _get_env_value._warned_legacy = set()
 
-    if legacy in os.environ:
-        # Check if we've already warned for this key to avoid spam
-        if not getattr(_get_env_value, "_warned_legacy", None):
-            _get_env_value._warned_legacy = set()
-
-        if legacy not in _get_env_value._warned_legacy:
-            logger.warning(
-                f"Config: Using legacy environment variable {legacy}. "
-                f"Please update to {primary} in future versions."
-            )
-            _get_env_value._warned_legacy.add(legacy)
-
-        return os.environ.get(legacy)
-    return None
+    if legacy not in _get_env_value._warned_legacy:
+        logger.warning(
+            f"Config: Using legacy environment variable {legacy}. "
+            f"Please update to {primary} in future versions."
+        )
+        _get_env_value._warned_legacy.add(legacy)
+    return value
 
 
 def _env_flag(primary: str, legacy: str, default: bool = False) -> bool:
@@ -430,66 +556,79 @@ def get_scheduler_config() -> Dict[str, Any]:
     return effective
 
 
+def _normalize_llm_layer_value(key: str, value: Any, source: str) -> Any:
+    """Normalize/clamp per-key values while preserving compatibility semantics."""
+    if source == SOURCE_ENV:
+        if key in ("fallback_models", "fallback_providers"):
+            if isinstance(value, str):
+                return [item.strip() for item in value.split(",") if item.strip()]
+            if isinstance(value, list):
+                return [str(item).strip() for item in value if str(item).strip()]
+            return []
+
+        if key in CONSTRAINTS:
+            try:
+                value_int = int(value)
+            except (TypeError, ValueError):
+                return DEFAULTS["llm"].get(key)
+            min_val, max_val = _get_constraint_range(key)
+            return _clamp(value_int, min_val, max_val)
+
+        return value
+
+    # Persisted/runtime/default values keep historical compatibility:
+    # clamp numeric constraint keys only when the value is already numeric.
+    if key in CONSTRAINTS and isinstance(value, (int, float)):
+        min_val, max_val = _get_constraint_range(key)
+        return _clamp(int(value), min_val, max_val)
+    return value
+
+
+def get_runtime_overrides() -> Dict[str, Any]:
+    """Get current in-memory runtime overrides for the LLM section."""
+    return _get_runtime_overrides("llm")
+
+
+def set_runtime_overrides(updates: Dict[str, Any]) -> Tuple[bool, list]:
+    """
+    Set in-memory runtime overrides for LLM config (non-persisted).
+
+    Uses the same schema validation path as persisted config updates.
+    """
+    sanitized, errors = validate_config_update(updates)
+    if errors:
+        return False, errors
+    _set_runtime_overrides("llm", sanitized)
+    return True, []
+
+
+def clear_runtime_overrides(keys: Optional[List[str]] = None) -> None:
+    """Clear all runtime overrides (or only selected keys) for LLM config."""
+    _clear_runtime_overrides("llm", keys=keys)
+
+
 def get_effective_config() -> Tuple[Dict[str, Any], Dict[str, str]]:
     """
-    Get effective LLM config with precedence: ENV > file > defaults.
+    Get effective LLM config with precedence:
+    ENV > runtime_override > persisted file > defaults.
 
     Returns:
         Tuple of (effective_config, sources) where sources maps each key to its origin.
     """
     file_config = _load_file_config().get("llm", {})
-
-    effective = {}
-    sources = {}
+    runtime_overrides = get_runtime_overrides()
 
     ordered_keys = list(LLM_KEY_ORDER) + [
         k for k in sorted(ALLOWED_LLM_KEYS) if k not in ENV_MAPPINGS
     ]
-
-    timeout_cap, retry_cap = _s66_timeout_retry_caps()
-
-    for key in ordered_keys:
-        # 1. Check ENV override
-        env_val = _get_env_value(key)
-        if env_val is not None:
-            # R14: Parse list env vars (comma-separated)
-            if key in ("fallback_models", "fallback_providers"):
-                env_val = [item.strip() for item in env_val.split(",") if item.strip()]
-            # Parse numeric env vars
-            if key in CONSTRAINTS:
-                try:
-                    env_val = int(env_val)
-                    if key == "timeout_sec":
-                        env_val = _clamp(env_val, CONSTRAINTS[key][0], timeout_cap)
-                    elif key == "max_retries":
-                        env_val = _clamp(env_val, CONSTRAINTS[key][0], retry_cap)
-                    else:
-                        env_val = _clamp(env_val, *CONSTRAINTS[key])
-                except ValueError:
-                    env_val = DEFAULTS["llm"].get(key)
-            effective[key] = env_val
-            sources[key] = "env"
-            continue
-
-        # 2. Check file config
-        if key in file_config:
-            val = file_config[key]
-            if key in CONSTRAINTS and isinstance(val, (int, float)):
-                if key == "timeout_sec":
-                    val = _clamp(int(val), CONSTRAINTS[key][0], timeout_cap)
-                elif key == "max_retries":
-                    val = _clamp(int(val), CONSTRAINTS[key][0], retry_cap)
-                else:
-                    val = _clamp(int(val), *CONSTRAINTS[key])
-            effective[key] = val
-            sources[key] = "file"
-            continue
-
-        # 3. Use default
-        effective[key] = DEFAULTS["llm"].get(key, "")
-        sources[key] = "default"
-
-    return effective, sources
+    return resolve_layered_config(
+        ordered_keys=ordered_keys,
+        defaults=DEFAULTS["llm"],
+        persisted=file_config,
+        runtime_overrides=runtime_overrides,
+        env_getter=_get_env_value,
+        normalize_value=_normalize_llm_layer_value,
+    )
 
 
 def get_settings_schema() -> dict:
@@ -784,9 +923,7 @@ def is_config_write_enabled() -> bool:
 
 def validate_admin_token(token: str) -> bool:
     """Validate admin token for config writes (S13)."""
-    expected = os.environ.get("OPENCLAW_ADMIN_TOKEN") or os.environ.get(
-        "MOLTBOT_ADMIN_TOKEN", ""
-    )
+    expected = get_first_present_env(ADMIN_TOKEN_ENV_KEYS) or ""
     if not expected:
         return True  # No token configured = convenience mode; caller must still enforce loopback-only.
     return token == expected
@@ -799,11 +936,7 @@ def get_admin_token() -> str:
     This is for internal policy decisions only (e.g., "is a token configured?").
     Never return this value to UI callers and never log it.
     """
-    return (
-        os.environ.get("OPENCLAW_ADMIN_TOKEN")
-        or os.environ.get("MOLTBOT_ADMIN_TOKEN")
-        or ""
-    )
+    return get_first_present_env(ADMIN_TOKEN_ENV_KEYS) or ""
 
 
 def is_loopback_client(remote_addr: str) -> bool:
@@ -814,7 +947,7 @@ def is_loopback_client(remote_addr: str) -> bool:
 class RuntimeConfig:
     """
     Typed configuration snapshot.
-    Aggregates effective settings from Env and File.
+    Aggregates effective settings from layered config sources.
     """
 
     def __init__(self):
