@@ -101,6 +101,35 @@ class TestComfyUIHistoryParsing(unittest.TestCase):
         self.assertIn("filename=blake3%3Aabc123", images[0]["view_url"])
         self.assertNotIn("subfolder=nested", images[0]["view_url"])
         self.assertNotIn("type=temp", images[0]["view_url"])
+        self.assertFalse(images[0]["asset_api_required"])
+        self.assertEqual(images[0]["resolution"], "view")
+
+    def test_extract_images_preserves_asset_api_only_refs_as_explicit_no_go_contract(
+        self,
+    ):
+        from services.comfyui_history import extract_images
+
+        history_item = {
+            "outputs": {
+                "3": {
+                    "images": [
+                        {
+                            "asset": {
+                                "id": "asset-only-42",
+                            }
+                        }
+                    ]
+                }
+            }
+        }
+
+        images = extract_images(history_item)
+        self.assertEqual(len(images), 1)
+        self.assertEqual(images[0]["filename"], "asset-only-42")
+        self.assertEqual(images[0]["asset_api_id"], "asset-only-42")
+        self.assertTrue(images[0]["asset_api_required"])
+        self.assertEqual(images[0]["resolution"], "asset_api_required")
+        self.assertEqual(images[0]["view_url"], "")
 
     def test_get_job_status(self):
         from services.comfyui_history import get_job_status

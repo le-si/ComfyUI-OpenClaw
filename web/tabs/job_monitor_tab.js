@@ -183,15 +183,38 @@ export const jobMonitorTab = {
                     outputGrid.style.marginTop = "8px";
 
                     job.outputs.forEach((out) => {
-                        const img = document.createElement("img");
-                        img.src = out.view_url;
-                        img.style.maxWidth = "80px";
-                        img.style.maxHeight = "80px";
-                        img.style.objectFit = "cover";
-                        img.style.cursor = "pointer";
-                        img.title = out.filename;
-                        img.onclick = () => window.open(out.view_url, "_blank");
-                        outputGrid.appendChild(img);
+                        if (out.view_url) {
+                            const img = document.createElement("img");
+                            img.src = out.view_url;
+                            img.style.maxWidth = "80px";
+                            img.style.maxHeight = "80px";
+                            img.style.objectFit = "cover";
+                            img.style.cursor = "pointer";
+                            img.title = out.filename;
+                            img.onclick = () => window.open(out.view_url, "_blank");
+                            outputGrid.appendChild(img);
+                            return;
+                        }
+
+                        if (out.asset_api_required) {
+                            const fallback = document.createElement("div");
+                            fallback.className = "openclaw-job-output-fallback";
+                            fallback.style.width = "80px";
+                            fallback.style.minHeight = "80px";
+                            fallback.style.padding = "6px";
+                            fallback.style.display = "flex";
+                            fallback.style.alignItems = "center";
+                            fallback.style.justifyContent = "center";
+                            fallback.style.textAlign = "center";
+                            fallback.style.fontSize = "10px";
+                            fallback.style.lineHeight = "1.3";
+                            fallback.style.border = "1px dashed var(--border-color)";
+                            fallback.style.borderRadius = "6px";
+                            fallback.style.background = "var(--comfy-menu-bg, rgba(255,255,255,0.04))";
+                            fallback.title = out.asset_api_id || out.filename || "Asset API output";
+                            fallback.textContent = "Asset API output requires /api/assets. Preview disabled.";
+                            outputGrid.appendChild(fallback);
+                        }
                     });
 
                     row.appendChild(outputGrid);
@@ -270,6 +293,9 @@ function extractImages(historyItem) {
         subfolder: img.subfolder,
         type: img.type,
         asset_hash: img.asset_hash,
+        asset_api_id: img.asset_api_id,
+        asset_api_required: img.asset_api_required,
+        resolution: img.resolution,
         view_url: openclawApi.buildViewUrlForRef(img),
     }));
 }

@@ -25,6 +25,78 @@ COMFYUI_URL = (
 HISTORY_TIMEOUT = 5
 
 
+def _pick_string(payload: Dict[str, Any], *keys: str) -> str:
+    for key in keys:
+        value = payload.get(key)
+        if isinstance(value, str) and value.strip():
+            return value.strip()
+    return ""
+
+
+def _pick_asset_hash(image_ref: Dict[str, Any]) -> str:
+    asset_hash = _pick_string(image_ref, "asset_hash")
+    if asset_hash:
+        return asset_hash
+
+    nested = image_ref.get("asset")
+    if isinstance(nested, dict):
+        return _pick_string(nested, "asset_hash")
+    return ""
+
+
+def _pick_asset_api_id(image_ref: Dict[str, Any]) -> str:
+    asset_api_id = _pick_string(image_ref, "asset_id")
+    if asset_api_id:
+        return asset_api_id
+
+    nested = image_ref.get("asset")
+    if isinstance(nested, dict):
+        return _pick_string(nested, "asset_id", "id")
+    return ""
+
+
+def normalize_history_image_ref(image_ref: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    if not isinstance(image_ref, dict):
+        return None
+
+    asset_hash = _pick_asset_hash(image_ref)
+    asset_api_id = _pick_asset_api_id(image_ref)
+    named_filename = _pick_string(image_ref, "filename", "name")
+    filename = named_filename or asset_hash or asset_api_id
+    subfolder = _pick_string(image_ref, "subfolder")
+    img_type = _pick_string(image_ref, "type") or "output"
+
+    if not filename:
+        return None
+
+    asset_api_required = bool(asset_api_id and not asset_hash and not named_filename)
+    view_url = ""
+    resolution = "asset_api_required" if asset_api_required else "view"
+
+    if not asset_api_required:
+        # IMPORTANT: keep OpenClaw on the bounded /view contract. Asset-hash refs
+        # are accepted because they still resolve through /view; do not escalate
+        # asset-api-only identifiers into implicit /api/assets runtime fetches.
+        if asset_hash:
+            params = {"filename": asset_hash}
+        else:
+            params = {"filename": filename, "type": img_type}
+            if subfolder:
+                params["subfolder"] = subfolder
+        view_url = f"{COMFYUI_URL}/view?{urlencode(params)}"
+
+    return {
+        "filename": filename,
+        "subfolder": subfolder,
+        "type": img_type,
+        "asset_hash": asset_hash,
+        "asset_api_id": asset_api_id,
+        "asset_api_required": asset_api_required,
+        "resolution": resolution,
+        "view_url": view_url,
+    }
+
+
 def fetch_history(prompt_id: str) -> Optional[Dict[str, Any]]:
     """
     Fetch history for a given prompt_id from ComfyUI.
@@ -44,10 +116,10 @@ def fetch_history(prompt_id: str) -> Optional[Dict[str, Any]]:
         return None
 
 
-def extract_images(history_item: Dict[str, Any]) -> List[Dict[str, str]]:
+def extract_images(history_item: Dict[str, Any]) -> List[Dict[str, Any]]:
     """
     Extract image outputs from a history item.
-    Returns list of { filename, subfolder, type, view_url }.
+    Returns list of normalized image refs.
     """
     results = []
     outputs = history_item.get("outputs", {})
@@ -55,39 +127,9 @@ def extract_images(history_item: Dict[str, Any]) -> List[Dict[str, str]]:
     for node_id, node_output in outputs.items():
         images = node_output.get("images", [])
         for img in images:
-            asset_hash = ""
-            if isinstance(img.get("asset_hash"), str):
-                asset_hash = img.get("asset_hash", "").strip()
-            elif isinstance(img.get("asset"), dict):
-                asset_hash = str(img.get("asset", {}).get("asset_hash", "")).strip()
-
-            filename = img.get("filename") or img.get("name") or asset_hash
-            subfolder = img.get("subfolder", "")
-            img_type = img.get("type", "output")
-
-            if not filename:
-                continue
-
-            # IMPORTANT: asset-backed refs must still resolve through /view so
-            # callback consumers stay compatible with classic history behavior.
-            if asset_hash:
-                params = {"filename": asset_hash}
-            else:
-                params = {"filename": filename, "type": img_type}
-                if subfolder:
-                    params["subfolder"] = subfolder
-
-            view_url = f"{COMFYUI_URL}/view?{urlencode(params)}"
-
-            results.append(
-                {
-                    "filename": filename,
-                    "subfolder": subfolder,
-                    "type": img_type,
-                    "asset_hash": asset_hash,
-                    "view_url": view_url,
-                }
-            )
+            normalized = normalize_history_image_ref(img)
+            if normalized:
+                results.append(normalized)
 
     return results
 

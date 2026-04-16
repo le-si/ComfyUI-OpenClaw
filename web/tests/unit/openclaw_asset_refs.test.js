@@ -15,6 +15,10 @@ describe("openclaw asset refs", () => {
             subfolder: "session-a",
             type: "temp",
             asset_hash: "",
+            asset_api_id: "",
+            asset_api_required: false,
+            resolution: "view",
+            unsupported_reason: "",
             is_asset_backed: false,
             viewParams: {
                 filename: "result.png",
@@ -36,6 +40,10 @@ describe("openclaw asset refs", () => {
             subfolder: "",
             type: "output",
             asset_hash: "blake3:abc123",
+            asset_api_id: "",
+            asset_api_required: false,
+            resolution: "view",
+            unsupported_reason: "",
             is_asset_backed: true,
             viewParams: {
                 filename: "blake3:abc123",
@@ -56,10 +64,35 @@ describe("openclaw asset refs", () => {
             subfolder: "",
             type: "output",
             asset_hash: "blake3:def456",
+            asset_api_id: "",
+            asset_api_required: false,
+            resolution: "view",
+            unsupported_reason: "",
             is_asset_backed: true,
             viewParams: {
                 filename: "blake3:def456",
             },
+        });
+    });
+
+    it("keeps asset-api-only refs explicit instead of silently turning them into /api/assets fetches", () => {
+        expect(
+            normalizeComfyOutputRef({
+                asset: {
+                    id: "asset-only-42",
+                },
+            })
+        ).toEqual({
+            filename: "asset-only-42",
+            subfolder: "",
+            type: "output",
+            asset_hash: "",
+            asset_api_id: "asset-only-42",
+            asset_api_required: true,
+            resolution: "asset_api_required",
+            unsupported_reason: "asset_api_required",
+            is_asset_backed: true,
+            viewParams: null,
         });
     });
 
@@ -90,6 +123,10 @@ describe("openclaw asset refs", () => {
                 subfolder: "",
                 type: "output",
                 asset_hash: "",
+                asset_api_id: "",
+                asset_api_required: false,
+                resolution: "view",
+                unsupported_reason: "",
                 is_asset_backed: false,
                 viewParams: {
                     filename: "classic.png",
@@ -101,6 +138,10 @@ describe("openclaw asset refs", () => {
                 subfolder: "preview",
                 type: "temp",
                 asset_hash: "blake3:temp123",
+                asset_api_id: "",
+                asset_api_required: false,
+                resolution: "view",
+                unsupported_reason: "",
                 is_asset_backed: true,
                 viewParams: {
                     filename: "blake3:temp123",

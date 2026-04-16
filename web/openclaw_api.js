@@ -237,7 +237,7 @@ export class OpenClawAPI {
 
     buildViewUrlForRef(imageRef) {
         const normalized = normalizeComfyOutputRef(imageRef);
-        if (!normalized) {
+        if (!normalized || !normalized.viewParams) {
             return "";
         }
         return apiURL(`/view?${new URLSearchParams(normalized.viewParams).toString()}`);

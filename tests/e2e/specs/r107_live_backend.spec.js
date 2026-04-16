@@ -123,6 +123,85 @@ test.describe('R107 Live Backend Parity', () => {
         await expect(page.locator('img[src*="test_img.png"]')).toBeVisible();
     });
 
+    test('Job Monitor keeps the phase-2 asset API no-go contract explicit', async ({ page }) => {
+        const jobId = "job-asset-phase2";
+        let assetApiCalls = 0;
+
+        await page.route(`**/history/${jobId}`, async route => {
+            await route.fulfill({
+                status: 200,
+                contentType: 'application/json',
+                body: JSON.stringify({
+                    [jobId]: {
+                        status: { status_str: "success", completed: true },
+                        outputs: {
+                            "9": {
+                                images: [
+                                    {
+                                        filename: "preview.png",
+                                        type: "temp",
+                                        asset_hash: "blake3:abc123",
+                                    },
+                                    {
+                                        asset: {
+                                            id: "asset-only-42",
+                                        },
+                                    },
+                                ],
+                            },
+                        },
+                    },
+                }),
+            });
+        });
+
+        await page.route('**/openclaw/trace/**', async route => {
+            await route.fulfill({
+                status: 404,
+                contentType: 'application/json',
+                body: JSON.stringify({ error: 'not_found' }),
+            });
+        });
+
+        await page.route('**/api/assets**', async route => {
+            assetApiCalls += 1;
+            await route.fulfill({
+                status: 500,
+                contentType: 'application/json',
+                body: JSON.stringify({ error: 'asset_api_should_not_be_called' }),
+            });
+        });
+
+        await page.route('**/view**', async route => {
+            const request = route.request();
+            const url = new URL(request.url());
+            if (
+                request.method() !== 'GET'
+                || url.searchParams.get('filename') !== 'blake3:abc123'
+                || url.searchParams.has('type')
+                || url.searchParams.has('subfolder')
+            ) {
+                await route.fallback();
+                return;
+            }
+
+            await route.fulfill({
+                status: 200,
+                contentType: 'image/png',
+                body: TEST_OUTPUT_PNG,
+            });
+        });
+
+        await clickTab(page, 'Jobs');
+        await page.locator('input[placeholder="prompt_id"]').fill(jobId);
+        await page.getByText('Add').click();
+
+        await expect(page.locator('.openclaw-kv-val.ok')).toHaveText('completed', { timeout: 10000 });
+        await expect(page.locator('img[src*="blake3%3Aabc123"]')).toBeVisible();
+        await expect(page.locator('.openclaw-job-output-fallback')).toContainText('Asset API output requires /api/assets');
+        expect(assetApiCalls).toBe(0);
+    });
+
     test('Degraded Adapter / Fail Handling', async ({ page }) => {
         // Mock Planner Failure (503 Service Unavailable)
         await page.route('**/openclaw/assist/planner', async route => {
