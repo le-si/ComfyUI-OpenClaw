@@ -13,7 +13,9 @@ import services.audit as audit_module
 def _load_verify_script_module():
     root = Path(__file__).resolve().parents[1]
     module_path = root / "scripts" / "verify_audit_chain.py"
-    spec = importlib.util.spec_from_file_location("verify_audit_chain_script", module_path)
+    spec = importlib.util.spec_from_file_location(
+        "verify_audit_chain_script", module_path
+    )
     if spec is None or spec.loader is None:
         raise RuntimeError("Failed to load verify_audit_chain.py")
     module = importlib.util.module_from_spec(spec)
@@ -117,7 +119,9 @@ class TestR159AuditPipeline(unittest.TestCase):
             "services.audit.LocalFileAuditSink.append_entry",
             side_effect=OSError("disk full"),
         ):
-            with self.assertLogs("ComfyUI-OpenClaw.services.audit", level="ERROR") as logs:
+            with self.assertLogs(
+                "ComfyUI-OpenClaw.services.audit", level="ERROR"
+            ) as logs:
                 audit_module.emit_audit_event(
                     action="config.update",
                     target="settings.json",

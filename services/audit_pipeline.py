@@ -11,7 +11,9 @@ from typing import Any, Callable, Dict, List, Optional, Protocol
 
 
 class AuditSink(Protocol):
-    def append_entry(self, entry: Dict[str, Any], *, last_hash: Optional[str]) -> str: ...
+    def append_entry(
+        self, entry: Dict[str, Any], *, last_hash: Optional[str]
+    ) -> str: ...
 
 
 @dataclass
