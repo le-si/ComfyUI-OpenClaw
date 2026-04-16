@@ -16,6 +16,7 @@ from services.safe_io import (
     _normalize_host,
     is_private_ip,
     resolve_under_root,
+    safe_fetch,
     safe_read_bytes,
     safe_read_text,
     safe_request_json,
@@ -126,6 +127,27 @@ class TestPathSafety(unittest.TestCase):
 
 
 class TestURLSafety(unittest.TestCase):
+
+    class _FakeResponse:
+        def __init__(self, code, *, headers=None, body=b"", lines=None):
+            self._code = code
+            self.headers = headers or {}
+            self._body = body
+            self._lines = list(lines or [])
+
+        def getcode(self):
+            return self._code
+
+        def read(self, _max_bytes=None):
+            return self._body
+
+        def readline(self, _max_bytes):
+            if self._lines:
+                return self._lines.pop(0)
+            return b""
+
+        def close(self):
+            return None
 
     def test_reject_no_allowlist(self):
         """Test that URLs are rejected when no allowlist is provided."""
@@ -329,6 +351,100 @@ class TestURLSafety(unittest.TestCase):
             header_map.get("content-type"), "application/x-www-form-urlencoded"
         )
         self.assertEqual(header_map.get("accept"), "application/json")
+
+    @patch("services.safe_io._build_pinned_opener")
+    @patch("services.safe_io.validate_outbound_url")
+    def test_safe_fetch_revalidates_each_redirect_hop(self, mock_validate, mock_build):
+        mock_validate.side_effect = [
+            ("https", "example.com", 443, ["93.184.216.34"]),
+            ("https", "cdn.example.com", 443, ["93.184.216.35"]),
+        ]
+        opener_one = MagicMock()
+        opener_one.open.return_value = self._FakeResponse(
+            302, headers={"Location": "https://cdn.example.com/file.bin"}
+        )
+        opener_two = MagicMock()
+        opener_two.open.return_value = self._FakeResponse(200, body=b"payload")
+        mock_build.side_effect = [opener_one, opener_two]
+
+        out = safe_fetch(
+            "https://example.com/file.bin",
+            allow_hosts={"example.com", "cdn.example.com"},
+            max_redirects=1,
+        )
+
+        self.assertEqual(out, b"payload")
+        self.assertEqual(mock_validate.call_count, 2)
+        self.assertEqual(
+            mock_validate.call_args_list[1].args[0], "https://cdn.example.com/file.bin"
+        )
+
+    @patch("services.safe_io._build_pinned_opener")
+    @patch("services.safe_io.validate_outbound_url")
+    def test_safe_request_json_revalidates_redirect_and_rewrites_post_to_get(
+        self, mock_validate, mock_build
+    ):
+        mock_validate.side_effect = [
+            ("https", "example.com", 443, ["93.184.216.34"]),
+            ("https", "api.example.com", 443, ["93.184.216.35"]),
+        ]
+        opener_one = MagicMock()
+        opener_one.open.return_value = self._FakeResponse(
+            302, headers={"Location": "https://api.example.com/final"}
+        )
+        opener_two = MagicMock()
+        opener_two.open.return_value = self._FakeResponse(200, body=b'{"ok": true}')
+        mock_build.side_effect = [opener_one, opener_two]
+
+        out = safe_request_json(
+            method="POST",
+            url="https://example.com/start",
+            json_body={"x": 1},
+            allow_hosts={"example.com", "api.example.com"},
+            max_redirects=1,
+        )
+
+        self.assertEqual(out["ok"], True)
+        self.assertEqual(mock_validate.call_count, 2)
+        second_request = opener_two.open.call_args.args[0]
+        self.assertEqual(second_request.get_method(), "GET")
+        self.assertIsNone(second_request.data)
+
+    @patch("services.safe_io._build_pinned_opener")
+    @patch("services.safe_io.validate_outbound_url")
+    def test_safe_request_text_stream_revalidates_redirect_and_rewrites_post_to_get(
+        self, mock_validate, mock_build
+    ):
+        mock_validate.side_effect = [
+            ("https", "example.com", 443, ["93.184.216.34"]),
+            ("https", "stream.example.com", 443, ["93.184.216.35"]),
+        ]
+        opener_one = MagicMock()
+        opener_one.open.return_value = self._FakeResponse(
+            303, headers={"Location": "https://stream.example.com/events"}
+        )
+        opener_two = MagicMock()
+        opener_two.open.return_value = self._FakeResponse(
+            200,
+            lines=[b"data: one\n", b""],
+        )
+        mock_build.side_effect = [opener_one, opener_two]
+
+        lines = list(
+            safe_request_text_stream(
+                method="POST",
+                url="https://example.com/start",
+                json_body={"x": 1},
+                allow_hosts={"example.com", "stream.example.com"},
+                max_redirects=1,
+            )
+        )
+
+        self.assertEqual(lines, ["data: one\n"])
+        self.assertEqual(mock_validate.call_count, 2)
+        second_request = opener_two.open.call_args.args[0]
+        self.assertEqual(second_request.get_method(), "GET")
+        self.assertIsNone(second_request.data)
 
     @patch("services.safe_io._build_pinned_opener")
     @patch("services.safe_io.validate_outbound_url")

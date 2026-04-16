@@ -118,6 +118,24 @@ class TestF58SlackOAuthInstallations(unittest.IsolatedAsyncioTestCase):
         headers = mock_session.post.call_args.kwargs["headers"]
         self.assertEqual(headers["Authorization"], "Bearer xoxb-workspace")
 
+    async def test_exchange_code_uses_safe_io_form_encoded_contract(self):
+        with patch(
+            "connector.platforms.slack_installation_manager.safe_request_json",
+            return_value={"ok": True, "access_token": "xoxb-oauth"},
+        ) as mock_safe_request:
+            out = await self.manager.exchange_code("oauth-code")
+
+        self.assertEqual(out["ok"], True)
+        kwargs = mock_safe_request.call_args.kwargs
+        self.assertEqual(kwargs["method"], "POST")
+        self.assertEqual(kwargs["url"], "https://slack.com/api/oauth.v2.access")
+        self.assertEqual(kwargs["content_type"], "application/x-www-form-urlencoded")
+        self.assertEqual(kwargs["headers"], {"Accept": "application/json"})
+        self.assertEqual(kwargs["allow_hosts"], {"slack.com"})
+        self.assertIn(b"code=oauth-code", kwargs["raw_body"])
+        self.assertIn(b"client_id=client-id", kwargs["raw_body"])
+        self.assertIn(b"client_secret=client-secret", kwargs["raw_body"])
+
     async def test_tokens_revoked_event_marks_installation_invalid(self):
         self.manager.upsert_from_oauth_payload(self._oauth_payload("xoxb-workspace"))
         router = MagicMock()

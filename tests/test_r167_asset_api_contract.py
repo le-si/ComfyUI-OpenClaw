@@ -3,7 +3,9 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 
 class TestR167AssetApiContract(unittest.IsolatedAsyncioTestCase):
-    async def test_callback_delivery_preserves_asset_api_only_refs_without_view_fetch(self):
+    async def test_callback_delivery_preserves_asset_api_only_refs_without_view_fetch(
+        self,
+    ):
         import services.callback_delivery as callback_delivery
 
         sent_payloads = []
