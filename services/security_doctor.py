@@ -1,12 +1,7 @@
-"""
-Security Doctor compatibility shim.
-
-R130: module decomposition entrypoint.
-Keep `services.security_doctor` imports stable while implementation is split into
-report/check/remediation/runner slices.
-"""
+"""Security Doctor compatibility entrypoint."""
 
 from .security_doctor_checks import (
+    SECURITY_DOCTOR_CHECKS,
     check_api_key_posture,
     check_comfyui_runtime,
     check_connector_security_posture,
@@ -37,6 +32,7 @@ __all__ = [
     "SecurityCheckResult",
     "SecurityReport",
     "VIOLATION_CODE_MAP",
+    "SECURITY_DOCTOR_CHECKS",
     "check_endpoint_exposure",
     "check_public_shared_surface_boundary",
     "check_csrf_no_origin_override",

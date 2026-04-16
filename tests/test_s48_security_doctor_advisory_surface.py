@@ -8,7 +8,7 @@ class TestS48SecurityDoctorAdvisorySurface(unittest.TestCase):
     def test_unaffected_version_reports_pass(self):
         report = SecurityReport()
         with patch(
-            "services.security_doctor_impl.build_advisory_status",
+            "services.security_doctor_endpoint_checks.build_advisory_status",
             return_value={
                 "current_version": "0.3.0",
                 "affected": False,
@@ -26,7 +26,7 @@ class TestS48SecurityDoctorAdvisorySurface(unittest.TestCase):
     def test_high_severity_affected_reports_warn_and_mitigation(self):
         report = SecurityReport()
         with patch(
-            "services.security_doctor_impl.build_advisory_status",
+            "services.security_doctor_endpoint_checks.build_advisory_status",
             return_value={
                 "current_version": "0.3.2",
                 "affected": True,
