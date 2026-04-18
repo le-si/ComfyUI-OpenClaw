@@ -52,15 +52,15 @@ class TestR90CompatMatrixGovernance(unittest.TestCase):
     def test_build_host_surface_contract_tracks_desktop_embedded_frontend_lag(self):
         contract = build_host_surface_contract(
             {
-                "comfyui": "v0.18.1-40-g7d437687",
-                "comfyui_frontend": "1.43.11",
-                "desktop": "0.8.27 (core 0.18.3 / frontend 1.41.21)",
+                "comfyui": "0.19.3",
+                "comfyui_frontend": "1.44.4",
+                "desktop": "0.8.32 (core 0.19.3 / frontend 1.42.11)",
             }
         )
         self.assertTrue(contract["ok"], msg=contract)
         self.assertEqual(contract["code"], "R164_HOST_SURFACES_READY")
         self.assertEqual(
-            contract["surfaces"]["desktop"]["embedded_frontend_version"], "1.41.21"
+            contract["surfaces"]["desktop"]["embedded_frontend_version"], "1.42.11"
         )
         self.assertEqual(
             contract["surfaces"]["desktop"]["frontend_parity"]["status"], "lagging"
@@ -69,7 +69,7 @@ class TestR90CompatMatrixGovernance(unittest.TestCase):
     def test_build_host_surface_contract_marks_invalid_desktop_anchor(self):
         contract = build_host_surface_contract(
             {
-                "comfyui_frontend": "1.43.11",
+                "comfyui_frontend": "1.44.4",
                 "desktop": "desktop-head",
             }
         )
@@ -183,7 +183,7 @@ class TestR90CompatMatrixGovernance(unittest.TestCase):
         self.assertTrue(contract["ok"], msg=contract)
         desktop_surface = contract["surfaces"]["desktop"]
         self.assertEqual(desktop_surface["frontend_parity"]["status"], "lagging")
-        self.assertEqual(desktop_surface["embedded_frontend_version"], "1.41.21")
+        self.assertEqual(desktop_surface["embedded_frontend_version"], "1.42.11")
         self.assertTrue(
             (
                 REPO_ROOT / "tests" / "e2e" / "specs" / "desktop_host_parity.spec.js"

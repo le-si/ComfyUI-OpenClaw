@@ -80,7 +80,10 @@ export async function installHostRuntime(page, { hostSurface = HOST_SURFACES.sta
       }
     } else {
       window.__OPENCLAW_HOST_SURFACE__ = 'standalone_frontend';
-      window.__DISTRIBUTION__ = 'standalone_frontend';
+      // IMPORTANT: current standalone frontend uses the localhost distribution
+      // marker; keep OpenClaw host-surface stamping explicit, but mirror the
+      // host's real distribution literal in the harness.
+      window.__DISTRIBUTION__ = 'localhost';
       try {
         delete window.electronAPI;
       } catch (error) {
