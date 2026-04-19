@@ -15,6 +15,12 @@ import sys
 from pathlib import Path
 from typing import List, Optional
 
+from quality_governance_common import (
+    current_stage_threshold,
+    load_and_validate_policy,
+    next_stage,
+)
+
 MIN_COVERAGE_FAIL_UNDER = 35.0
 SMOKE_MUTATION_THRESHOLD = 20.0
 EXTENDED_MUTATION_THRESHOLD = 80.0
@@ -69,8 +75,12 @@ def verify_governance(
     adversarial_gate_path: Path,
     test_sop_path: Path,
     survivor_allowlist_path: Path,
+    coverage_policy_path: Path,
+    release_policy_doc_path: Path,
 ) -> List[str]:
     failures: List[str] = []
+    policy_payload, policy_failures = load_and_validate_policy(coverage_policy_path)
+    failures.extend(policy_failures)
 
     pyproject_text = _read_text(pyproject_path)
     report_section = _extract_toml_section(pyproject_text, "tool.coverage.report")
@@ -85,6 +95,13 @@ def verify_governance(
                 "pyproject: coverage fail_under "
                 f"{fail_under} below minimum baseline {MIN_COVERAGE_FAIL_UNDER}"
             )
+        elif policy_payload is not None:
+            expected_fail_under = current_stage_threshold(policy_payload)
+            if fail_under != expected_fail_under:
+                failures.append(
+                    "pyproject: coverage fail_under "
+                    f"{fail_under} does not match policy current-stage floor {expected_fail_under}"
+                )
 
         show_missing = _extract_bool_assignment(report_section, "show_missing")
         if show_missing is not True:
@@ -130,6 +147,12 @@ def verify_governance(
         failures,
         "tests/TEST_SOP.md",
     )
+    _require_phrase(
+        test_sop_text,
+        "staged coverage ratchet policy (`tests/coverage_governance_policy.json`)",
+        failures,
+        "tests/TEST_SOP.md",
+    )
 
     if not survivor_allowlist_path.is_file():
         failures.append(
@@ -149,6 +172,20 @@ def verify_governance(
                 failures.append(
                     "mutation governance: survivor allowlist must be an object with an entries list"
                 )
+
+    release_policy_text = _read_text(release_policy_doc_path)
+    _require_phrase(
+        release_policy_text,
+        "staged coverage ratchet policy (`tests/coverage_governance_policy.json`)",
+        failures,
+        "docs/release/ci_regression_policy.md",
+    )
+    _require_phrase(
+        release_policy_text,
+        "`fail_under` must match the current stage floor declared in `tests/coverage_governance_policy.json`",
+        failures,
+        "docs/release/ci_regression_policy.md",
+    )
 
     return failures
 
@@ -177,6 +214,16 @@ def main() -> int:
         default="tests/mutation_survivor_allowlist.json",
         help="Path to the mutation survivor allowlist JSON",
     )
+    parser.add_argument(
+        "--coverage-policy",
+        default="tests/coverage_governance_policy.json",
+        help="Path to the staged coverage governance policy JSON.",
+    )
+    parser.add_argument(
+        "--release-policy-doc",
+        default="docs/release/ci_regression_policy.md",
+        help="Path to the release/CI regression policy document.",
+    )
     args = parser.parse_args()
 
     failures = verify_governance(
@@ -184,15 +231,21 @@ def main() -> int:
         adversarial_gate_path=Path(args.adversarial_gate),
         test_sop_path=Path(args.test_sop),
         survivor_allowlist_path=Path(args.mutation_survivor_allowlist),
+        coverage_policy_path=Path(args.coverage_policy),
+        release_policy_doc_path=Path(args.release_policy_doc),
     )
     if failures:
         for failure in failures:
             print(f"GOVERNANCE-FAIL: {failure}")
         return 1
 
+    policy_payload, _ = load_and_validate_policy(Path(args.coverage_policy))
+    current_stage = policy_payload["current_stage"]
+    next_policy_stage = next_stage(policy_payload)
     print(
-        "GOVERNANCE-PASS: coverage fail_under/show_missing/skip_covered and "
-        "mutation thresholds are aligned."
+        "GOVERNANCE-PASS: coverage fail_under/show_missing/skip_covered, "
+        f"staged policy ({current_stage} -> {next_policy_stage['id'] if next_policy_stage else 'none'}), "
+        "and mutation thresholds are aligned."
     )
     return 0
 

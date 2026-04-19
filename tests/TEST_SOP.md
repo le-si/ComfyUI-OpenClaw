@@ -281,6 +281,17 @@ IMPORTANT:
   - `fail_under >= 35.0`
   - `show_missing = true`
   - `skip_covered = true`
+- staged coverage ratchet policy (`tests/coverage_governance_policy.json`) lives in the repo and governs the current floor plus future ratchet targets.
+  - `pyproject.toml` must keep `fail_under` aligned with the current stage floor declared there.
+  - Planned ratchet targets are governance metadata, not implicit permission to change `fail_under` ad hoc.
+- Coverage governance summary report:
+
+```bash
+python scripts/report_coverage_governance.py --coverage-json <path-to-coverage.json>
+```
+
+  - This report is the governed hotspot-family review path for critical areas such as `safe_io`, security boundaries, connector config/ingress, and config/bootstrap seams.
+  - It does not replace the enforced global gate; it provides the review surface needed before stage promotion.
 - Governance drift check command:
 
 ```bash

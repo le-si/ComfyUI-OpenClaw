@@ -49,6 +49,13 @@ If a change intentionally modifies contract behavior:
   - `fail_under >= 35.0`
   - `show_missing = true`
   - `skip_covered = true`
+- staged coverage ratchet policy (`tests/coverage_governance_policy.json`) is the source of truth for:
+  - current enforced floor
+  - next planned ratchet target
+  - hotspot families and temporary exceptions
+- `fail_under` must match the current stage floor declared in `tests/coverage_governance_policy.json`; do not ratchet the floor by editing `pyproject.toml` alone.
+- Coverage hotspot review should use:
+  - `python scripts/report_coverage_governance.py --coverage-json <path-to-coverage.json>`
 - Mutation governance remains adaptive:
   - smoke profile threshold: `20.0%`
   - extended profile threshold: `80.0%`

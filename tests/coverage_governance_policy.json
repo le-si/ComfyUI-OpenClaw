@@ -1,0 +1,102 @@
+{
+  "schema_version": 1,
+  "current_stage": "baseline-35",
+  "stages": [
+    {
+      "id": "baseline-35",
+      "min_fail_under": 35.0,
+      "promotion_requires": [
+        "coverage governance report reviewed for hotspot families",
+        "temporary hotspot exceptions have explicit rationale and review dates"
+      ],
+      "rollback_triggers": [
+        "coverage floor drift below policy baseline",
+        "critical hotspot family loses review coverage visibility"
+      ]
+    },
+    {
+      "id": "ratchet-45",
+      "min_fail_under": 45.0,
+      "promotion_requires": [
+        "two consecutive release cycles with reviewed hotspot summaries",
+        "no unresolved exception review dates in the current cycle"
+      ],
+      "rollback_triggers": [
+        "overall coverage regresses below 45.0 after promotion",
+        "new unowned hotspot debt is introduced without policy update"
+      ]
+    },
+    {
+      "id": "ratchet-55",
+      "min_fail_under": 55.0,
+      "promotion_requires": [
+        "ratchet-45 remains stable through one full release cycle",
+        "critical hotspot families are represented in targeted regression suites"
+      ],
+      "rollback_triggers": [
+        "multiple hotspot families fall back to exception-only governance",
+        "coverage ratchet blocks releases without approved rollback note"
+      ]
+    }
+  ],
+  "required_hotspot_families": [
+    "safe_io",
+    "security_boundary",
+    "connector_config",
+    "config_bootstrap"
+  ],
+  "hotspot_families": [
+    {
+      "id": "safe_io",
+      "paths": [
+        "services/safe_io.py"
+      ]
+    },
+    {
+      "id": "security_boundary",
+      "paths": [
+        "services/security_gate.py",
+        "services/access_control.py",
+        "services/csrf_protection.py",
+        "services/secrets_encryption.py"
+      ]
+    },
+    {
+      "id": "connector_config",
+      "paths": [
+        "connector/config.py",
+        "connector/router.py"
+      ]
+    },
+    {
+      "id": "config_bootstrap",
+      "paths": [
+        "config.py",
+        "services/runtime_config.py",
+        "services/effective_config.py"
+      ]
+    }
+  ],
+  "exceptions": [
+    {
+      "id": "connector-config-ratchet-gap",
+      "family": "connector_config",
+      "paths": [
+        "connector/config.py",
+        "connector/router.py"
+      ],
+      "reason": "Current governance remains global-floor only; connector coverage must be reviewed explicitly before the ratchet-45 promotion.",
+      "review_by": "2026-06-01"
+    },
+    {
+      "id": "config-bootstrap-ratchet-gap",
+      "family": "config_bootstrap",
+      "paths": [
+        "config.py",
+        "services/runtime_config.py"
+      ],
+      "reason": "Config/bootstrap hotspots still need staged cleanup and targeted review evidence before the next floor promotion.",
+      "review_by": "2026-06-01"
+    }
+  ]
+}
