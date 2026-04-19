@@ -261,9 +261,12 @@ except ImportError:
 # Config file location (under state dir)
 try:
     # Prefer package-relative imports when running as a ComfyUI custom node pack.
-    from .state_dir import get_state_dir
+    # CRITICAL: config path resolution here must stay import-safe.
+    # Calling get_state_dir() at import time recreates the state dir during plain
+    # module import and breaks lazy bootstrap guarantees in config.py.
+    from .state_dir import peek_state_dir
 
-    CONFIG_FILE = os.path.join(get_state_dir(), "config.json")
+    CONFIG_FILE = os.path.join(peek_state_dir(), "config.json")
     from .providers.catalog import (
         PROVIDER_CATALOG,
         get_default_public_llm_hosts,
@@ -274,9 +277,9 @@ try:
 except ImportError:
     try:
         # Fallback for direct sys.path imports (unit tests / scripts)
-        from services.state_dir import get_state_dir  # type: ignore
+        from services.state_dir import peek_state_dir  # type: ignore
 
-        CONFIG_FILE = os.path.join(get_state_dir(), "config.json")
+        CONFIG_FILE = os.path.join(peek_state_dir(), "config.json")
         from services.providers.catalog import (  # type: ignore
             PROVIDER_CATALOG,
             get_default_public_llm_hosts,

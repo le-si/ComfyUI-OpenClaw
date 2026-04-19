@@ -44,6 +44,26 @@ def _get_user_data_dir(subdir: Optional[str] = None) -> str:
         return os.path.join(base, subdir)
 
 
+def _resolve_state_dir_path() -> str:
+    """Resolve the canonical state-dir path without creating it."""
+    env_dir = os.environ.get(STATE_DIR_ENV) or os.environ.get(LEGACY_STATE_DIR_ENV)
+    if env_dir:
+        return os.path.abspath(env_dir)
+
+    new_dir = _get_user_data_dir(STATE_DIR_NAME)
+    legacy_dir = _get_user_data_dir(LEGACY_STATE_DIR_NAME)
+    return (
+        legacy_dir
+        if (os.path.exists(legacy_dir) and not os.path.exists(new_dir))
+        else new_dir
+    )
+
+
+def peek_state_dir() -> str:
+    """Return the canonical state-dir path without creating directories."""
+    return _resolve_state_dir_path()
+
+
 def get_state_dir() -> str:
     """
     Get the canonical state directory for all writable data.
@@ -58,20 +78,7 @@ def get_state_dir() -> str:
     Returns:
         Absolute path to state directory.
     """
-    # Check for explicit override
-    env_dir = os.environ.get(STATE_DIR_ENV) or os.environ.get(LEGACY_STATE_DIR_ENV)
-    if env_dir:
-        state_dir = os.path.abspath(env_dir)
-    else:
-        # Prefer the new default directory name, but preserve existing legacy state
-        # if it already exists (rename shouldn't silently "lose" user config/logs).
-        new_dir = _get_user_data_dir(STATE_DIR_NAME)
-        legacy_dir = _get_user_data_dir(LEGACY_STATE_DIR_NAME)
-        state_dir = (
-            legacy_dir
-            if (os.path.exists(legacy_dir) and not os.path.exists(new_dir))
-            else new_dir
-        )
+    state_dir = _resolve_state_dir_path()
 
     # Ensure directory exists with appropriate permissions
     if not os.path.exists(state_dir):
@@ -88,6 +95,18 @@ def get_state_dir() -> str:
             logger.warning(f"Using fallback state directory: {state_dir}")
 
     return state_dir
+
+
+def peek_log_path() -> str:
+    """Return the canonical log-file path without creating directories."""
+    state_dir = peek_state_dir()
+    new_path = os.path.join(state_dir, "openclaw.log")
+    legacy_path = os.path.join(state_dir, "moltbot.log")
+    return (
+        legacy_path
+        if (os.path.exists(legacy_path) and not os.path.exists(new_path))
+        else new_path
+    )
 
 
 def get_log_path() -> str:

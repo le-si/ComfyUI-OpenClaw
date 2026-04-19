@@ -30,9 +30,7 @@ class TestR175PackVersionFallback(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmpdir:
             missing = Path(tmpdir) / "missing.toml"
             self.assertIsNone(
-                config._read_pyproject_version_from_path(
-                    missing, prefer_tomllib=False
-                )
+                config._read_pyproject_version_from_path(missing, prefer_tomllib=False)
             )
 
     def test_repo_pack_version_matches_pyproject_source_of_truth(self):
