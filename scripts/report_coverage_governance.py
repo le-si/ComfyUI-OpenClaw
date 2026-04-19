@@ -10,7 +10,11 @@ import json
 import sys
 from pathlib import Path
 
-from quality_governance_common import load_and_validate_policy, read_json, summarize_coverage
+from quality_governance_common import (
+    load_and_validate_policy,
+    read_json,
+    summarize_coverage,
+)
 
 
 def _render_text(summary: dict[str, object]) -> str:

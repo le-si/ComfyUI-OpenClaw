@@ -12,6 +12,7 @@ All pull requests must pass the repository SOP gate before merge.
 | Backend dependency audit | `pip-audit -r requirements.txt` | Audit declared Python project dependencies without scanning unrelated CI runner/toolchain packages |
 | GitHub CodeQL analysis | `.github/workflows/codeql.yml` | Run repository-native static security analysis for Python, JavaScript/TypeScript, and GitHub Actions on push, pull request, and weekly schedule |
 | Coverage governance | `python scripts/verify_quality_governance.py` | Fail closed on coverage-policy, mutation-threshold, SOP-guidance, and survivor-allowlist drift |
+| Test debt governance | `python scripts/verify_test_debt_governance.py` | Fail closed on stale or under-documented skip-policy / mutation allowlist debt entries |
 | Backend unit tests | `python scripts/run_unittests.py --start-dir tests --pattern "test_*.py" --enforce-skip-policy tests/skip_policy.json` | Validate backend behavior and skip governance |
 | Adversarial gate | `python scripts/run_adversarial_gate.py --profile auto --seed 42` | Enforce adaptive fuzz/mutation verification with smoke=>extended escalation on high-risk diffs |
 | Frontend E2E | `npm test` | Validate UI and frontend/backend integration |
@@ -56,6 +57,10 @@ If a change intentionally modifies contract behavior:
 - `fail_under` must match the current stage floor declared in `tests/coverage_governance_policy.json`; do not ratchet the floor by editing `pyproject.toml` alone.
 - Coverage hotspot review should use:
   - `python scripts/report_coverage_governance.py --coverage-json <path-to-coverage.json>`
+- Test debt governance remains fail-closed:
+  - no-skip modules in `tests/skip_policy.json` must keep explicit metadata (`reason` + `review_after`) and point at live test modules
+  - mutation survivor allowlist entries must carry `review_after` dates and point at live repo files
+  - review dates in the past are governance debt, not advisory comments
 - Mutation governance remains adaptive:
   - smoke profile threshold: `20.0%`
   - extended profile threshold: `80.0%`

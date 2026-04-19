@@ -7,7 +7,6 @@ from fnmatch import fnmatch
 from pathlib import Path
 from typing import Any, Iterable
 
-
 REQUIRED_HOTSPOT_FAMILIES = (
     "safe_io",
     "security_boundary",
@@ -42,8 +41,10 @@ def _validate_hotspot_family(
     seen_ids.add(family_id)
 
     paths = family.get("paths")
-    if not isinstance(paths, list) or not paths or not all(
-        isinstance(path, str) and path.strip() for path in paths
+    if (
+        not isinstance(paths, list)
+        or not paths
+        or not all(isinstance(path, str) and path.strip() for path in paths)
     ):
         failures.append(
             f"coverage policy: hotspot family {family_id} must define a non-empty paths list"
@@ -93,7 +94,9 @@ def load_and_validate_policy(path: Path) -> tuple[dict[str, Any] | None, list[st
                 f"coverage policy: stage {stage_id} missing numeric min_fail_under"
             )
             continue
-        stages.append(CoverageStage(stage_id=stage_id, min_fail_under=float(min_fail_under)))
+        stages.append(
+            CoverageStage(stage_id=stage_id, min_fail_under=float(min_fail_under))
+        )
 
     for previous, current in zip(stages, stages[1:]):
         if current.min_fail_under <= previous.min_fail_under:
@@ -243,7 +246,9 @@ def summarize_coverage(
             summary = files[file_path].get("summary", {})
             covered_lines += int(summary.get("covered_lines", 0))
             num_statements += int(summary.get("num_statements", 0))
-        percent = round((covered_lines / num_statements) * 100, 2) if num_statements else 0.0
+        percent = (
+            round((covered_lines / num_statements) * 100, 2) if num_statements else 0.0
+        )
         hotspot_summary[family_id] = {
             "matched_files": matched_files,
             "missing_paths": missing_paths,
@@ -263,7 +268,9 @@ def summarize_coverage(
             "current_stage_fail_under": current_stage_threshold(policy),
             "next_stage": next_policy_stage["id"] if next_policy_stage else None,
             "next_stage_fail_under": (
-                float(next_policy_stage["min_fail_under"]) if next_policy_stage else None
+                float(next_policy_stage["min_fail_under"])
+                if next_policy_stage
+                else None
             ),
         },
         "overall": {

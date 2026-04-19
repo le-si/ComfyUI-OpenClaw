@@ -5,6 +5,8 @@ import tempfile
 import unittest
 from pathlib import Path
 
+from tests.quality_governance_test_utils import sample_policy_payload
+
 ROOT = Path(__file__).resolve().parents[1]
 SCRIPT = ROOT / "scripts" / "report_coverage_governance.py"
 
@@ -27,27 +29,20 @@ class TestR174QualityGovernanceReport(unittest.TestCase):
 
             policy.write_text(
                 json.dumps(
-                    {
-                        "schema_version": 1,
-                        "current_stage": "baseline-35",
-                        "stages": [
-                            {"id": "baseline-35", "min_fail_under": 35.0},
-                            {"id": "ratchet-45", "min_fail_under": 45.0},
-                        ],
-                        "required_hotspot_families": [
-                            "safe_io",
-                            "security_boundary",
-                            "connector_config",
-                            "config_bootstrap",
-                        ],
-                        "hotspot_families": [
+                    sample_policy_payload(
+                        hotspot_families=[
                             {"id": "safe_io", "paths": ["services/safe_io.py"]},
-                            {"id": "connector_config", "paths": ["connector/config.py"]},
-                            {"id": "security_boundary", "paths": ["services/security_gate.py"]},
+                            {
+                                "id": "connector_config",
+                                "paths": ["connector/config.py"],
+                            },
+                            {
+                                "id": "security_boundary",
+                                "paths": ["services/security_gate.py"],
+                            },
                             {"id": "config_bootstrap", "paths": ["config.py"]},
-                        ],
-                        "exceptions": [],
-                    },
+                        ]
+                    ),
                     indent=2,
                 )
                 + "\n",
@@ -103,8 +98,12 @@ class TestR174QualityGovernanceReport(unittest.TestCase):
             self.assertEqual(result.returncode, 0, msg=result.stdout + result.stderr)
             payload = json.loads(result.stdout)
             self.assertEqual(payload["overall"]["percent_covered"], 64.35)
-            self.assertEqual(payload["hotspot_families"]["safe_io"]["percent_covered"], 80.0)
-            self.assertEqual(payload["hotspot_families"]["connector_config"]["percent_covered"], 60.0)
+            self.assertEqual(
+                payload["hotspot_families"]["safe_io"]["percent_covered"], 80.0
+            )
+            self.assertEqual(
+                payload["hotspot_families"]["connector_config"]["percent_covered"], 60.0
+            )
 
     def test_missing_hotspot_files_are_reported_deterministically(self):
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -114,27 +113,20 @@ class TestR174QualityGovernanceReport(unittest.TestCase):
 
             policy.write_text(
                 json.dumps(
-                    {
-                        "schema_version": 1,
-                        "current_stage": "baseline-35",
-                        "stages": [
-                            {"id": "baseline-35", "min_fail_under": 35.0},
-                            {"id": "ratchet-45", "min_fail_under": 45.0},
-                        ],
-                        "required_hotspot_families": [
-                            "safe_io",
-                            "security_boundary",
-                            "connector_config",
-                            "config_bootstrap",
-                        ],
-                        "hotspot_families": [
+                    sample_policy_payload(
+                        hotspot_families=[
                             {"id": "safe_io", "paths": ["services/safe_io.py"]},
-                            {"id": "security_boundary", "paths": ["services/security_gate.py"]},
-                            {"id": "connector_config", "paths": ["connector/config.py"]},
+                            {
+                                "id": "security_boundary",
+                                "paths": ["services/security_gate.py"],
+                            },
+                            {
+                                "id": "connector_config",
+                                "paths": ["connector/config.py"],
+                            },
                             {"id": "config_bootstrap", "paths": ["config.py"]},
-                        ],
-                        "exceptions": [],
-                    },
+                        ]
+                    ),
                     indent=2,
                 )
                 + "\n",
