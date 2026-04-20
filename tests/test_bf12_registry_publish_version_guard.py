@@ -4,18 +4,13 @@ import tempfile
 import unittest
 from pathlib import Path
 
-
 ROOT = Path(__file__).resolve().parents[1]
 SCRIPT = ROOT / "scripts" / "registry_publish_guard.py"
 PUBLISH_WORKFLOW = ROOT / ".github" / "workflows" / "publish.yml"
 
 
 def _pyproject_text(version: str) -> str:
-    return (
-        "[project]\n"
-        'name = "comfyui-openclaw"\n'
-        f'version = "{version}"\n'
-    )
+    return "[project]\n" 'name = "comfyui-openclaw"\n' f'version = "{version}"\n'
 
 
 class RegistryPublishVersionGuardTests(unittest.TestCase):
@@ -23,7 +18,9 @@ class RegistryPublishVersionGuardTests(unittest.TestCase):
         workflow = PUBLISH_WORKFLOW.read_text(encoding="utf-8")
         self.assertIn("fetch-depth: 2", workflow)
         self.assertIn("scripts/registry_publish_guard.py", workflow)
-        self.assertIn("if: steps.publish_guard.outputs.should_publish == 'true'", workflow)
+        self.assertIn(
+            "if: steps.publish_guard.outputs.should_publish == 'true'", workflow
+        )
 
     def test_same_version_sets_should_publish_false(self):
         with tempfile.TemporaryDirectory() as tmpdir:

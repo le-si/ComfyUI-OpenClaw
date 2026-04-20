@@ -218,9 +218,11 @@ if ! "$VENV_PY" -c "import defusedxml" >/dev/null 2>&1; then
   echo "[pre-push] INFO: installing defusedxml into project venv ($VENV_DIR) ..." >&2
   pip_install_or_fail "required for S85 fail-closed XML parsing paths/tests" defusedxml
 fi
-if ! "$VENV_PY" -c "import coverage" >/dev/null 2>&1; then
-  echo "[pre-push] INFO: installing coverage into project venv ($VENV_DIR) ..." >&2
-  pip_install_or_fail "required for backend coverage gate" coverage
+if ! "$VENV_PY" -c "import sys, importlib.util; has_coverage = importlib.util.find_spec('coverage') is not None; has_toml = sys.version_info >= (3, 11) or importlib.util.find_spec('tomli') is not None; sys.exit(0 if has_coverage and has_toml else 1)" >/dev/null 2>&1; then
+  # CRITICAL: Python 3.10 coverage cannot read pyproject.toml without TOML
+  # support; plain coverage here causes local pass/CI fail drift.
+  echo "[pre-push] INFO: installing coverage[toml] into project venv ($VENV_DIR) ..." >&2
+  pip_install_or_fail "required for backend coverage gate" "coverage[toml]"
 fi
 
 require_cmd npm

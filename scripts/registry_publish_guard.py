@@ -89,7 +89,12 @@ def decide_should_publish(
 
 
 def _write_outputs(
-    *, output_path: Path | None, should_publish: bool, reason: str, current_version: str, previous_version: str | None
+    *,
+    output_path: Path | None,
+    should_publish: bool,
+    reason: str,
+    current_version: str,
+    previous_version: str | None,
 ) -> None:
     lines = [
         f"should_publish={'true' if should_publish else 'false'}",

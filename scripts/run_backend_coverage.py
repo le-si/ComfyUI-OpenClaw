@@ -7,6 +7,7 @@ coverage-governance reporting.
 from __future__ import annotations
 
 import argparse
+import importlib.util
 import subprocess
 import sys
 from pathlib import Path
@@ -15,6 +16,14 @@ from pathlib import Path
 def _run_command(command: list[str]) -> int:
     completed = subprocess.run(command, check=False)
     return int(completed.returncode)
+
+
+def _coverage_has_pyproject_toml_support() -> bool:
+    # IMPORTANT: keep this probe in sync with the CI/local bootstrap checks so
+    # Python 3.10 fails fast with a clear remediation instead of a coverage crash.
+    if sys.version_info >= (3, 11):
+        return True
+    return importlib.util.find_spec("tomli") is not None
 
 
 def _build_unittest_args(args: argparse.Namespace) -> list[str]:
@@ -64,6 +73,15 @@ def run_backend_coverage(argv: list[str] | None = None) -> int:
 
     coverage_json = Path(args.coverage_json)
     coverage_json.parent.mkdir(parents=True, exist_ok=True)
+
+    if not _coverage_has_pyproject_toml_support():
+        # CRITICAL: coverage reads repo config from pyproject.toml; Python 3.10
+        # needs the TOML extra or CI/local coverage gates fail before tests run.
+        print(
+            "Coverage pyproject support is unavailable on this interpreter. "
+            "Install with `coverage[toml]` before running the backend coverage gate."
+        )
+        return 2
 
     erase_cmd = [sys.executable, "-m", "coverage", "erase"]
     if (code := _run_command(erase_cmd)) != 0:

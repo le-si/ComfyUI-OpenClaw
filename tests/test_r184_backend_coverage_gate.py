@@ -1,6 +1,7 @@
 import subprocess
 import sys
 import unittest
+from io import StringIO
 from pathlib import Path
 from unittest.mock import patch
 
@@ -67,6 +68,29 @@ class TestR184BackendCoverageGate(unittest.TestCase):
 
         self.assertEqual(result, 1)
         self.assertEqual(mock_run.call_count, 2)
+
+    @patch("scripts.run_backend_coverage._coverage_has_pyproject_toml_support")
+    @patch("scripts.run_backend_coverage.subprocess.run")
+    def test_missing_toml_support_fails_closed_before_running_coverage(
+        self, mock_run, mock_support
+    ):
+        from scripts.run_backend_coverage import run_backend_coverage
+
+        mock_support.return_value = False
+        stdout = StringIO()
+        with patch("sys.stdout", stdout):
+            result = run_backend_coverage(
+                [
+                    "--module",
+                    "tests.test_r156_quality_governance",
+                    "--coverage-json",
+                    str(ROOT / ".tmp" / "coverage" / "missing_toml.json"),
+                ]
+            )
+
+        self.assertEqual(result, 2)
+        self.assertEqual(mock_run.call_count, 0)
+        self.assertIn("coverage[toml]", stdout.getvalue())
 
 
 if __name__ == "__main__":
