@@ -157,12 +157,16 @@ Controls the `connector` sidecar process and outbound delivery.
 | `OPENCLAW_CONNECTOR_FEISHU_DOMAIN` | Feishu/Lark | API domain selector (`feishu` or `lark`). |
 | `OPENCLAW_CONNECTOR_FEISHU_MODE` | Feishu/Lark | Transport mode (`websocket` or `webhook`). |
 | `OPENCLAW_CONNECTOR_FEISHU_CALLBACK_PATH` | Feishu/Lark | Local interactive callback route path (default `/feishu/callback`). |
+| `OPENCLAW_CONNECTOR_RATE_LIMIT_USER_RPM` | Core | Per-user connector rate limit (default `10`, clamped to `1..600`). |
+| `OPENCLAW_CONNECTOR_RATE_LIMIT_CHANNEL_RPM` | Core | Per-channel connector rate limit (default `30`, clamped to `1..600`). |
+| `OPENCLAW_CONNECTOR_MAX_COMMAND_LENGTH` | Core | Max accepted connector command text length (default `4096`, clamped to `128..32768`). |
 
 Connector posture rules:
 - In strict posture (`OPENCLAW_DEPLOYMENT_PROFILE=public` or `OPENCLAW_RUNTIME_PROFILE=hardened`), active connector platforms without allowlist coverage are fail-closed.
 - Public deployment profile check surfaces this as `DP-PUBLIC-009`.
 - Slack multi-workspace installs persist only encrypted token refs in `connector_installations.json`; raw bot/app tokens remain in encrypted secret storage and must not appear in diagnostics or exported config surfaces.
 - Feishu/Lark bindings persist normalized installation identity plus secret references only; app secrets and callback signing material must stay in encrypted/local secret storage and must not appear in diagnostics or exported config surfaces.
+- Connector bind-port envs (`OPENCLAW_CONNECTOR_LINE_PORT`, `...WHATSAPP_PORT`, `...WECHAT_PORT`, `...KAKAO_PORT`, `...SLACK_PORT`, `...FEISHU_PORT`) must stay within `1..65535`; invalid or out-of-range values fall back to the documented platform defaults instead of crashing startup.
 
 **Delivery & Media:**
 

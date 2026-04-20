@@ -214,6 +214,13 @@ Set the following environment variables (or put them in a `.env` file if you use
 - `OPENCLAW_CONNECTOR_MEDIA_TTL_SEC`: Image expiry in seconds (default `300`, clamped to `60..86400`).
 - `OPENCLAW_CONNECTOR_MEDIA_MAX_MB`: Max image size in MB (default `8`, clamped to `1..64`).
 
+**Connector numeric guardrails:**
+
+- Platform bind ports (`OPENCLAW_CONNECTOR_LINE_PORT`, `...WHATSAPP_PORT`, `...WECHAT_PORT`, `...KAKAO_PORT`, `...SLACK_PORT`, `...FEISHU_PORT`) must stay within `1..65535`; invalid or out-of-range values fall back to the platform default port.
+- `OPENCLAW_CONNECTOR_RATE_LIMIT_USER_RPM`: Per-user connector rate limit (default `10`, clamped to `1..600`).
+- `OPENCLAW_CONNECTOR_RATE_LIMIT_CHANNEL_RPM`: Per-channel connector rate limit (default `30`, clamped to `1..600`).
+- `OPENCLAW_CONNECTOR_MAX_COMMAND_LENGTH`: Max accepted command text length (default `4096`, clamped to `128..32768`).
+
 > **Note:** Media URLs are signed with a secret derived from `OPENCLAW_CONNECTOR_ADMIN_TOKEN` or a random key.
 > To ensure URLs remain valid after connector restarts, **you must set `OPENCLAW_CONNECTOR_ADMIN_TOKEN`**.
 > LINE and WhatsApp also **require** `public_base_url` to be HTTPS.

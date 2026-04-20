@@ -9,7 +9,7 @@ ComfyUI-OpenClaw is a **security-first orchestration layer** for ComfyUI that co
 - **A standalone Remote Admin Console** (`/openclaw/admin`) for mobile/remote browser operations
 - **A secure-by-default HTTP API** for automation (webhooks, triggers, schedules, approvals, presets, rewrite recipes, model manager)
 - **Public-ready control-plane split architecture** (embedded UX + externalized high-risk control surfaces)
-- **Verification-first hardening lanes** (coverage governance, route drift, real-backend E2E, adversarial fuzz/mutation gates)
+- **Verification-first hardening lanes** (staged coverage governance, test-debt governance, route drift, real-backend E2E, adversarial fuzz/mutation gates)
 - **Now supports 8 major messaging platforms, including Discord, Telegram, WhatsApp, LINE, WeChat, KakaoTalk, Slack, and Feishu/Lark.**
 - **And more exciting features being added continuously**
 
@@ -74,6 +74,17 @@ Deployment profiles and hardening references:
 
 
 <details><summary><h2>Latest Updates - Click to expand</h2></summary>
+
+<details>
+
+<summary><strong>Verification governance, config bootstrap hygiene, and connector env hardening aligned with the current runtime</strong></summary>
+
+- Added staged coverage-ratchet governance plus hotspot-family coverage reporting, so the current floor and future promotion targets are reviewed from one governed source instead of ad hoc `fail_under` edits.
+- Added fail-closed test-debt governance for no-skip modules and mutation-survivor allowlist entries, with explicit `reason` and `review_after` metadata now enforced by the standard full-test flow.
+- Hardened pack metadata/version fallback parsing and made config/bootstrap imports side-effect-safe, so pack version fallback stays deterministic and importing config helpers no longer creates the state directory or log file before first real use.
+- Added bounded connector numeric env parsing for delivery, media, timeout, rate-limit, command-length, OAuth TTL, and bind-port settings, so malformed values degrade to documented defaults or clamps with warnings instead of crashing startup.
+
+</details>
 
 <details>
 
@@ -1159,6 +1170,7 @@ Logs:
 - `openclaw.log` (legacy `moltbot.log` is still supported)
 - `audit.log` for append-only audit events, plus retained rotated audit segments when log retention is enabled
 - `audit.log.key` when OpenClaw generates and persists the local audit chain key instead of receiving one from environment/config
+- Importing config helpers alone does not create the state directory or log files on current builds; writable paths are created lazily on first logger bootstrap or persisted-write paths.
 - Optional startup truncation: set `OPENCLAW_LOG_TRUNCATE_ON_START=1` to clear the active log file once at process startup (useful to avoid stale-history noise in UI log views).
 - Optional structured JSON logs for selected core paths:
   - set `OPENCLAW_LOG_FORMAT=json` (or `OPENCLAW_STRUCTURED_LOGS=1`) before startup
@@ -1218,7 +1230,9 @@ bash scripts/run_full_tests_linux.sh
 ```
 
 This full gate includes detect-secrets, pre-commit, coverage governance verification, backend suites, adaptive adversarial verification, Playwright E2E, and CI-parity dependency audit expectations scoped to declared project requirements.
-It also includes backend regressions that pin snapshot-first diagnostics, delta cursor semantics, schema/OpenAPI drift checks, and minimal-environment optional-dependency import behavior.
+It also includes backend regressions that pin snapshot-first diagnostics, delta cursor semantics, schema/OpenAPI drift checks, minimal-environment optional-dependency import behavior, and the import-safe config/bootstrap contract.
+
+Verification-governance details now live in [docs/release/verification_governance.md](docs/release/verification_governance.md), including the staged coverage ratchet, test-debt governance checks, and hotspot-family coverage review workflow.
 
 ## Updating
 
@@ -1237,6 +1251,7 @@ OpenClaw includes a standalone **Connector** process that allows you to control 
 - **KakaoTalk response safety**: QuickReply limits and safe fallback handling are enforced for reliable payload behavior.
 - **Slack multi-workspace mode**: Workspace installs can be handled through connector-managed OAuth install/callback routes with per-workspace token binding and fail-closed health diagnostics.
 - **Feishu/Lark multi-account mode**: Connector-managed account/workspace bindings support tenant-aware installation resolution, interactive approval cards, and signed callback handling without exposing raw app secrets or widening command trust implicitly.
+- **Bounded connector numeric envs**: Delivery/media/time-budget settings, bind ports, rate limits, and command-length knobs now clamp or fall back to documented defaults with warnings instead of crashing connector startup on malformed values.
 
 - [See Setup Guide (`docs/connector.md`)](docs/connector.md)
 
