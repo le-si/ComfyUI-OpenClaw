@@ -46,8 +46,8 @@ Run the full regression suite:
 # 2. Lint & Formatting
 ./.venv/Scripts/python.exe -m pre_commit run --all-files --show-diff-on-failure
 
-# 3. Backend Unit Tests
-MOLTBOT_STATE_DIR="$(pwd)/moltbot_state/_local_unit" ./.venv/Scripts/python.exe scripts/run_unittests.py --start-dir tests --pattern "test_*.py"
+# 3. Backend Unit Coverage Gate
+MOLTBOT_STATE_DIR="$(pwd)/moltbot_state/_local_unit" ./.venv/Scripts/python.exe scripts/run_backend_coverage.py --start-dir tests --pattern "test_*.py" --enforce-skip-policy tests/skip_policy.json --coverage-json .tmp/coverage/backend_unit_coverage.json
 
 # 4. Frontend E2E (Unit/Integration)
 # Ensure Node 18+

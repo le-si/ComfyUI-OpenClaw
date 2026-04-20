@@ -80,6 +80,7 @@ Deployment profiles and hardening references:
 <summary><strong>Verification governance, config bootstrap hygiene, and connector env hardening aligned with the current runtime</strong></summary>
 
 - Promoted the staged coverage-ratchet baseline to the enforced `45%` floor, added retained review-cycle evidence for hotspot families, and wired backend coverage collection through one shared local/CI helper instead of ad hoc `fail_under` edits.
+- Added focused connector and config/bootstrap hotspot regressions, reviewed the governed hotspot-family coverage summaries, and retired the temporary promotion-gap exceptions now that both promotion-blocking families are represented by explicit review evidence.
 - Added fail-closed test-debt governance for no-skip modules and mutation-survivor allowlist entries, with explicit `reason` and `review_after` metadata now enforced by the standard full-test flow.
 - Hardened pack metadata/version fallback parsing and made config/bootstrap imports side-effect-safe, so pack version fallback stays deterministic and importing config helpers no longer creates the state directory or log file before first real use.
 - Added bounded connector numeric env parsing for delivery, media, timeout, rate-limit, command-length, OAuth TTL, and bind-port settings, so malformed values degrade to documented defaults or clamps with warnings instead of crashing startup.
@@ -1231,6 +1232,12 @@ bash scripts/run_full_tests_linux.sh
 
 This full gate includes detect-secrets, pre-commit, coverage governance verification, backend suites, adaptive adversarial verification, Playwright E2E, and CI-parity dependency audit expectations scoped to declared project requirements.
 It also includes backend regressions that pin snapshot-first diagnostics, delta cursor semantics, schema/OpenAPI drift checks, minimal-environment optional-dependency import behavior, and the import-safe config/bootstrap contract.
+
+The shared backend coverage gate used by local scripts and CI is:
+
+```bash
+python scripts/run_backend_coverage.py --start-dir tests --pattern "test_*.py" --enforce-skip-policy tests/skip_policy.json --coverage-json .tmp/coverage/backend_unit_coverage.json
+```
 
 Verification-governance details now live in [docs/release/verification_governance.md](docs/release/verification_governance.md), including the staged coverage ratchet, test-debt governance checks, and hotspot-family coverage review workflow.
 
