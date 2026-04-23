@@ -1,4 +1,8 @@
-import tomllib
+try:
+    import tomllib
+except ImportError:  # pragma: no cover
+    # IMPORTANT: keep the Python 3.10 fallback; WSL pre-push still validates on 3.10.
+    import tomli as tomllib
 import unittest
 from pathlib import Path
 
