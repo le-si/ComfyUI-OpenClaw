@@ -9,6 +9,7 @@ if _OPENCLAW_ROOT not in sys.path:
 if __package__:
     from .nodes.batch_variants import OpenClawBatchVariants
     from .nodes.image_to_prompt import OpenClawImageToPrompt
+    from .nodes.portability_contract import NODE_PORTABILITY_MAPPINGS
     from .nodes.prompt_planner import OpenClawPromptPlanner
     from .nodes.prompt_refiner import OpenClawPromptRefiner
 
@@ -27,12 +28,18 @@ if __package__:
         "MoltbotPromptRefiner": "openclaw: Prompt Refiner",
     }
 
-    __all__ = ["NODE_CLASS_MAPPINGS", "NODE_DISPLAY_NAME_MAPPINGS", "WEB_DIRECTORY"]
+    __all__ = [
+        "NODE_CLASS_MAPPINGS",
+        "NODE_DISPLAY_NAME_MAPPINGS",
+        "NODE_PORTABILITY_MAPPINGS",
+        "WEB_DIRECTORY",
+    ]
 else:
     # Allow test collection to proceed without crashing on relative imports
     NODE_CLASS_MAPPINGS = {}
     NODE_DISPLAY_NAME_MAPPINGS = {}
-    __all__ = ["WEB_DIRECTORY"]
+    NODE_PORTABILITY_MAPPINGS = {}
+    __all__ = ["NODE_PORTABILITY_MAPPINGS", "WEB_DIRECTORY"]
 
 WEB_DIRECTORY = "./web"
 

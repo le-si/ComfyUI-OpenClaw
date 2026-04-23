@@ -91,6 +91,11 @@ class TestComfyUICustomNodeLoaderImport(unittest.TestCase):
             self.assertIn("MoltbotPromptPlanner", module.NODE_CLASS_MAPPINGS)
             planner_cls = module.NODE_CLASS_MAPPINGS["MoltbotPromptPlanner"]
             self.assertEqual(planner_cls.__name__, "OpenClawPromptPlanner")
+            self.assertTrue(hasattr(module, "NODE_PORTABILITY_MAPPINGS"))
+            self.assertEqual(
+                sorted(module.NODE_PORTABILITY_MAPPINGS.keys()),
+                sorted(module.NODE_CLASS_MAPPINGS.keys()),
+            )
 
             # After import, `services.*` should be importable because __init__.py must self-heal sys.path.
             llm_mod = importlib.import_module("services.llm_client")

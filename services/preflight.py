@@ -10,6 +10,11 @@ import threading
 import time
 from typing import Any, Dict, List, Set, Tuple
 
+from .workflow_portability import (
+    analyze_workflow_portability,
+    get_missing_node_fallback,
+)
+
 logger = logging.getLogger("ComfyUI-OpenClaw.services.preflight")
 
 # IMPORTANT (ComfyUI runtime wiring):
@@ -268,12 +273,27 @@ def run_preflight_check(workflow: Dict[str, Any]) -> Dict[str, Any]:
         "missing_models": [],
         "invalid_inputs": [],
         "notes": [],
+        "portability": {
+            "contract_version": 1,
+            "export_mode": "advisory_metadata",
+            "summary": {
+                "openclaw_nodes": 0,
+                "portable_mode_required": False,
+                "portable_mode_supported": False,
+                "requires_manual_rewire": False,
+            },
+            "detected_class_types": [],
+            "recommended_actions": [],
+            "openclaw_nodes": [],
+        },
     }
 
     if not isinstance(workflow, dict):
         report["ok"] = False
         report["notes"].append("Workflow must be a JSON object (API format).")
         return report
+
+    report["portability"] = analyze_workflow_portability(workflow)
 
     # 1. Check Nodes
     available_nodes = _get_node_class_mappings()
@@ -301,8 +321,12 @@ def run_preflight_check(workflow: Dict[str, Any]) -> Dict[str, Any]:
             _check_inputs_for_models(inputs, inventory, missing_models_counts)
 
     # Format Results
-    for cls, count in missing_node_counts.items():
-        report["missing_nodes"].append({"class_type": cls, "count": count})
+    for cls in sorted(missing_node_counts):
+        item = {"class_type": cls, "count": missing_node_counts[cls]}
+        fallback = get_missing_node_fallback(cls)
+        if fallback is not None:
+            item["fallback"] = fallback
+        report["missing_nodes"].append(item)
 
     for key, info in missing_models_counts.items():
         report["missing_models"].append(
@@ -323,6 +347,10 @@ def run_preflight_check(workflow: Dict[str, Any]) -> Dict[str, Any]:
         report["notes"].append("Node inventory unavailable (backend import failed).")
     if not folder_paths:
         report["notes"].append("Model inventory unavailable (backend import failed).")
+    if any("fallback" in item for item in report["missing_nodes"]):
+        report["notes"].append(
+            "Portable mode guidance is available for missing OpenClaw nodes."
+        )
 
     # F49: Inject Guidance Banners
     # We serialize them so they are ready for JSON response

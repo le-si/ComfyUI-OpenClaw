@@ -26,6 +26,7 @@ if __package__ and "." in __package__:
     )
     from ..services.rate_limit import build_rate_limit_response, check_rate_limit
     from ..services.request_ip import get_client_ip
+    from ..services.workflow_portability import get_workflow_portability_contract
 else:  # pragma: no cover (test-only import mode)
     from models.schemas import MAX_BODY_SIZE  # type: ignore
     from services.access_control import is_loopback, require_admin_token  # type: ignore
@@ -39,6 +40,9 @@ else:  # pragma: no cover (test-only import mode)
         check_rate_limit,
     )
     from services.request_ip import get_client_ip  # type: ignore
+    from services.workflow_portability import (  # type: ignore
+        get_workflow_portability_contract,
+    )
 
 # R98: Endpoint Metadata
 if __package__ and "." in __package__:
@@ -213,6 +217,7 @@ async def inventory_handler(request: web.Request) -> web.Response:
                 "ok": True,
                 "nodes": node_classes,
                 "models": inventory_snapshot["models"],
+                "portability_contract": get_workflow_portability_contract(),
                 "snapshot_ts": inventory_snapshot["snapshot_ts"],
                 "scan_state": inventory_snapshot["scan_state"],
                 "stale": inventory_snapshot["stale"],
