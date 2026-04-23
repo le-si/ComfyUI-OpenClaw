@@ -1,7 +1,7 @@
 openapi: "3.0.3"
 info:
   title: "ComfyUI-OpenClaw API"
-  version: "1.0.6"
+  version: "1.0.7"
   description: "Generated from docs/release/api_contract.md (R66 baseline)."
 servers:
   - url: "/openclaw"
@@ -372,6 +372,20 @@ paths:
       x-openclaw-auth: "Admin"
       x-openclaw-section: "1.3B Connector Installation Diagnostics"
       x-openclaw-legacy-path: "/moltbot/connector/installations/audit"
+      x-openclaw-auth-tier: "admin"
+      security:
+        - OpenClawAdminToken:
+            []
+  /connector/extraction-contract:
+    get:
+      operationId: "get_connector_extraction_contract"
+      summary: "Get the machine-readable connector extraction recommendation, seam families, and current blockers."
+      responses:
+        200:
+          description: "OK"
+      x-openclaw-auth: "Admin"
+      x-openclaw-section: "1.3B Connector Installation Diagnostics"
+      x-openclaw-legacy-path: "/moltbot/connector/extraction-contract"
       x-openclaw-auth-tier: "admin"
       security:
         - OpenClawAdminToken:
