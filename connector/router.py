@@ -249,11 +249,11 @@ class CommandRouter:
         if platform == "telegram":
             try:
                 uid = int(sender_id)
-            except Exception:
+            except ValueError:
                 uid = None
             try:
                 cid = int(channel_id)
-            except Exception:
+            except ValueError:
                 cid = None
             if uid is not None and uid in self.config.telegram_allowed_users:
                 return True

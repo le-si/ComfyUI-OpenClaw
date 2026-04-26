@@ -1,0 +1,95 @@
+{
+  "version": 1,
+  "selected_modules": {
+    "api/routes.py": {
+      "broad_catches": [
+        {
+          "scope": "health_handler",
+          "expected_count": 5,
+          "classification": "allowed_boundary_guard",
+          "reason": "Health diagnostics must degrade to partial snapshots when optional provider, metrics, event-store, or profile probes fail."
+        },
+        {
+          "scope": "logs_tail_handler",
+          "expected_count": 1,
+          "classification": "allowed_boundary_guard",
+          "reason": "Log tail reads are operator diagnostics and return a bounded 500 response instead of crashing route handling."
+        },
+        {
+          "scope": "register_dual_route._deprecated_handler",
+          "expected_count": 1,
+          "classification": "allowed_boundary_guard",
+          "reason": "Legacy-route telemetry must not break compatibility routing when metrics are unavailable."
+        },
+        {
+          "scope": "register_dual_route",
+          "expected_count": 1,
+          "classification": "allowed_boundary_guard",
+          "reason": "Direct fallback route registration logs unexpected router-add failures without blocking PromptServer registration."
+        },
+        {
+          "scope": "_resolve_mae_profile",
+          "expected_count": 1,
+          "classification": "needs_follow_up_test_coverage",
+          "reason": "Runtime profile probing is best-effort today; future work should pin profile import/runtime failures more explicitly."
+        },
+        {
+          "scope": "_run_mae_startup_gate",
+          "expected_count": 1,
+          "classification": "allowed_boundary_guard",
+          "reason": "MAE posture validation is a startup diagnostic gate and logs unavailability without preventing core local loading."
+        }
+      ]
+    },
+    "connector/router.py": {
+      "broad_catches": [
+        {
+          "scope": "<module>",
+          "expected_count": 1,
+          "classification": "allowed_boundary_guard",
+          "reason": "Connector unit tests may stub the import graph; sanitizer import fallback keeps tests and standalone connector loading deterministic."
+        },
+        {
+          "scope": "CommandRouter.handle",
+          "expected_count": 1,
+          "classification": "allowed_boundary_guard",
+          "reason": "Connector command dispatch is an external-message boundary and converts handler failures into a non-sensitive operator response."
+        },
+        {
+          "scope": "CommandRouter._get_template_meta",
+          "expected_count": 1,
+          "classification": "allowed_boundary_guard",
+          "reason": "Template metadata lookup is best-effort; command execution falls back to explicit prompt input names when metadata is unavailable."
+        }
+      ]
+    },
+    "services/route_bootstrap.py": {
+      "broad_catches": [
+        {
+          "scope": "_register_plugins_and_shutdown_hooks",
+          "expected_count": 1,
+          "classification": "needs_follow_up_test_coverage",
+          "reason": "Plugin/shutdown hook registration is currently non-fatal but should gain narrower plugin failure coverage."
+        },
+        {
+          "scope": "_initialize_registries_and_security_gate",
+          "expected_count": 1,
+          "classification": "allowed_boundary_guard",
+          "reason": "Bootstrap initialization logs context and re-raises so security gate failures remain fail-closed."
+        },
+        {
+          "scope": "_start_registration_retry_loop._retry_worker",
+          "expected_count": 1,
+          "classification": "allowed_boundary_guard",
+          "reason": "Background route retry is a PromptServer warm-up boundary and keeps retrying after transient registration failures."
+        },
+        {
+          "scope": "register_routes_once",
+          "expected_count": 1,
+          "classification": "allowed_boundary_guard",
+          "reason": "Initial route registration logs context and re-raises so unexpected bootstrap failures are visible and fail-closed."
+        }
+      ]
+    }
+  }
+}

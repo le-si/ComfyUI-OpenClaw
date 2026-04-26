@@ -274,3 +274,6 @@ def register_routes_once() -> None:
             _start_registration_retry_loop()
     except Exception:
         logging.getLogger("ComfyUI-OpenClaw").exception("Route registration failed")
+        # CRITICAL: initial registration failures must fail closed. The retry loop is
+        # only for PromptServer warm-up, not for hiding broken route/bootstrap state.
+        raise
