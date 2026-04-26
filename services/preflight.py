@@ -13,6 +13,7 @@ from typing import Any, Dict, List, Set, Tuple
 from .workflow_portability import (
     analyze_workflow_portability,
     get_missing_node_fallback,
+    iter_workflow_diagnostic_nodes,
 )
 
 logger = logging.getLogger("ComfyUI-OpenClaw.services.preflight")
@@ -268,9 +269,17 @@ def run_preflight_check(workflow: Dict[str, Any]) -> Dict[str, Any]:
     """
     report = {
         "ok": True,
-        "summary": {"missing_nodes": 0, "missing_models": 0, "invalid_inputs": 0},
+        "summary": {
+            "missing_nodes": 0,
+            "missing_models": 0,
+            "invalid_inputs": 0,
+            "suppressed_missing_nodes": 0,
+            "suppressed_missing_models": 0,
+        },
         "missing_nodes": [],
         "missing_models": [],
+        "suppressed_missing_nodes": [],
+        "suppressed_missing_models": [],
         "invalid_inputs": [],
         "notes": [],
         "portability": {
@@ -278,6 +287,7 @@ def run_preflight_check(workflow: Dict[str, Any]) -> Dict[str, Any]:
             "export_mode": "advisory_metadata",
             "summary": {
                 "openclaw_nodes": 0,
+                "suppressed_openclaw_nodes": 0,
                 "portable_mode_required": False,
                 "portable_mode_supported": False,
                 "requires_manual_rewire": False,
@@ -285,6 +295,7 @@ def run_preflight_check(workflow: Dict[str, Any]) -> Dict[str, Any]:
             "detected_class_types": [],
             "recommended_actions": [],
             "openclaw_nodes": [],
+            "suppressed_openclaw_nodes": [],
         },
     }
 
@@ -303,22 +314,57 @@ def run_preflight_check(workflow: Dict[str, Any]) -> Dict[str, Any]:
     inventory = _get_model_inventory()
     missing_models_counts: Dict[str, Dict[str, Any]] = {}
 
-    for node_id, node_data in workflow.items():
+    for diagnostic_node in iter_workflow_diagnostic_nodes(workflow):
+        node_data = diagnostic_node.get("node_data")
         if not isinstance(node_data, dict):
             continue
-
+        node_id = str(diagnostic_node.get("node_id") or "")
+        active = bool(diagnostic_node.get("active", True))
+        inactive_reason = diagnostic_node.get("inactive_reason")
+        is_subgraph_container = bool(diagnostic_node.get("is_subgraph_container"))
         # Check Node Class
-        class_type = node_data.get("class_type")
+        class_type = diagnostic_node.get("class_type")
         if not class_type:
             continue
 
-        if available_nodes and class_type not in available_nodes:
-            missing_node_counts[class_type] = missing_node_counts.get(class_type, 0) + 1
+        if (
+            available_nodes
+            and class_type not in available_nodes
+            and not is_subgraph_container
+        ):
+            if not active:
+                item = {
+                    "node_id": node_id,
+                    "class_type": class_type,
+                    "inactive_reason": inactive_reason or "inactive",
+                }
+                fallback = get_missing_node_fallback(class_type)
+                if fallback is not None:
+                    item["fallback"] = fallback
+                report["suppressed_missing_nodes"].append(item)
+            else:
+                missing_node_counts[class_type] = (
+                    missing_node_counts.get(class_type, 0) + 1
+                )
 
         # Check Inputs for Models
-        inputs = node_data.get("inputs")
+        inputs = diagnostic_node.get("inputs")
         if isinstance(inputs, dict):
-            _check_inputs_for_models(inputs, inventory, missing_models_counts)
+            if active:
+                _check_inputs_for_models(inputs, inventory, missing_models_counts)
+            else:
+                suppressed_counts: Dict[str, Dict[str, Any]] = {}
+                _check_inputs_for_models(inputs, inventory, suppressed_counts)
+                for info in suppressed_counts.values():
+                    report["suppressed_missing_models"].append(
+                        {
+                            "node_id": node_id,
+                            "type": info["type"],
+                            "name": info["name"],
+                            "count": info["count"],
+                            "inactive_reason": inactive_reason or "inactive",
+                        }
+                    )
 
     # Format Results
     for cls in sorted(missing_node_counts):
@@ -336,6 +382,12 @@ def run_preflight_check(workflow: Dict[str, Any]) -> Dict[str, Any]:
     # Summarize
     report["summary"]["missing_nodes"] = len(report["missing_nodes"])
     report["summary"]["missing_models"] = len(report["missing_models"])
+    report["summary"]["suppressed_missing_nodes"] = len(
+        report["suppressed_missing_nodes"]
+    )
+    report["summary"]["suppressed_missing_models"] = len(
+        report["suppressed_missing_models"]
+    )
 
     if (
         report["summary"]["missing_nodes"] > 0
@@ -350,6 +402,13 @@ def run_preflight_check(workflow: Dict[str, Any]) -> Dict[str, Any]:
     if any("fallback" in item for item in report["missing_nodes"]):
         report["notes"].append(
             "Portable mode guidance is available for missing OpenClaw nodes."
+        )
+    if (
+        report["summary"]["suppressed_missing_nodes"] > 0
+        or report["summary"]["suppressed_missing_models"] > 0
+    ):
+        report["notes"].append(
+            "Inactive subgraph branches were suppressed from actionable diagnostics."
         )
 
     # F49: Inject Guidance Banners

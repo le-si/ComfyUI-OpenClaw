@@ -16,8 +16,9 @@ connector_state.json*
 
 # Agent/local project exclusions
 .pla*/
-re*/
-RE*/
+reference/
+REFERENCE/
+.reference/
 ROA*.md
 roa*.md
 AG*.md

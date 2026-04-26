@@ -108,7 +108,7 @@ export const ExplorerTab = {
         const diagHeader = makeEl("h3", "", "Preflight Diagnostics");
         diagHeader.style.marginTop = "0";
 
-        const diagDesc = makeEl("p", "", "Paste a workflow JSON (API format) to check for missing nodes/models compatible with this environment.");
+        const diagDesc = makeEl("p", "", "Paste workflow JSON or API prompt JSON to check for missing nodes/models compatible with this environment.");
         diagDesc.style.fontSize = "0.9em";
         diagDesc.style.opacity = "0.8";
 
@@ -382,6 +382,43 @@ export const ExplorerTab = {
                 const ul = makeEl("ul");
                 report.missing_models.forEach(m => {
                     const li = makeEl("li", "", `${m.type}: ${m.name} (x${m.count})`);
+                    ul.appendChild(li);
+                });
+                section.appendChild(ul);
+                resultsArea.appendChild(section);
+            }
+
+            const suppressedNodeCount = Number(report.summary?.suppressed_missing_nodes || 0);
+            const suppressedModelCount = Number(report.summary?.suppressed_missing_models || 0);
+            const suppressedTotal = suppressedNodeCount + suppressedModelCount;
+            if (suppressedTotal > 0) {
+                const section = makeEl("div", "openclaw-preflight-suppressed");
+                const heading = makeEl("h4", "", `Inactive Branch Findings Suppressed (${suppressedTotal})`);
+                section.appendChild(heading);
+                const note = makeEl(
+                    "div",
+                    "",
+                    "Muted or bypassed workflow branches are not counted as actionable missing dependencies."
+                );
+                note.style.opacity = "0.75";
+                note.style.fontSize = "0.9em";
+                section.appendChild(note);
+
+                const ul = makeEl("ul");
+                (report.suppressed_missing_nodes || []).forEach(m => {
+                    const li = makeEl(
+                        "li",
+                        "",
+                        `${m.node_id || "unknown"}: ${m.class_type || "unknown node"}`
+                    );
+                    ul.appendChild(li);
+                });
+                (report.suppressed_missing_models || []).forEach(m => {
+                    const li = makeEl(
+                        "li",
+                        "",
+                        `${m.node_id || "unknown"}: ${m.type || "model"} ${m.name || "unknown model"}`
+                    );
                     ul.appendChild(li);
                 });
                 section.appendChild(ul);

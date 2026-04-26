@@ -38,6 +38,55 @@ test.describe('OpenClaw Sidebar', () => {
     await expect(page.locator('#pnginfo-empty-state')).toContainText('Load an image to inspect');
   });
 
+  test('Explorer preflight surfaces inactive-branch suppressed diagnostics', async ({ page }) => {
+    await page.route('**/preflight', async (route) => {
+      const request = route.request();
+      const url = new URL(request.url());
+      if (request.method() !== 'POST' || !url.pathname.endsWith('/preflight')) {
+        await route.fallback();
+        return;
+      }
+
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          ok: true,
+          summary: {
+            missing_nodes: 0,
+            missing_models: 0,
+            invalid_inputs: 0,
+            suppressed_missing_nodes: 2,
+            suppressed_missing_models: 1,
+          },
+          missing_nodes: [],
+          missing_models: [],
+          suppressed_missing_nodes: [
+            { node_id: '5:7', class_type: 'MoltbotPromptPlanner' },
+            { node_id: '5:8', class_type: 'MissingCustomNode' },
+          ],
+          suppressed_missing_models: [
+            { node_id: '5:8', type: 'checkpoints', name: 'missing-model.safetensors' },
+          ],
+          notes: [
+            'Inactive subgraph branches were suppressed from actionable diagnostics.',
+          ],
+        }),
+      });
+    });
+
+    await clickTab(page, 'Explorer');
+    await page.locator('.openclaw-preflight-results').waitFor({ state: 'attached' });
+    await page.locator('textarea').fill(JSON.stringify({ nodes: [] }));
+    await page.getByRole('button', { name: 'Run Preflight' }).click();
+
+    const results = page.locator('.openclaw-preflight-results');
+    await expect(results).toContainText('Workflow Compatible');
+    await expect(results).toContainText('Inactive Branch Findings Suppressed (3)');
+    await expect(results).toContainText('MissingCustomNode');
+    await expect(results).toContainText('missing-model.safetensors');
+  });
+
   test('harness recovers from one transient openclaw entry fetch failure', async ({ page }) => {
     let failedOnce = false;
 
