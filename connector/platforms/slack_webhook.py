@@ -34,6 +34,7 @@ import json
 import logging
 import time
 from typing import Any, Dict, Optional, Tuple
+from urllib.parse import parse_qs
 
 from ..config import ConnectorConfig
 from ..contract import CommandRequest, CommandResponse
@@ -42,6 +43,10 @@ from ..security_profile import AllowlistPolicy, ReplayGuard
 from .slack_installation_manager import SlackInstallationManager
 
 logger = logging.getLogger(__name__)
+
+_SLACK_INTERACTION_TYPES = frozenset(
+    {"block_actions", "view_submission", "workflow_step_execute"}
+)
 
 
 # -- aiohttp compat layer (same pattern as kakao/whatsapp/wechat) -----------
@@ -101,6 +106,40 @@ def _safe_external_error_text(default: str, _exc: Exception) -> str:
     # IMPORTANT: keep Slack external failures constant. Even "short safe-looking"
     # exception text remains scanner-tainted and can re-expose internal detail.
     return default
+
+
+def _json_loads_safe(raw: Any) -> Dict[str, Any]:
+    if isinstance(raw, dict):
+        return raw
+    if not isinstance(raw, str):
+        return {}
+    try:
+        parsed = json.loads(raw)
+        return parsed if isinstance(parsed, dict) else {}
+    except Exception:
+        return {}
+
+
+def _first_non_empty(*values: Any) -> str:
+    for value in values:
+        text = str(value or "").strip()
+        if text:
+            return text
+    return ""
+
+
+def _force_approval_command(command_text: str) -> str:
+    normalized = str(command_text or "").strip()
+    if normalized.startswith("/run") and "--approval" not in normalized:
+        return f"{normalized} --approval"
+    return normalized
+
+
+def _style_to_slack(style: str) -> str:
+    normalized = str(style or "").strip().lower()
+    if normalized in {"primary", "danger"}:
+        return normalized
+    return "primary" if normalized in {"approve", "success"} else ""
 
 
 # -- Slack signature verification -------------------------------------------
@@ -225,6 +264,9 @@ class SlackWebhookServer:
 
         self.app = web.Application()
         self.app.router.add_post(self.config.slack_webhook_path, self.handle_event)
+        self.app.router.add_post(
+            self.config.slack_interactions_path, self.handle_interaction
+        )
         if self._installation_manager.can_handle_oauth():
             self.app.router.add_get(
                 self.config.slack_oauth_install_path, self.handle_oauth_install
@@ -447,6 +489,56 @@ class SlackWebhookServer:
             return _make_response(web, status=400, text="Bad Request")
         return _make_response(web, status=200, text="OK")
 
+    async def handle_interaction(self, request):
+        """POST handler for Slack Block Kit interactivity callbacks."""
+        _, web = _import_aiohttp_web()
+
+        try:
+            body_bytes = await request.read()
+        except Exception:
+            return _make_response(web, status=400, text="Bad request")
+
+        timestamp = ""
+        signature = ""
+        if hasattr(request, "headers"):
+            timestamp = request.headers.get("X-Slack-Request-Timestamp", "")
+            signature = request.headers.get("X-Slack-Signature", "")
+
+        if not verify_slack_signature(
+            signing_secret=self.config.slack_signing_secret or "",
+            timestamp=timestamp,
+            body=body_bytes,
+            signature=signature,
+        ):
+            logger.warning("Slack interaction signature verification failed (rejected)")
+            return _make_response(web, status=401, text="Invalid signature")
+
+        parsed = parse_qs(body_bytes.decode("utf-8"), keep_blank_values=True)
+        raw_payload = (parsed.get("payload") or [""])[0]
+        if not raw_payload:
+            return _make_response(web, status=400, text="Missing payload")
+
+        try:
+            payload = json.loads(raw_payload)
+        except json.JSONDecodeError:
+            return _make_response(web, status=400, text="Bad payload")
+        if not isinstance(payload, dict):
+            return _make_response(web, status=400, text="Bad payload")
+
+        try:
+            routed = await self.process_interaction_payload(payload)
+        except ValueError:
+            return _make_response(web, status=400, text="Bad Request")
+        except Exception as exc:
+            safe_text = _safe_external_error_text("Slack interaction failed", exc)
+            logger.warning("Slack interaction failed: %s", safe_text)
+            return _make_response(web, status=500, text=safe_text)
+
+        # Slack requires a fast acknowledgement for interactivity requests.
+        # Keep the external response bounded; detailed action results are routed
+        # through the existing reply/deferred-response surfaces.
+        return _make_json_response(web, {"ok": True, "routed": bool(routed)})
+
     async def process_event_payload(self, payload: Dict[str, Any]) -> None:
         """
         Shared event processing path for both webhook and socket mode transports.
@@ -543,22 +635,356 @@ class SlackWebhookServer:
             if not isinstance(resp_text, str):
                 resp_text = str(resp_text) if resp_text is not None else ""
 
-            if resp_text:
-                await self._send_reply(
-                    channel_id=channel_id,
-                    text=resp_text,
-                    thread_ts=req.thread_id,
-                    delivery_context={
-                        "workspace_id": workspace_id,
-                        "thread_id": req.thread_id,
-                    },
-                )
+            buttons = getattr(resp, "buttons", []) or []
+            if resp_text or buttons:
+                if buttons:
+                    await self._send_interactive_reply(
+                        channel_id=channel_id,
+                        text=resp_text or "OpenClaw",
+                        buttons=buttons,
+                        thread_ts=req.thread_id,
+                        delivery_context={
+                            "workspace_id": workspace_id,
+                            "thread_id": req.thread_id,
+                        },
+                    )
+                else:
+                    await self._send_reply(
+                        channel_id=channel_id,
+                        text=resp_text,
+                        thread_ts=req.thread_id,
+                        delivery_context={
+                            "workspace_id": workspace_id,
+                            "thread_id": req.thread_id,
+                        },
+                    )
         except Exception as e:
             logger.exception(f"Error handling Slack event: {e}")
+
+    async def process_interaction_payload(self, payload: Dict[str, Any]) -> bool:
+        interaction_type = str(payload.get("type", "") or "").strip()
+        if interaction_type not in _SLACK_INTERACTION_TYPES:
+            return False
+
+        request = self._build_interaction_request(payload)
+        if request is None:
+            return False
+
+        replay_key = self._interaction_replay_key(payload, request)
+        if not self._replay_guard.check_and_record(replay_key):
+            logger.debug("Slack duplicate interaction %s (accepted, no-op)", replay_key)
+            return False
+
+        # IMPORTANT: interactive run-like payloads must be routed through the same
+        # approval semantics as text commands. Untrusted users get approval forced
+        # before CommandRouter sees the request, avoiding a parallel bypass path.
+        if request.text.startswith("/run") and not (
+            self.router._is_admin(request) or self.router._is_trusted(request)
+        ):
+            request.text = _force_approval_command(request.text)
+
+        response = await self.router.handle(request)
+        response_text = str(getattr(response, "text", "") or "").strip()
+        response_buttons = getattr(response, "buttons", []) or []
+        if response_text or response_buttons:
+            if response_buttons:
+                await self._send_interactive_reply(
+                    channel_id=request.channel_id,
+                    text=response_text or "Action processed.",
+                    buttons=response_buttons,
+                    thread_ts=request.thread_id,
+                    delivery_context={
+                        "workspace_id": request.workspace_id,
+                        "thread_id": request.thread_id,
+                    },
+                )
+            elif response_text:
+                await self._send_reply(
+                    channel_id=request.channel_id,
+                    text=response_text,
+                    thread_ts=request.thread_id,
+                    delivery_context={
+                        "workspace_id": request.workspace_id,
+                        "thread_id": request.thread_id,
+                    },
+                )
+        return True
+
+    def _build_interaction_request(
+        self, payload: Dict[str, Any]
+    ) -> Optional[CommandRequest]:
+        interaction_type = str(payload.get("type", "") or "").strip()
+        command_text = self._extract_interaction_command(payload)
+        if not command_text:
+            return None
+
+        team = payload.get("team") or {}
+        user = payload.get("user") or {}
+        container = payload.get("container") or {}
+        channel = payload.get("channel") or {}
+        view = payload.get("view") or {}
+        message = payload.get("message") or {}
+        action = self._first_action(payload)
+
+        workspace_id = _first_non_empty(
+            team.get("id"),
+            payload.get("team_id"),
+            (
+                payload.get("enterprise", {}).get("id")
+                if isinstance(payload.get("enterprise"), dict)
+                else ""
+            ),
+        )
+        sender_id = _first_non_empty(user.get("id"), payload.get("user_id"))
+        channel_id = _first_non_empty(
+            channel.get("id"),
+            container.get("channel_id"),
+            payload.get("channel_id"),
+        )
+        message_id = _first_non_empty(
+            view.get("id"),
+            action.get("action_ts"),
+            container.get("message_ts"),
+            payload.get("trigger_id"),
+            f"slack-interaction-{int(time.time())}",
+        )
+        thread_id = _first_non_empty(
+            container.get("thread_ts"),
+            message.get("thread_ts") if isinstance(message, dict) else "",
+            container.get("message_ts"),
+        )
+        if not thread_id and self.config.slack_reply_in_thread:
+            thread_id = _first_non_empty(container.get("message_ts"), message.get("ts"))
+
+        return CommandRequest(
+            platform="slack",
+            sender_id=sender_id,
+            channel_id=channel_id or sender_id,
+            username=_first_non_empty(
+                user.get("username"), user.get("name"), sender_id
+            ),
+            message_id=message_id,
+            text=command_text,
+            timestamp=time.time(),
+            workspace_id=workspace_id,
+            thread_id=thread_id,
+            metadata={
+                "interactive_callback": True,
+                "interaction_type": interaction_type,
+                "action_id": _first_non_empty(
+                    action.get("action_id"), view.get("callback_id")
+                ),
+                "response_url": str(payload.get("response_url", "") or ""),
+            },
+        )
+
+    def _extract_interaction_command(self, payload: Dict[str, Any]) -> str:
+        interaction_type = str(payload.get("type", "") or "").strip()
+        if interaction_type == "block_actions":
+            action = self._first_action(payload)
+            selected = action.get("selected_option") or {}
+            value = _first_non_empty(
+                action.get("value"),
+                selected.get("value") if isinstance(selected, dict) else "",
+                action.get("action_id"),
+            )
+            parsed = _json_loads_safe(value)
+            return _first_non_empty(parsed.get("command"), parsed.get("value"), value)
+        if interaction_type == "view_submission":
+            view = payload.get("view") or {}
+            private_meta = _first_non_empty(view.get("private_metadata"))
+            parsed = _json_loads_safe(private_meta)
+            if parsed:
+                return _first_non_empty(parsed.get("command"), parsed.get("value"))
+            if private_meta:
+                return private_meta
+            state = (view.get("state") or {}).get("values") or {}
+            return self._extract_command_from_view_state(state)
+        if interaction_type == "workflow_step_execute":
+            workflow_step = payload.get("workflow_step") or {}
+            inputs = workflow_step.get("inputs") or {}
+            command = inputs.get("command") or {}
+            if isinstance(command, dict):
+                return _first_non_empty(command.get("value"))
+            return _first_non_empty(workflow_step.get("callback_id"))
+        return ""
+
+    def _extract_command_from_view_state(self, state: Dict[str, Any]) -> str:
+        if not isinstance(state, dict):
+            return ""
+        for block_value in state.values():
+            if not isinstance(block_value, dict):
+                continue
+            for action_value in block_value.values():
+                if not isinstance(action_value, dict):
+                    continue
+                candidate = _first_non_empty(
+                    action_value.get("value"),
+                    (
+                        (action_value.get("selected_option") or {}).get("value")
+                        if isinstance(action_value.get("selected_option"), dict)
+                        else ""
+                    ),
+                )
+                parsed = _json_loads_safe(candidate)
+                command = _first_non_empty(
+                    parsed.get("command"), parsed.get("value"), candidate
+                )
+                if command:
+                    return command
+        return ""
+
+    def _first_action(self, payload: Dict[str, Any]) -> Dict[str, Any]:
+        actions = payload.get("actions") or []
+        if isinstance(actions, list) and actions and isinstance(actions[0], dict):
+            return actions[0]
+        return {}
+
+    def _interaction_replay_key(
+        self, payload: Dict[str, Any], request: CommandRequest
+    ) -> str:
+        action = self._first_action(payload)
+        key_parts = [
+            "interaction",
+            str(payload.get("type", "") or ""),
+            request.workspace_id,
+            request.sender_id,
+            request.channel_id,
+            request.message_id,
+            str(payload.get("trigger_id", "") or ""),
+            str(action.get("action_id", "") or ""),
+            str(action.get("action_ts", "") or ""),
+            request.text,
+        ]
+        return ":".join(key_parts)
 
     # ------------------------------------------------------------------
     # Slack Web API reply
     # ------------------------------------------------------------------
+
+    async def _send_interactive_reply(
+        self,
+        *,
+        channel_id: str,
+        text: str,
+        buttons: list[dict],
+        thread_ts: str = "",
+        delivery_context: Optional[Dict[str, Any]] = None,
+    ) -> None:
+        """Send a Slack Block Kit message with bounded button actions."""
+        try:
+            import aiohttp as _aiohttp
+        except ImportError:
+            logger.warning("aiohttp not available; cannot send Slack interactive reply")
+            return
+
+        ctx = dict(delivery_context or {})
+        if not thread_ts:
+            thread_ts = str(ctx.get("thread_id", "") or "").strip()
+        installation_id, bot_token, workspace_id = self._resolve_workspace_credentials(
+            str(ctx.get("workspace_id", "") or "").strip()
+        )
+        if not bot_token:
+            logger.warning(
+                "Slack interactive reply dropped: no workspace token available (workspace=%s)",
+                workspace_id or "legacy",
+            )
+            return
+
+        elements: list[dict] = []
+        for idx, button in enumerate(buttons[:5]):
+            value = str(button.get("value", "") or "").strip()
+            if not value:
+                continue
+            label = str(button.get("label", "") or "OpenClaw").strip()[:75]
+            action_id = str(
+                button.get("action_type")
+                or button.get("action_id")
+                or f"openclaw.{idx}"
+            ).strip()[:255]
+            element: Dict[str, Any] = {
+                "type": "button",
+                "text": {"type": "plain_text", "text": label or "OpenClaw"},
+                "value": value[:2000],
+                "action_id": action_id or f"openclaw.{idx}",
+            }
+            style = _style_to_slack(str(button.get("style", "") or ""))
+            if style:
+                element["style"] = style
+            elements.append(element)
+        if not elements:
+            if text:
+                await self._send_reply(
+                    channel_id=channel_id,
+                    text=text,
+                    thread_ts=thread_ts,
+                    delivery_context=ctx,
+                )
+            return
+
+        payload: Dict[str, Any] = {
+            "channel": channel_id,
+            "text": text or "OpenClaw",
+            "blocks": [
+                {
+                    "type": "section",
+                    "text": {
+                        "type": "mrkdwn",
+                        "text": (text or "OpenClaw")[:3000],
+                    },
+                },
+                {"type": "actions", "elements": elements},
+            ],
+        }
+        if thread_ts:
+            payload["thread_ts"] = thread_ts
+
+        headers = {
+            "Authorization": f"Bearer {bot_token}",
+            "Content-Type": "application/json; charset=utf-8",
+        }
+        try:
+            async with _aiohttp.ClientSession() as session:
+                async with session.post(
+                    "https://slack.com/api/chat.postMessage",
+                    json=payload,
+                    headers=headers,
+                    timeout=_aiohttp.ClientTimeout(total=10),
+                ) as resp:
+                    if resp.status != 200:
+                        if installation_id:
+                            self._installation_manager.mark_api_error(
+                                installation_id,
+                                error_code=f"http_{resp.status}",
+                                status_code=resp.status,
+                                details={
+                                    "workspace_id": workspace_id,
+                                    "path": "chat.postMessage",
+                                    "interactive": True,
+                                },
+                            )
+                        return
+                    data = await resp.json()
+                    if not data.get("ok"):
+                        if installation_id:
+                            self._installation_manager.mark_api_error(
+                                installation_id,
+                                error_code=str(data.get("error", "unknown")),
+                                details={
+                                    "workspace_id": workspace_id,
+                                    "path": "chat.postMessage",
+                                    "interactive": True,
+                                },
+                            )
+                    elif installation_id:
+                        self._installation_manager.mark_installation_health(
+                            installation_id,
+                            health_code="ok",
+                            reason="chat_post_message_interactive_ok",
+                            details={"workspace_id": workspace_id},
+                        )
+        except Exception as e:
+            logger.warning("Slack interactive reply failed: %s", e)
 
     async def _send_reply(
         self,

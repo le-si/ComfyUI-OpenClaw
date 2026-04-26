@@ -241,6 +241,7 @@ class ConnectorConfig:
     slack_bind_host: str = "127.0.0.1"
     slack_bind_port: int = DEFAULT_SLACK_BIND_PORT
     slack_webhook_path: str = "/slack/events"
+    slack_interactions_path: str = "/slack/interactions"
     slack_require_mention: bool = True
     slack_reply_in_thread: bool = True
     slack_mode: str = "events"  # F57: events | socket
@@ -483,6 +484,9 @@ def load_config() -> ConnectorConfig:
     )
     cfg.slack_webhook_path = os.environ.get(
         "OPENCLAW_CONNECTOR_SLACK_PATH", "/slack/events"
+    )
+    cfg.slack_interactions_path = os.environ.get(
+        "OPENCLAW_CONNECTOR_SLACK_INTERACTIONS_PATH", "/slack/interactions"
     )
     if (
         os.environ.get("OPENCLAW_CONNECTOR_SLACK_REQUIRE_MENTION", "").lower()
