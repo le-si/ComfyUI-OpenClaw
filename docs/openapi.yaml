@@ -1,7 +1,7 @@
 openapi: "3.0.3"
 info:
   title: "ComfyUI-OpenClaw API"
-  version: "1.0.7"
+  version: "1.0.8"
   description: "Generated from docs/release/api_contract.md (R66 baseline)."
 servers:
   - url: "/openclaw"
@@ -155,6 +155,20 @@ paths:
       x-openclaw-auth-tier: "observability"
       security:
         - OpenClawObservabilityToken:
+            []
+  /preflight:
+    post:
+      operationId: "post_preflight"
+      summary: "Analyze a workflow or API prompt payload for missing nodes/models and portability diagnostics."
+      responses:
+        200:
+          description: "OK"
+      x-openclaw-auth: "Admin"
+      x-openclaw-section: "1.1 Core Observability & System"
+      x-openclaw-legacy-path: "/moltbot/preflight"
+      x-openclaw-auth-tier: "admin"
+      security:
+        - OpenClawAdminToken:
             []
   /preflight/inventory:
     get:
