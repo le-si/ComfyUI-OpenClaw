@@ -79,7 +79,7 @@ Deployment profiles and hardening references:
 - [Security Checklist](docs/security_checklist.md)
 - [Runtime Hardening and Startup](docs/runtime_hardening_and_startup.md)
 - [Threat Model](docs/release/threat_model.md)
-- [Frontend Migration Decision](docs/r69_ui_framework_migration_decision.md)
+- [Frontend Migration Decision](docs/ui_framework_migration_decision.md)
 
 </details>
 
