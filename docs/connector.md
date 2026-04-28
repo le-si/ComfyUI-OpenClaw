@@ -110,6 +110,13 @@ Set the following environment variables (or put them in a `.env` file if you use
 - If the OpenClaw server has `OPENCLAW_ADMIN_TOKEN` configured, `OPENCLAW_CONNECTOR_ADMIN_TOKEN` must match it or admin calls return HTTP 403.
 - Without `OPENCLAW_CONNECTOR_ADMIN_TOKEN`, admin command flows (`/approve`, `/reject`, `/trace`, schedules) are blocked by connector policy before upstream calls.
 
+**SecretRef service environment behavior:**
+
+- Service/sidecar launch helpers may preserve structured env-backed SecretRef metadata for connector credential variables such as platform bot tokens and signing secrets.
+- Diagnostics show only the config path, env var name, source, status, and reason. They do not show raw token values from the installing shell.
+- Raw secret strings, legacy `secretref-env:<NAME>` markers, unsupported env names, and gateway/admin auth env vars are rejected instead of being written into service metadata.
+- Runtime-only auth secrets such as `OPENCLAW_CONNECTOR_ADMIN_TOKEN`, `OPENCLAW_WORKER_TOKEN`, and bridge device tokens must be provided by the runtime environment or a local secret manager rather than persisted through the connector service-env SecretRef boundary.
+
 **Telegram:**
 
 - `OPENCLAW_CONNECTOR_TELEGRAM_TOKEN`: Your Bot Token (from @BotFather).

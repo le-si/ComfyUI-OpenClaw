@@ -7,6 +7,13 @@ from __future__ import annotations
 import copy
 from typing import Any, Dict
 
+try:
+    from .sidecar_secret_refs import get_sidecar_service_secret_ref_policy
+except ImportError:  # pragma: no cover
+    from services.sidecar_secret_refs import (
+        get_sidecar_service_secret_ref_policy,  # type: ignore
+    )
+
 CONNECTOR_EXTRACTION_CONTRACT_VERSION = 1
 
 _CONNECTOR_EXTRACTION_CONTRACT: Dict[str, Any] = {
@@ -136,6 +143,7 @@ _CONNECTOR_EXTRACTION_CONTRACT: Dict[str, Any] = {
             ),
         },
     ],
+    "service_env_secret_ref_boundary": get_sidecar_service_secret_ref_policy(),
 }
 
 
