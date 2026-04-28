@@ -1,5 +1,5 @@
 """
-R66 OpenAPI spec generator.
+OpenAPI spec generator.
 
 Generates docs/openapi.yaml from docs/release/api_contract.md.
 """

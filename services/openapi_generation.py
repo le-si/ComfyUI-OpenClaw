@@ -1,5 +1,5 @@
 """
-R66 OpenAPI spec generation from the release API contract markdown.
+OpenAPI spec generation from the release API contract markdown.
 """
 
 from __future__ import annotations
@@ -27,34 +27,39 @@ VERSION_RE = re.compile(r"^>\s+\*\*Version\*\*:\s*([0-9]+(?:\.[0-9]+)*)\s*$")
 
 REASONING_REVEAL_ROUTE_DESCRIPTIONS = {
     ("GET", "/trace/{prompt_id}"): (
-        "Trace payloads redact provider reasoning/thinking fields by default. "
-        "Privileged debug reveal is local-only and opt-in."
+        "Trace payloads redact provider reasoning/thinking fields and marked "
+        "internal maintenance/helper content by default. Privileged reasoning "
+        "reveal is local-only and opt-in."
     ),
     ("GET", "/events"): (
-        "Event payloads redact provider reasoning/thinking fields by default. "
-        "Privileged debug reveal is local-only and opt-in."
+        "Event payloads redact provider reasoning/thinking fields and marked "
+        "internal maintenance/helper content by default. Privileged reasoning "
+        "reveal is local-only and opt-in."
     ),
     ("GET", "/events/stream"): (
-        "SSE event payloads redact provider reasoning/thinking fields by default. "
-        "Privileged debug reveal is local-only and opt-in."
+        "SSE event payloads redact provider reasoning/thinking fields and marked "
+        "internal maintenance/helper content by default. Privileged reasoning "
+        "reveal is local-only and opt-in."
     ),
     ("POST", "/assist/planner"): (
         "Structured assist payloads preserve final answer fields while redacting "
-        "provider reasoning/thinking fields by default. Privileged debug reveal "
-        "is local-only and opt-in."
+        "provider reasoning/thinking fields and marked internal maintenance/helper "
+        "content by default. Privileged reasoning reveal is local-only and opt-in."
     ),
     ("POST", "/assist/refiner"): (
         "Structured assist payloads preserve final answer fields while redacting "
-        "provider reasoning/thinking fields by default. Privileged debug reveal "
-        "is local-only and opt-in."
+        "provider reasoning/thinking fields and marked internal maintenance/helper "
+        "content by default. Privileged reasoning reveal is local-only and opt-in."
     ),
     ("POST", "/assist/planner/stream"): (
         "Streaming assist final payloads redact provider reasoning/thinking "
-        "fields by default. Privileged debug reveal is local-only and opt-in."
+        "fields and marked internal maintenance/helper content by default. "
+        "Privileged reasoning reveal is local-only and opt-in."
     ),
     ("POST", "/assist/refiner/stream"): (
         "Streaming assist final payloads redact provider reasoning/thinking "
-        "fields by default. Privileged debug reveal is local-only and opt-in."
+        "fields and marked internal maintenance/helper content by default. "
+        "Privileged reasoning reveal is local-only and opt-in."
     ),
 }
 
@@ -255,7 +260,7 @@ def build_openapi_document(
                 )
             operation["parameters"] = params
         # IMPORTANT: keep generator-owned reveal params here; hand-editing docs/openapi.yaml
-        # causes drift against R66 parity tests and breaks pre-push verification.
+        # causes drift against parity tests and breaks pre-push verification.
         if reasoning_reveal_description:
             operation.setdefault("parameters", []).extend(
                 REASONING_REVEAL_PARAMETER_REFS
@@ -267,7 +272,7 @@ def build_openapi_document(
         "info": {
             "title": "ComfyUI-OpenClaw API",
             "version": info_version,
-            "description": "Generated from docs/release/api_contract.md (R66 baseline).",
+            "description": "Generated from docs/release/api_contract.md.",
         },
         "servers": [
             {"url": "/openclaw", "description": "Direct OpenClaw prefix"},
