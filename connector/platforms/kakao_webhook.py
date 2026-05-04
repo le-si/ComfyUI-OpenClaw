@@ -28,6 +28,11 @@ from ..contract import CommandRequest, CommandResponse
 from ..router import CommandRouter
 from ..security_profile import AllowlistPolicy, ReplayGuard
 
+try:
+    from services.connector_replay_lifecycle import ConnectorReplayLifecycle
+except ImportError:  # pragma: no cover
+    ConnectorReplayLifecycle = None  # type: ignore
+
 logger = logging.getLogger(__name__)
 
 
@@ -99,6 +104,13 @@ class KakaoWebhookServer:
             window_sec=self.REPLAY_WINDOW_SEC,
             max_entries=self.NONCE_CACHE_SIZE,
         )
+        if ConnectorReplayLifecycle is None:  # pragma: no cover
+            self._replay_lifecycle = None
+        else:
+            self._replay_lifecycle = ConnectorReplayLifecycle(
+                ttl_sec=self.REPLAY_WINDOW_SEC,
+                max_entries=self.NONCE_CACHE_SIZE,
+            )
 
         # S32: Allowlist (soft-deny via AllowlistPolicy primitive)
         self._user_allowlist = AllowlistPolicy(config.kakao_allowed_users, strict=False)
@@ -165,10 +177,24 @@ class KakaoWebhookServer:
         # We use a hash of the body bytes as the "nonce" for deduplication.
         # This prevents re-transmitting the exact same request.
         content_hash = hashlib.sha256(body_bytes).hexdigest()
-        if not self._replay_guard.check_and_record(content_hash):
-            logger.warning(f"Replay rejected for Kakao hash: {content_hash}")
-            # Return 200 to stop Kakao retries
-            return _make_response(web, status=200, text="OK")
+        lifecycle_key = f"kakao:webhook:{content_hash}"
+        if self._replay_lifecycle is None:  # pragma: no cover
+            if not self._replay_guard.check_and_record(content_hash):
+                logger.warning(f"Replay rejected for Kakao hash: {content_hash}")
+                return _make_response(web, status=200, text="OK")
+        else:
+            claim = self._replay_lifecycle.claim(
+                lifecycle_key,
+                metadata={"platform": "kakao"},
+            )
+            if not claim.accepted:
+                logger.warning(
+                    "Replay rejected for Kakao hash: %s code=%s state=%s",
+                    content_hash,
+                    claim.code,
+                    claim.record.state,
+                )
+                return _make_response(web, status=200, text="OK")
 
         # Normalization
         # userRequest.user.id is the opaque user ID (botUserKey)
@@ -180,6 +206,10 @@ class KakaoWebhookServer:
 
         if not sender_id:
             # Not a valid user request (maybe a ping?)
+            if self._replay_lifecycle is not None:
+                self._replay_lifecycle.fail_terminal(
+                    lifecycle_key, reason="invalid_payload_no_user_id"
+                )
             return self._build_error_response("Invalid Payload: No User ID")
 
         # S32: Allowlist
@@ -208,6 +238,17 @@ class KakaoWebhookServer:
 
         try:
             resp = await self.router.handle(req)
+        except Exception as e:
+            # IMPORTANT: router failures happen before Kakao response delivery and
+            # must remain retryable; successful router returns are never rerouted.
+            if self._replay_lifecycle is not None:
+                self._replay_lifecycle.release_retryable(
+                    lifecycle_key, reason="kakao_router_failed_before_commit"
+                )
+            logger.exception(f"Error handling Kakao command: {e}")
+            return self._build_error_response("Internal Error")
+
+        try:
             # IMPORTANT:
             # Router mocks in unit tests may return non-string `.text` values.
             # Normalize defensively to avoid turning a valid routing flow into
@@ -230,13 +271,20 @@ class KakaoWebhookServer:
             # Skipping complex media upload for F44 scope unless specifically required.
 
             if resp_text or buttons:
-                return self._build_response(resp_text, quick_replies=buttons)
+                response = self._build_response(resp_text, quick_replies=buttons)
             else:
                 # No response content (e.g. valid command but no output intended?)
                 # Kakao requires *some* response payload or it treats as error.
                 # We'll return a simple valid JSON to ack.
-                return self._build_response("Command processed.")
+                response = self._build_response("Command processed.")
+            if self._replay_lifecycle is not None:
+                self._replay_lifecycle.commit_success(lifecycle_key, reason="routed")
+            return response
         except Exception as e:
+            if self._replay_lifecycle is not None:
+                self._replay_lifecycle.fail_terminal(
+                    lifecycle_key, reason="kakao_response_build_failed"
+                )
             logger.exception(f"Error handling Kakao command: {e}")
             return self._build_error_response("Internal Error")
 

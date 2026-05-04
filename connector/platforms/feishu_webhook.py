@@ -775,9 +775,19 @@ class FeishuWebhookServer:
             if decision.requires_approval
             else request.text
         )
-        contract.acknowledge_request(envelope_dict.get("request_id", ""))
-        response = await self.router.handle(request)
-        contract.complete_request(envelope_dict.get("request_id", ""))
+        request_id = str(envelope_dict.get("request_id", "") or "")
+        contract.acknowledge_request(request_id)
+        try:
+            response = await self.router.handle(request)
+        except Exception:
+            # IMPORTANT: failures before route completion remain retryable.
+            # After router.handle returns, the action may already have side effects,
+            # so completion failures must not release the claim for rerouting.
+            contract.release_request_retryable(
+                request_id, reason="feishu_callback_failed_before_commit"
+            )
+            raise
+        contract.complete_request(request_id)
         response_text = str(getattr(response, "text", "") or "").strip() or (
             "Action processed."
         )

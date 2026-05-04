@@ -178,6 +178,33 @@ class TestF69FeishuCallbacks(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(second["duplicate"])
         self.assertEqual(self.router.handle.await_count, 1)
 
+    async def test_admin_callback_router_failure_can_retry(self):
+        self.router._is_admin = MagicMock(return_value=True)
+        self.router._is_trusted = MagicMock(return_value=True)
+        self.router.handle = AsyncMock(
+            side_effect=[
+                RuntimeError("temporary route failure"),
+                CommandResponse(text="OK"),
+            ]
+        )
+        body = self._callback_body(
+            button={
+                "label": "Approve apr_1",
+                "value": "/approve apr_1",
+                "action_type": "approval.approve",
+                "approval_id": "apr_1",
+                "style": "primary",
+            }
+        )
+
+        with self.assertRaisesRegex(RuntimeError, "temporary route failure"):
+            await self.server.process_callback_payload(body)
+        retried = await self.server.process_callback_payload(body)
+
+        self.assertTrue(retried["ok"])
+        self.assertEqual(retried["decision_code"], "cb_accept_admin")
+        self.assertEqual(self.router.handle.await_count, 2)
+
     async def test_run_callback_degrades_to_approval_for_untrusted_actor(self):
         self.router._is_admin = MagicMock(return_value=False)
         self.router._is_trusted = MagicMock(return_value=False)

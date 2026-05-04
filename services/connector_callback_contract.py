@@ -11,7 +11,12 @@ from typing import Any, Dict, Optional
 
 from connector.config import CommandClass
 from connector.security_profile import ReplayGuard
-from connector.transport_contract import CallbackContract, CallbackError, CallbackRecord
+from connector.transport_contract import (
+    CallbackContract,
+    CallbackError,
+    CallbackRecord,
+    CallbackState,
+)
 
 try:
     from .audit import emit_audit_event
@@ -20,12 +25,16 @@ try:
         InstallationResolution,
         get_connector_installation_registry,
     )
+    from .connector_replay_lifecycle import ConnectorReplayLifecycle
 except ImportError:
     from services.audit import emit_audit_event  # type: ignore
     from services.connector_installation_registry import (  # type: ignore
         ConnectorInstallationRegistry,
         InstallationResolution,
         get_connector_installation_registry,
+    )
+    from services.connector_replay_lifecycle import (
+        ConnectorReplayLifecycle,  # type: ignore
     )
 
 try:
@@ -134,6 +143,7 @@ class ConnectorCallbackContract:
         *,
         installation_registry: Optional[ConnectorInstallationRegistry] = None,
         replay_guard: Optional[ReplayGuard] = None,
+        replay_lifecycle: Optional[ConnectorReplayLifecycle] = None,
         callback_contract: Optional[CallbackContract] = None,
         action_policy_map: Optional[Dict[str, str]] = None,
         timestamp_drift_sec: int = DEFAULT_CALLBACK_TIMESTAMP_DRIFT_SEC,
@@ -144,6 +154,9 @@ class ConnectorCallbackContract:
         )
         self._replay_guard = replay_guard or ReplayGuard(
             window_sec=300, max_entries=5000
+        )
+        self._replay_lifecycle = replay_lifecycle or ConnectorReplayLifecycle(
+            ttl_sec=300, max_entries=5000
         )
         self._callback_contract = callback_contract or CallbackContract()
         self._action_policy_map = dict(action_policy_map or {})
@@ -244,6 +257,13 @@ class ConnectorCallbackContract:
             details=details,
         )
 
+    @staticmethod
+    def _request_lifecycle_key(envelope: InteractiveCallbackEnvelope) -> str:
+        return (
+            f"interactive:{envelope.workspace_id}:"
+            f"{envelope.action_type}:{envelope.request_id}"
+        )
+
     def evaluate(
         self,
         *,
@@ -302,11 +322,19 @@ class ConnectorCallbackContract:
             )
             return decision
 
-        if self._replay_guard.is_duplicate(envelope.request_id):
+        lifecycle_key = self._request_lifecycle_key(envelope)
+        claim = self._replay_lifecycle.claim(
+            lifecycle_key,
+            metadata={
+                "workspace_id": envelope.workspace_id,
+                "action_type": envelope.action_type,
+            },
+        )
+        if not claim.accepted:
             decision = CallbackDecision(
                 ok=False,
                 decision_code=CallbackDecisionCode.REJECT_REPLAY.value,
-                message="request_id_replay",
+                message=claim.code,
             )
             self._audit_decision(
                 platform=platform, envelope=envelope, decision=decision
@@ -320,6 +348,9 @@ class ConnectorCallbackContract:
         )
         if not resolution.ok or resolution.installation is None:
             decision = self._map_installation_reject(resolution)
+            self._replay_lifecycle.fail_terminal(
+                lifecycle_key, reason=decision.decision_code
+            )
             self._audit_decision(
                 platform=platform, envelope=envelope, decision=decision
             )
@@ -332,6 +363,9 @@ class ConnectorCallbackContract:
                 decision_code=CallbackDecisionCode.REJECT_UNKNOWN_ACTION.value,
                 installation_id=resolution.installation.installation_id,
                 message="unknown_action_type",
+            )
+            self._replay_lifecycle.fail_terminal(
+                lifecycle_key, reason=decision.decision_code
             )
             self._audit_decision(
                 platform=platform, envelope=envelope, decision=decision
@@ -393,12 +427,18 @@ class ConnectorCallbackContract:
                     installation_id=resolution.installation.installation_id,
                     message="admin_required",
                 )
+                self._replay_lifecycle.fail_terminal(
+                    lifecycle_key, reason=decision.decision_code
+                )
         else:
             decision = CallbackDecision(
                 ok=False,
                 decision_code=CallbackDecisionCode.REJECT_UNKNOWN_ACTION.value,
                 installation_id=resolution.installation.installation_id,
                 message="unsupported_command_class",
+            )
+            self._replay_lifecycle.fail_terminal(
+                lifecycle_key, reason=decision.decision_code
             )
         self._audit_decision(platform=platform, envelope=envelope, decision=decision)
         return decision
@@ -416,4 +456,47 @@ class ConnectorCallbackContract:
         record = self.get_record(request_id)
         if record is None:
             raise CallbackError(f"Callback not found for request_id={request_id}")
-        return self._callback_contract.deliver(record.callback_id)
+        delivered = self._callback_contract.deliver(record.callback_id)
+        workspace_id = str(delivered.metadata.get("workspace_id", "") or "")
+        action_type = str(delivered.metadata.get("action_type", "") or "")
+        if workspace_id and action_type:
+            self._replay_lifecycle.commit_success(
+                f"interactive:{workspace_id}:{action_type}:{request_id}",
+                reason="completed",
+            )
+        return delivered
+
+    def release_request_retryable(
+        self, request_id: str, *, reason: str = "retryable_failure"
+    ) -> None:
+        record = self.get_record(request_id)
+        if record is None:
+            return
+        if record.state != CallbackState.DELIVERED.value:
+            # IMPORTANT: retryable release must make CallbackContract.create()
+            # allocate a fresh record on the next accepted claim. Keeping the
+            # old acknowledged/pending record would fail the second ack path.
+            record.state = CallbackState.FAILED.value
+        workspace_id = str(record.metadata.get("workspace_id", "") or "")
+        action_type = str(record.metadata.get("action_type", "") or "")
+        if workspace_id and action_type:
+            self._replay_lifecycle.release_retryable(
+                f"interactive:{workspace_id}:{action_type}:{request_id}",
+                reason=reason,
+            )
+
+    def fail_request_terminal(
+        self, request_id: str, *, reason: str = "terminal_failure"
+    ) -> None:
+        record = self.get_record(request_id)
+        if record is None:
+            return
+        if record.state != CallbackState.DELIVERED.value:
+            record.state = CallbackState.FAILED.value
+        workspace_id = str(record.metadata.get("workspace_id", "") or "")
+        action_type = str(record.metadata.get("action_type", "") or "")
+        if workspace_id and action_type:
+            self._replay_lifecycle.fail_terminal(
+                f"interactive:{workspace_id}:{action_type}:{request_id}",
+                reason=reason,
+            )

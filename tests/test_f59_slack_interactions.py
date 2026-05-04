@@ -184,6 +184,45 @@ class TestF59SlackInteractions(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(response2.status, 200)
         server.router.handle.assert_called_once()
 
+    async def test_failed_block_action_releases_retryable_claim(self):
+        server = _make_server()
+        server.router.handle = AsyncMock(
+            side_effect=[
+                RuntimeError("temporary send failure"),
+                CommandResponse(text=""),
+            ]
+        )
+        payload = _block_action_payload(
+            value="/status", action_id="retry", trigger_id="t-retry"
+        )
+        req1 = _build_interaction_request(payload)
+        req2 = _build_interaction_request(payload)
+
+        first = await server.handle_interaction(req1)
+        second = await server.handle_interaction(req2)
+
+        self.assertEqual(first.status, 500)
+        self.assertEqual(second.status, 200)
+        self.assertEqual(server.router.handle.await_count, 2)
+
+    async def test_reply_failure_after_routing_does_not_reroute_duplicate(self):
+        server = _make_server()
+        server.router.handle = AsyncMock(return_value=CommandResponse(text="notify"))
+        server._send_reply = AsyncMock(side_effect=RuntimeError("reply failed"))
+        payload = _block_action_payload(
+            value="/status", action_id="reply-failed", trigger_id="t-reply"
+        )
+        req1 = _build_interaction_request(payload)
+        req2 = _build_interaction_request(payload)
+
+        first = await server.handle_interaction(req1)
+        second = await server.handle_interaction(req2)
+
+        self.assertEqual(first.status, 500)
+        self.assertEqual(second.status, 200)
+        self.assertEqual(server.router.handle.await_count, 1)
+        self.assertEqual(server._send_reply.await_count, 1)
+
     async def test_untrusted_run_action_is_forced_to_approval(self):
         server = _make_server(trusted=False, admin=False)
         req = _build_interaction_request(

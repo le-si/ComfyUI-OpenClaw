@@ -42,6 +42,11 @@ from ..router import CommandRouter
 from ..security_profile import AllowlistPolicy, ReplayGuard
 from .slack_installation_manager import SlackInstallationManager
 
+try:
+    from services.connector_replay_lifecycle import ConnectorReplayLifecycle
+except ImportError:  # pragma: no cover
+    ConnectorReplayLifecycle = None  # type: ignore
+
 logger = logging.getLogger(__name__)
 
 _SLACK_INTERACTION_TYPES = frozenset(
@@ -218,6 +223,13 @@ class SlackWebhookServer:
             window_sec=self.REPLAY_WINDOW_SEC,
             max_entries=self.NONCE_CACHE_SIZE,
         )
+        if ConnectorReplayLifecycle is None:  # pragma: no cover
+            self._interaction_lifecycle = None
+        else:
+            self._interaction_lifecycle = ConnectorReplayLifecycle(
+                ttl_sec=self.REPLAY_WINDOW_SEC,
+                max_entries=self.NONCE_CACHE_SIZE,
+            )
 
         # S67: Allowlists (fail-closed when configured)
         self._user_allowlist = AllowlistPolicy(config.slack_allowed_users, strict=False)
@@ -671,8 +683,29 @@ class SlackWebhookServer:
             return False
 
         replay_key = self._interaction_replay_key(payload, request)
-        if not self._replay_guard.check_and_record(replay_key):
-            logger.debug("Slack duplicate interaction %s (accepted, no-op)", replay_key)
+        if self._interaction_lifecycle is None:  # pragma: no cover
+            if not self._replay_guard.check_and_record(replay_key):
+                logger.debug(
+                    "Slack duplicate interaction %s (accepted, no-op)", replay_key
+                )
+                return False
+            claim = None
+        else:
+            claim = self._interaction_lifecycle.claim(
+                replay_key,
+                metadata={
+                    "platform": "slack",
+                    "workspace_id": request.workspace_id,
+                    "interaction_type": str(payload.get("type", "") or ""),
+                },
+            )
+        if claim is not None and not claim.accepted:
+            logger.debug(
+                "Slack duplicate interaction %s state=%s code=%s (accepted, no-op)",
+                replay_key,
+                claim.record.state,
+                claim.code,
+            )
             return False
 
         # IMPORTANT: interactive run-like payloads must be routed through the same
@@ -683,7 +716,19 @@ class SlackWebhookServer:
         ):
             request.text = _force_approval_command(request.text)
 
-        response = await self.router.handle(request)
+        try:
+            response = await self.router.handle(request)
+        except Exception:
+            # IMPORTANT: only failures before router completion are retryable.
+            # Once router.handle returns, duplicate user actions must not reroute.
+            if self._interaction_lifecycle is not None:
+                self._interaction_lifecycle.release_retryable(
+                    replay_key, reason="slack_interaction_failed_before_commit"
+                )
+            raise
+
+        if self._interaction_lifecycle is not None:
+            self._interaction_lifecycle.commit_success(replay_key, reason="routed")
         response_text = str(getattr(response, "text", "") or "").strip()
         response_buttons = getattr(response, "buttons", []) or []
         if response_text or response_buttons:

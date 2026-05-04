@@ -77,6 +77,23 @@ class TestKakaoAdapter(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(server.router.handle.call_count, 1)
         self.assertEqual(resp.status, 200)
 
+    async def test_router_failure_releases_payload_for_retry(self):
+        server = self._make_server(allowed_users=["u123"])
+        server.router.handle = AsyncMock(
+            side_effect=[
+                RuntimeError("temporary router failure"),
+                MagicMock(text="Recovered"),
+            ]
+        )
+        payload = self._make_payload(text="retryable request")
+
+        first = await server.handle_webhook(self._make_mock_request(payload))
+        second = await server.handle_webhook(self._make_mock_request(payload))
+
+        self.assertEqual(first.status, 200)
+        self.assertEqual(second.status, 200)
+        self.assertEqual(server.router.handle.await_count, 2)
+
     async def test_allowlist_soft_deny(self):
         """S32: Untrusted user -> Logged but routed (soft deny)."""
         server = self._make_server(allowed_users=["trusted"])

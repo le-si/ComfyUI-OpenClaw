@@ -9,6 +9,8 @@ import re
 import time
 from typing import Optional
 
+from services.connector_replay_lifecycle import ConnectorReplayLifecycle
+
 from ..config import ConnectorConfig
 from ..contract import CommandRequest, CommandResponse
 from ..router import CommandRouter
@@ -52,6 +54,10 @@ class TelegramPolling:
         # Remediation: Load offset from persistent state
         self.offset = self.state_store.get_offset("telegram")
         self.session = None
+        self._update_lifecycle = ConnectorReplayLifecycle(
+            ttl_sec=300,
+            max_entries=5000,
+        )
 
     async def start(self):
         aiohttp = _import_aiohttp()
@@ -108,15 +114,42 @@ class TelegramPolling:
             if self.config.debug and not updates:
                 logger.debug("Telegram poll OK (no updates). offset=%s", self.offset)
             for update in updates:
-                next_offset = update["update_id"] + 1
-                if next_offset > self.offset:
-                    self.offset = next_offset
-                    # Remediation: Persist offset
-                    self.state_store.set_offset("telegram", self.offset)
+                update_id = update["update_id"]
+                lifecycle_key = f"telegram:update:{update_id}"
+                claim = self._update_lifecycle.claim(
+                    lifecycle_key,
+                    metadata={"platform": "telegram"},
+                )
+                if not claim.accepted:
+                    logger.debug(
+                        "Telegram duplicate update_id=%s code=%s state=%s",
+                        update_id,
+                        claim.code,
+                        claim.record.state,
+                    )
+                    if claim.code == "duplicate_after_success":
+                        self._commit_offset(update_id + 1)
+                    continue
 
-                await self._process_update(update)
+                processed = await self._process_update(update)
+                if processed:
+                    self._update_lifecycle.commit_success(
+                        lifecycle_key, reason="processed"
+                    )
+                    self._commit_offset(update_id + 1)
+                else:
+                    # IMPORTANT: keep failed-before-delivery updates retryable.
+                    # Advancing the Telegram offset here would drop the update.
+                    self._update_lifecycle.release_retryable(
+                        lifecycle_key, reason="telegram_update_failed_before_commit"
+                    )
 
-    async def _process_update(self, update: dict):
+    def _commit_offset(self, next_offset: int) -> None:
+        if next_offset > self.offset:
+            self.offset = next_offset
+            self.state_store.set_offset("telegram", self.offset)
+
+    async def _process_update(self, update: dict) -> bool:
         # Telegram update shapes vary by chat type and sender mode.
         # - Normal groups/DMs: `message`
         # - Edited messages: `edited_message`
@@ -133,7 +166,7 @@ class TelegramPolling:
             or update.get("edited_channel_post")
         )
         if not message or "text" not in message:
-            return
+            return True
 
         chat_id = message["chat"]["id"]
         # `from` may be missing for channel posts; `sender_chat` is used for anonymous admins.
@@ -174,7 +207,7 @@ class TelegramPolling:
 
         try:
             resp = await self.router.handle(req)
-            await self._send_response(
+            return await self._send_response(
                 chat_id,
                 resp,
                 delivery_context=(
@@ -183,7 +216,7 @@ class TelegramPolling:
             )
         except Exception as e:
             logger.exception(f"Error handling command: {e}")
-            await self._send_response(
+            return await self._send_response(
                 chat_id,
                 CommandResponse(text="[Error] Internal processing error."),
                 delivery_context=(
@@ -221,7 +254,7 @@ class TelegramPolling:
         chat_id: int,
         resp: CommandResponse,
         delivery_context: Optional[dict] = None,
-    ):
+    ) -> bool:
         url = f"{self.base_url}/sendMessage"
         payload = {
             "chat_id": chat_id,
@@ -241,8 +274,11 @@ class TelegramPolling:
                     logger.error(
                         f"Failed to send Telegram response: {r.status} {await r.text()}"
                     )
+                    return False
+                return True
         except Exception as e:
             logger.error(f"Telegram send exception: {e}")
+            return False
 
     async def send_image(
         self,

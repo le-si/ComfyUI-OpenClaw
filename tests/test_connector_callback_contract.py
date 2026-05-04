@@ -290,6 +290,69 @@ class TestConnectorCallbackContract(unittest.TestCase):
         delivered = self.contract.complete_request("req-ack")
         self.assertEqual(delivered.state, "delivered")
 
+    def test_duplicate_after_completion_rejected_without_new_record(self):
+        payload = self._payload()
+        envelope = self.contract.build_envelope(
+            request_id="req-complete-duplicate",
+            workspace_id="T1",
+            action_type="action.status",
+            payload=payload,
+        )
+        first = self.contract.evaluate(
+            platform="slack",
+            envelope_dict=envelope.__dict__,
+            payload=payload,
+            actor=CallbackActorContext(),
+        )
+        self.contract.acknowledge_request("req-complete-duplicate")
+        self.contract.complete_request("req-complete-duplicate")
+
+        duplicate = self.contract.evaluate(
+            platform="slack",
+            envelope_dict=envelope.__dict__,
+            payload=payload,
+            actor=CallbackActorContext(),
+        )
+
+        self.assertTrue(first.ok)
+        self.assertFalse(duplicate.ok)
+        self.assertEqual(
+            duplicate.decision_code, CallbackDecisionCode.REJECT_REPLAY.value
+        )
+        self.assertEqual(duplicate.message, "duplicate_after_success")
+
+    def test_retryable_release_allows_second_evaluate_and_ack(self):
+        payload = self._payload()
+        envelope = self.contract.build_envelope(
+            request_id="req-retry-release",
+            workspace_id="T1",
+            action_type="action.status",
+            payload=payload,
+        )
+        first = self.contract.evaluate(
+            platform="slack",
+            envelope_dict=envelope.__dict__,
+            payload=payload,
+            actor=CallbackActorContext(),
+        )
+        self.contract.acknowledge_request("req-retry-release")
+        self.contract.release_request_retryable(
+            "req-retry-release", reason="send_failed_before_delivery"
+        )
+
+        second = self.contract.evaluate(
+            platform="slack",
+            envelope_dict=envelope.__dict__,
+            payload=payload,
+            actor=CallbackActorContext(),
+        )
+        acked = self.contract.acknowledge_request("req-retry-release")
+
+        self.assertTrue(first.ok)
+        self.assertTrue(second.ok)
+        self.assertEqual(second.decision_code, CallbackDecisionCode.ACCEPT_PUBLIC.value)
+        self.assertEqual(acked.state, "acknowledged")
+
 
 if __name__ == "__main__":
     unittest.main()
