@@ -1,6 +1,37 @@
 import { test, expect } from '@playwright/test';
 import { mockComfyUiCore, waitForOpenClawReady, clickTab } from '../utils/helpers.js';
 
+async function routeTransientOpenClawEntryFailures(page, failureCount) {
+  let remainingFailures = failureCount;
+  let totalEntryRequests = 0;
+  let abortedEntryRequests = 0;
+
+  // IMPORTANT: keep this query-agnostic; Windows CI must intercept the harness
+  // retry seam even when the dynamic import URL carries cache-busting params.
+  await page.route('**/web/openclaw.js**', async (route) => {
+    const url = new URL(route.request().url());
+    if (url.pathname !== '/web/openclaw.js') {
+      await route.fallback();
+      return;
+    }
+
+    totalEntryRequests += 1;
+    if (remainingFailures > 0) {
+      remainingFailures -= 1;
+      abortedEntryRequests += 1;
+      await route.abort('failed');
+      return;
+    }
+
+    await route.fallback();
+  });
+
+  return {
+    totalEntryRequests: () => totalEntryRequests,
+    abortedEntryRequests: () => abortedEntryRequests,
+  };
+}
+
 test.describe('OpenClaw Sidebar', () => {
   test.beforeEach(async ({ page }) => {
     await mockComfyUiCore(page);
@@ -88,110 +119,51 @@ test.describe('OpenClaw Sidebar', () => {
   });
 
   test('harness recovers from one transient openclaw entry fetch failure', async ({ page }) => {
-    let failedOnce = false;
-
-    await page.route('**/web/openclaw.js?openclaw_harness_attempt=*', async (route) => {
-      const url = new URL(route.request().url());
-      if (url.pathname !== '/web/openclaw.js') {
-        await route.fallback();
-        return;
-      }
-
-      if (!failedOnce) {
-        failedOnce = true;
-        await route.abort('failed');
-        return;
-      }
-
-      await route.fallback();
-    });
+    const entryRetry = await routeTransientOpenClawEntryFailures(page, 1);
 
     await page.reload();
     await waitForOpenClawReady(page);
     await expect(page.locator('.openclaw-title')).toHaveText('OpenClaw');
+    expect(entryRetry.abortedEntryRequests()).toBe(1);
+    expect(entryRetry.totalEntryRequests()).toBe(2);
     await expect
       .poll(() => page.evaluate(() => window.__openclawTestLoadAttempts))
       .toBe(2);
   });
 
   test('harness recovers from two transient openclaw entry fetch failures', async ({ page }) => {
-    let remainingFailures = 2;
-
-    await page.route('**/web/openclaw.js?openclaw_harness_attempt=*', async (route) => {
-      const url = new URL(route.request().url());
-      if (url.pathname !== '/web/openclaw.js') {
-        await route.fallback();
-        return;
-      }
-
-      if (remainingFailures > 0) {
-        remainingFailures -= 1;
-        await route.abort('failed');
-        return;
-      }
-
-      await route.fallback();
-    });
+    const entryRetry = await routeTransientOpenClawEntryFailures(page, 2);
 
     await page.reload();
     await waitForOpenClawReady(page);
     await expect(page.locator('.openclaw-title')).toHaveText('OpenClaw');
+    expect(entryRetry.abortedEntryRequests()).toBe(2);
+    expect(entryRetry.totalEntryRequests()).toBe(3);
     await expect
       .poll(() => page.evaluate(() => window.__openclawTestLoadAttempts))
       .toBe(3);
   });
 
   test('harness recovers from three transient openclaw entry fetch failures', async ({ page }) => {
-    let remainingFailures = 3;
-
-    await page.route('**/web/openclaw.js?openclaw_harness_attempt=*', async (route) => {
-      const url = new URL(route.request().url());
-      if (url.pathname !== '/web/openclaw.js') {
-        await route.fallback();
-        return;
-      }
-
-      if (remainingFailures > 0) {
-        remainingFailures -= 1;
-        await route.abort('failed');
-        return;
-      }
-
-      await route.fallback();
-    });
+    const entryRetry = await routeTransientOpenClawEntryFailures(page, 3);
 
     await page.reload();
     await waitForOpenClawReady(page);
     await expect(page.locator('.openclaw-title')).toHaveText('OpenClaw');
+    expect(entryRetry.abortedEntryRequests()).toBe(3);
+    expect(entryRetry.totalEntryRequests()).toBe(4);
     await expect
       .poll(() => page.evaluate(() => window.__openclawTestLoadAttempts))
       .toBe(4);
   });
 
   test('recovers when the first harness boot exhausts transient entry fetch retries', async ({ page }) => {
-    let remainingFailures = 4;
-    let totalEntryRequests = 0;
-
-    await page.route('**/web/openclaw.js?openclaw_harness_attempt=*', async (route) => {
-      const url = new URL(route.request().url());
-      if (url.pathname !== '/web/openclaw.js') {
-        await route.fallback();
-        return;
-      }
-
-      totalEntryRequests += 1;
-      if (remainingFailures > 0) {
-        remainingFailures -= 1;
-        await route.abort('failed');
-        return;
-      }
-
-      await route.fallback();
-    });
+    const entryRetry = await routeTransientOpenClawEntryFailures(page, 4);
 
     await page.reload();
     await waitForOpenClawReady(page);
     await expect(page.locator('.openclaw-title')).toHaveText('OpenClaw');
-    await expect.poll(() => totalEntryRequests).toBe(5);
+    expect(entryRetry.abortedEntryRequests()).toBe(4);
+    expect(entryRetry.totalEntryRequests()).toBe(5);
   });
 });
