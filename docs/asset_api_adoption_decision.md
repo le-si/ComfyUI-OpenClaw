@@ -1,5 +1,11 @@
 # ComfyUI Asset API Adoption Decision (2026-04-16)
 
+## 2026-05-31 reconfirmation
+
+- Current host reference evidence shows upstream asset responses may expose `hash` alongside `asset_hash`.
+- OpenClaw accepts `hash` as an alias for hash-backed previews, but still resolves those refs through `/view?filename=blake3:...`.
+- This does not change the no-go decision for automatic direct `/api/assets` runtime fetches.
+
 ## Scope
 
 - Goal: decide whether OpenClaw should adopt upstream `/api/assets` semantics as a normal runtime dependency beyond the bounded `/view` interoperability layer.

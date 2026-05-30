@@ -75,6 +75,52 @@ describe("openclaw asset refs", () => {
         });
     });
 
+    it("accepts top-level hash as an asset_hash alias", () => {
+        expect(
+            normalizeComfyOutputRef({
+                filename: "hash-alias.png",
+                hash: "blake3:alias123",
+            })
+        ).toEqual({
+            filename: "hash-alias.png",
+            subfolder: "",
+            type: "output",
+            asset_hash: "blake3:alias123",
+            asset_api_id: "",
+            asset_api_required: false,
+            resolution: "view",
+            unsupported_reason: "",
+            is_asset_backed: true,
+            viewParams: {
+                filename: "blake3:alias123",
+            },
+        });
+    });
+
+    it("accepts nested asset.hash as an asset_hash alias", () => {
+        expect(
+            normalizeComfyOutputRef({
+                name: "nested-hash-alias.png",
+                asset: {
+                    hash: "blake3:nested-alias",
+                },
+            })
+        ).toEqual({
+            filename: "nested-hash-alias.png",
+            subfolder: "",
+            type: "output",
+            asset_hash: "blake3:nested-alias",
+            asset_api_id: "",
+            asset_api_required: false,
+            resolution: "view",
+            unsupported_reason: "",
+            is_asset_backed: true,
+            viewParams: {
+                filename: "blake3:nested-alias",
+            },
+        });
+    });
+
     it("keeps asset-api-only refs explicit instead of silently turning them into /api/assets fetches", () => {
         expect(
             normalizeComfyOutputRef({

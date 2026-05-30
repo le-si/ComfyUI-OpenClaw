@@ -140,7 +140,7 @@ test.describe('R107 Live Backend Parity', () => {
                                     {
                                         filename: "preview.png",
                                         type: "temp",
-                                        asset_hash: "blake3:abc123",
+                                        hash: "blake3:abc123",
                                     },
                                     {
                                         asset: {

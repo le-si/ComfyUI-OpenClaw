@@ -2,13 +2,20 @@ function pickAssetHash(imageRef = {}) {
     if (!imageRef || typeof imageRef !== "object") {
         return "";
     }
-    const direct = typeof imageRef.asset_hash === "string" ? imageRef.asset_hash.trim() : "";
+    const direct = typeof imageRef.asset_hash === "string"
+        ? imageRef.asset_hash.trim()
+        : (typeof imageRef.hash === "string" ? imageRef.hash.trim() : "");
     if (direct) {
         return direct;
     }
     const nested = imageRef.asset;
-    if (nested && typeof nested === "object" && typeof nested.asset_hash === "string") {
-        return nested.asset_hash.trim();
+    if (nested && typeof nested === "object") {
+        if (typeof nested.asset_hash === "string" && nested.asset_hash.trim()) {
+            return nested.asset_hash.trim();
+        }
+        if (typeof nested.hash === "string" && nested.hash.trim()) {
+            return nested.hash.trim();
+        }
     }
     return "";
 }
