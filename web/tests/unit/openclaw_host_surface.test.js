@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
     HOST_SURFACES,
+    HOST_SURFACE_REFERENCES,
     getHostSurfaceCapabilities,
     resolveHostSurface,
     stampHostSurfaceMetadata,
@@ -32,9 +33,15 @@ describe("openclaw_host_surface", () => {
             hostSurface: HOST_SURFACES.desktop,
             isDesktop: true,
             supportsElectronBridge: true,
+            reference: HOST_SURFACE_REFERENCES[HOST_SURFACES.desktop],
         });
         expect(container.dataset.openclawHostSurface).toBe("desktop");
         expect(container.dataset.openclawDesktopHost).toBe("true");
+        expect(container.dataset.openclawReferenceFrontend).toBe("1.46.6");
+        expect(container.dataset.openclawDesktopVersion).toBe("0.9.4");
+        expect(container.dataset.openclawDesktopCoreVersion).toBe("0.22.3");
+        expect(container.dataset.openclawDesktopEmbeddedFrontend).toBe("1.43.18");
+        expect(container.dataset.openclawDesktopFrontendParity).toBe("lagging");
     });
 
     it("falls back to standalone frontend when desktop-only signals are absent", () => {
@@ -46,6 +53,7 @@ describe("openclaw_host_surface", () => {
             hostSurface: HOST_SURFACES.standaloneFrontend,
             isDesktop: false,
             supportsElectronBridge: false,
+            reference: HOST_SURFACE_REFERENCES[HOST_SURFACES.standaloneFrontend],
         });
     });
 });

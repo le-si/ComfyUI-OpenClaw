@@ -9,6 +9,19 @@ export const HOST_SURFACES = Object.freeze({
     desktop: "desktop",
 });
 
+export const HOST_SURFACE_REFERENCES = Object.freeze({
+    [HOST_SURFACES.standaloneFrontend]: Object.freeze({
+        frontendVersion: "1.46.6",
+    }),
+    [HOST_SURFACES.desktop]: Object.freeze({
+        desktopVersion: "0.9.4",
+        coreVersion: "0.22.3",
+        embeddedFrontendVersion: "1.43.18",
+        standaloneFrontendVersion: "1.46.6",
+        frontendParity: "lagging",
+    }),
+});
+
 function normalizeSurfaceName(surface) {
     if (surface === HOST_SURFACES.desktop || surface === "desktop") {
         return HOST_SURFACES.desktop;
@@ -42,11 +55,13 @@ export function resolveHostSurface({ app = null, win = window } = {}) {
 
 export function getHostSurfaceCapabilities(options = {}) {
     const hostSurface = resolveHostSurface(options);
+    const reference = HOST_SURFACE_REFERENCES[hostSurface] || {};
     return {
         hostSurface,
         isDesktop: hostSurface === HOST_SURFACES.desktop,
         supportsElectronBridge:
             hostSurface === HOST_SURFACES.desktop && !!options?.win?.electronAPI,
+        reference,
     };
 }
 
@@ -57,6 +72,17 @@ export function stampHostSurfaceMetadata(container, options = {}) {
         container.dataset.openclawDesktopHost = capabilities.isDesktop
             ? "true"
             : "false";
+        container.dataset.openclawReferenceFrontend = capabilities.isDesktop
+            ? capabilities.reference.standaloneFrontendVersion || ""
+            : capabilities.reference.frontendVersion || "";
+        if (capabilities.isDesktop) {
+            container.dataset.openclawDesktopVersion = capabilities.reference.desktopVersion || "";
+            container.dataset.openclawDesktopCoreVersion = capabilities.reference.coreVersion || "";
+            container.dataset.openclawDesktopEmbeddedFrontend =
+                capabilities.reference.embeddedFrontendVersion || "";
+            container.dataset.openclawDesktopFrontendParity =
+                capabilities.reference.frontendParity || "";
+        }
     }
     return capabilities;
 }
