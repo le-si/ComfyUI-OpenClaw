@@ -627,6 +627,17 @@ export async function waitForOpenClawReady(page) {
   }
 }
 
+export async function waitForAdminConsoleReady(page) {
+  const timeoutMs = resolveUiTimeoutMs();
+  // IMPORTANT: admin_console.html exposes static buttons before its module
+  // binds handlers; waiting here prevents Windows CI from losing early clicks.
+  await page.waitForFunction(
+    () => typeof document.getElementById('refreshApprovals')?.onclick === 'function',
+    null,
+    { timeout: timeoutMs },
+  );
+}
+
 export async function clickTab(page, title) {
   const tab = page.locator('.openclaw-tab', { hasText: title });
   const timeoutMs = resolveUiTimeoutMs();

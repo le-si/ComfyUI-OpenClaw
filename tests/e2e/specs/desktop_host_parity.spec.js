@@ -4,6 +4,7 @@ import {
   mockCompatApprovalsList,
   mockComfyUiCore,
   mockRemoteAdminBaseline,
+  waitForAdminConsoleReady,
   waitForOpenClawReady,
 } from '../utils/helpers.js';
 
@@ -63,8 +64,9 @@ test.describe('Desktop host parity lane', () => {
     await expect(page.locator('body')).toHaveAttribute('data-openclaw-desktop-embedded-frontend', '1.43.18');
     await expect(page.locator('body')).toHaveAttribute('data-openclaw-desktop-frontend-parity', 'lagging');
 
+    await waitForAdminConsoleReady(page);
     await page.locator('#refreshApprovals').click();
-    await expect(page.locator('#approvalsList')).toContainText('apr-r166-001');
-    await expect(page.locator('#approvalsList')).toContainText('desktop_host_smoke');
+    await expect(page.locator('#approvalsList')).toContainText('apr-r166-001', { timeout: 15000 });
+    await expect(page.locator('#approvalsList')).toContainText('desktop_host_smoke', { timeout: 15000 });
   });
 });

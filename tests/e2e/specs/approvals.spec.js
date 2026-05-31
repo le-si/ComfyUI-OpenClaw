@@ -1,5 +1,10 @@
 import { expect, test } from '@playwright/test';
-import { clickTab, mockComfyUiCore, waitForOpenClawReady } from '../utils/helpers.js';
+import {
+  clickTab,
+  mockComfyUiCore,
+  waitForAdminConsoleReady,
+  waitForOpenClawReady,
+} from '../utils/helpers.js';
 
 const pendingApproval = {
   approval_id: 'apr-001',
@@ -177,9 +182,10 @@ test.describe('Approvals surfaces', () => {
     await expect(page.locator('#apr-list .openclaw-list-item').first()).toContainText('apr-001');
 
     await page.goto(new URL('/web/admin_console.html', baseURL).toString());
+    await waitForAdminConsoleReady(page);
     await page.locator('#refreshApprovals').click();
 
-    await expect(page.locator('#approvalsList')).toContainText('apr-001');
-    await expect(page.locator('#approvalsList')).toContainText('render_portrait');
+    await expect(page.locator('#approvalsList')).toContainText('apr-001', { timeout: 15000 });
+    await expect(page.locator('#approvalsList')).toContainText('render_portrait', { timeout: 15000 });
   });
 });
