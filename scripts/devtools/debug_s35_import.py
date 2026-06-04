@@ -3,8 +3,8 @@ Debug script for S35 Transform Isolation.
 Verifies that the correct executor (TransformProcessRunner) is allowed/loaded.
 """
 
-from pathlib import Path
 import sys
+from pathlib import Path
 
 # Ensure project root is in path
 ROOT = Path(__file__).resolve().parents[2]

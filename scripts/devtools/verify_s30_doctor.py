@@ -3,8 +3,8 @@ Verify S30 Security Doctor output.
 """
 
 import os
-from pathlib import Path
 import sys
+from pathlib import Path
 
 # Add project root to path
 ROOT = Path(__file__).resolve().parents[2]

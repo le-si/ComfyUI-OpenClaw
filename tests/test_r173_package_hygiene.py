@@ -71,9 +71,7 @@ class R173PackageHygieneTests(unittest.TestCase):
         self.assertEqual(retained_artifacts["package-lock.json"]["owner"], "frontend")
         self.assertIn("npm ci", retained_artifacts["package-lock.json"]["rationale"])
 
-        cache_owners = {
-            cache["id"]: cache for cache in contract["cache_ownership"]
-        }
+        cache_owners = {cache["id"]: cache for cache in contract["cache_ownership"]}
         self.assertEqual(cache_owners["runtime_state_cache"]["owner"], "state_dir")
         self.assertFalse(cache_owners["runtime_state_cache"]["tracked"])
         self.assertEqual(
@@ -81,9 +79,7 @@ class R173PackageHygieneTests(unittest.TestCase):
             "safe_to_delete_when_tools_are_not_running",
         )
 
-        helper_paths = {
-            helper["path"] for helper in contract["developer_helpers"]
-        }
+        helper_paths = {helper["path"] for helper in contract["developer_helpers"]}
         self.assertEqual(
             helper_paths,
             {

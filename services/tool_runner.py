@@ -140,14 +140,15 @@ class ToolRunner:
         self._sandbox_runtime_issue: Optional[str] = None
         self._config_path = config_path or os.environ.get("OPENCLAW_TOOLS_CONFIG_PATH")
         if not self._config_path:
-            # Default to data/tools_allowlist.json (shipped default)
+            # IMPORTANT: default allowlist is package-owned, not state-dir-owned.
             try:
-                from config import DATA_DIR
+                from .runtime_dependency_hygiene import resolve_package_resource_path
+            except Exception:
+                from services.runtime_dependency_hygiene import (  # type: ignore
+                    resolve_package_resource_path,
+                )
 
-                self._config_path = os.path.join(DATA_DIR, "tools_allowlist.json")
-            except ImportError:
-                # Fallback for unconnected tests
-                self._config_path = "data/tools_allowlist.json"
+            self._config_path = resolve_package_resource_path("tools_allowlist")
 
         self.reload_config()
 
