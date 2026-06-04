@@ -3,11 +3,13 @@ Debug script for S35 Transform Isolation.
 Verifies that the correct executor (TransformProcessRunner) is allowed/loaded.
 """
 
-import os
+from pathlib import Path
 import sys
 
 # Ensure project root is in path
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+ROOT = Path(__file__).resolve().parents[2]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
 
 from services.constrained_transforms import get_transform_executor
 from services.transform_runner import TransformProcessRunner

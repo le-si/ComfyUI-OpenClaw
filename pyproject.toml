@@ -31,7 +31,7 @@ Icon = ""
 [tool.ruff]
 # Ruff replaces flake8, isort, and other linters
 target-version = "py310"
-line-length = 120
+line-length = 88
 indent-width = 4
 
 [tool.ruff.lint]
@@ -63,6 +63,10 @@ quote-style = "double"
 indent-style = "space"
 skip-magic-trailing-comma = false
 line-ending = "lf"
+
+[tool.black]
+line-length = 88
+target-version = ["py310"]
 
 [tool.mypy]
 python_version = "3.10"
