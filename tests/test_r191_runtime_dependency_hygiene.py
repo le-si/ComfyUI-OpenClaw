@@ -6,7 +6,6 @@ from unittest.mock import patch
 
 from services.tool_runner import ToolRunner
 
-
 ROOT = Path(__file__).resolve().parents[1]
 
 
@@ -102,7 +101,9 @@ class TestR191RuntimeDependencyHygiene(unittest.TestCase):
                 runner = ToolRunner()
 
         self.assertEqual(Path(runner._config_path), custom_allowlist)
-        self.assertEqual({"custom_echo"}, {tool["name"] for tool in runner.list_tools()})
+        self.assertEqual(
+            {"custom_echo"}, {tool["name"] for tool in runner.list_tools()}
+        )
 
     def test_runtime_cache_contract_keeps_generated_paths_separate(self):
         try:

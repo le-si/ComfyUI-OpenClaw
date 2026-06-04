@@ -107,7 +107,9 @@ def resolve_package_resource_path(
         relative_path = _PACKAGE_RESOURCES[resource_id]
     except KeyError as exc:
         known = ", ".join(sorted(_PACKAGE_RESOURCES))
-        raise KeyError(f"unknown package resource '{resource_id}'; known: {known}") from exc
+        raise KeyError(
+            f"unknown package resource '{resource_id}'; known: {known}"
+        ) from exc
 
     root = (
         Path(package_root).resolve()

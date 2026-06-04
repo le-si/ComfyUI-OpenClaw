@@ -24,6 +24,50 @@ DEFAULT_TOOL_MAX_OUTPUT_BYTES = 64 * 1024  # 64KB
 _TRUTHY = {"1", "true", "yes", "on"}
 _SANDBOX_RUNTIME_ENV = "OPENCLAW_TOOL_SANDBOX_RUNTIME_AVAILABLE"
 
+TOOL_ERROR_TOOL_NOT_ALLOWED = "tool_not_allowed"
+TOOL_ERROR_SANDBOX_RUNTIME_UNAVAILABLE = "sandbox_runtime_unavailable"
+TOOL_ERROR_SANDBOX_POLICY_MISSING = "sandbox_policy_missing"
+TOOL_ERROR_NETWORK_HOSTS_MISSING = "network_hosts_missing"
+TOOL_ERROR_WORKSPACE_VIOLATION = "workspace_violation"
+TOOL_ERROR_INTERPRETER_MISSING = "interpreter_missing"
+TOOL_ERROR_TIMEOUT = "timeout"
+TOOL_ERROR_PROCESS_FAILED = "process_failed"
+TOOL_ERROR_EXECUTION_ERROR = "execution_error"
+
+_TOOL_ERROR_REMEDIATIONS = {
+    TOOL_ERROR_TOOL_NOT_ALLOWED: (
+        "Add the tool to the allowlist or use an allowed tool name before retrying."
+    ),
+    TOOL_ERROR_SANDBOX_RUNTIME_UNAVAILABLE: (
+        f"Set {_SANDBOX_RUNTIME_ENV}=1 only after the sandbox runtime is available, "
+        "or leave hardened mode only in a trusted local environment."
+    ),
+    TOOL_ERROR_SANDBOX_POLICY_MISSING: (
+        "Define an explicit sandbox block for the tool in the allowlist."
+    ),
+    TOOL_ERROR_NETWORK_HOSTS_MISSING: (
+        "Add allow_network_hosts for the network-enabled tool or disable network access."
+    ),
+    TOOL_ERROR_WORKSPACE_VIOLATION: (
+        "Use paths inside the allowed filesystem prefixes or update the tool sandbox "
+        "allowlist."
+    ),
+    TOOL_ERROR_INTERPRETER_MISSING: (
+        "Install the executable referenced by the tool allowlist or update the tool "
+        "command path."
+    ),
+    TOOL_ERROR_TIMEOUT: (
+        "Review the tool process or increase timeout_sec only when the command is "
+        "expected to run longer."
+    ),
+    TOOL_ERROR_PROCESS_FAILED: (
+        "Inspect the redacted tool output and allowlist configuration before retrying."
+    ),
+    TOOL_ERROR_EXECUTION_ERROR: (
+        "Review the tool allowlist, validated arguments, and local runtime setup."
+    ),
+}
+
 
 def is_tools_enabled() -> bool:
     """Check if external tooling is enabled (Opt-in)."""
@@ -32,6 +76,27 @@ def is_tools_enabled() -> bool:
         "1",
         "yes",
         "on",
+    )
+
+
+def _diagnostic_failure_result(
+    *,
+    tool_name: str,
+    duration_ms: float,
+    error: str,
+    error_code: str,
+    output: str = "",
+    exit_code: Optional[int] = None,
+) -> "ToolResult":
+    return ToolResult(
+        tool_name=tool_name,
+        success=False,
+        output=output,
+        duration_ms=duration_ms,
+        error=error,
+        exit_code=exit_code,
+        error_code=error_code,
+        remediation=_TOOL_ERROR_REMEDIATIONS[error_code],
     )
 
 
@@ -45,6 +110,8 @@ class ToolResult:
     duration_ms: float
     error: Optional[str] = None
     exit_code: Optional[int] = None
+    error_code: Optional[str] = None
+    remediation: Optional[str] = None
 
 
 @dataclass
@@ -341,48 +408,44 @@ class ToolRunner:
 
         tool = self._tools.get(tool_name)
         if not tool:
-            return ToolResult(
+            return _diagnostic_failure_result(
                 tool_name=tool_name,
-                success=False,
-                output="",
                 duration_ms=0,
                 error=f"Tool '{tool_name}' not allowed or not found.",
+                error_code=TOOL_ERROR_TOOL_NOT_ALLOWED,
             )
 
         hardened = self._is_hardened_mode()
         if hardened:
             # CRITICAL: hardened profile must fail closed when sandbox posture is ambiguous.
             if not self._sandbox_runtime_available():
-                return ToolResult(
+                return _diagnostic_failure_result(
                     tool_name=tool_name,
-                    success=False,
-                    output="",
                     duration_ms=0,
                     error=(
                         "Sandbox runtime unavailable in hardened mode. "
                         f"Set {_SANDBOX_RUNTIME_ENV}=1."
                     ),
+                    error_code=TOOL_ERROR_SANDBOX_RUNTIME_UNAVAILABLE,
                 )
             if not tool.sandbox_declared:
-                return ToolResult(
+                return _diagnostic_failure_result(
                     tool_name=tool_name,
-                    success=False,
-                    output="",
                     duration_ms=0,
                     error=(
                         "Missing explicit sandbox policy for tool in hardened mode. "
                         "Define a 'sandbox' block in tools allowlist."
                     ),
+                    error_code=TOOL_ERROR_SANDBOX_POLICY_MISSING,
                 )
             if tool.sandbox.network and not tool.sandbox.allow_network_hosts:
-                return ToolResult(
+                return _diagnostic_failure_result(
                     tool_name=tool_name,
-                    success=False,
-                    output="",
                     duration_ms=0,
                     error=(
                         "Network-enabled tool requires allow_network_hosts in hardened mode."
                     ),
+                    error_code=TOOL_ERROR_NETWORK_HOSTS_MISSING,
                 )
 
         try:
@@ -434,12 +497,11 @@ class ToolRunner:
                         tool_name,
                         violation_msg,
                     )
-                    return ToolResult(
+                    return _diagnostic_failure_result(
                         tool_name=tool_name,
-                        success=False,
-                        output="",
                         duration_ms=(time.monotonic() - start_time) * 1000,
                         error=f"Sandbox FS violation: {violation_msg}",
+                        error_code=TOOL_ERROR_WORKSPACE_VIOLATION,
                     )
 
             # Execute under sandbox workspace.
@@ -476,27 +538,40 @@ class ToolRunner:
                 error=(
                     None if success else f"Process exited with code {proc.returncode}"
                 ),
+                error_code=None if success else TOOL_ERROR_PROCESS_FAILED,
+                remediation=(
+                    None
+                    if success
+                    else _TOOL_ERROR_REMEDIATIONS[TOOL_ERROR_PROCESS_FAILED]
+                ),
             )
 
         except subprocess.TimeoutExpired:
             elapsed_ms = (time.monotonic() - start_time) * 1000
             logger.warning(f"Tool '{tool_name}' timed out after {tool.timeout_sec}s")
-            return ToolResult(
+            return _diagnostic_failure_result(
                 tool_name=tool_name,
-                success=False,
-                output="",
                 duration_ms=elapsed_ms,
                 error="Execution timed out",
+                error_code=TOOL_ERROR_TIMEOUT,
+            )
+        except FileNotFoundError:
+            elapsed_ms = (time.monotonic() - start_time) * 1000
+            logger.error("Executable for tool '%s' was not found", tool_name)
+            return _diagnostic_failure_result(
+                tool_name=tool_name,
+                duration_ms=elapsed_ms,
+                error=f"Executable not found for tool '{tool_name}'.",
+                error_code=TOOL_ERROR_INTERPRETER_MISSING,
             )
         except Exception as e:
             elapsed_ms = (time.monotonic() - start_time) * 1000
             logger.error(f"Error executing tool '{tool_name}': {e}")
-            return ToolResult(
+            return _diagnostic_failure_result(
                 tool_name=tool_name,
-                success=False,
-                output="",
                 duration_ms=elapsed_ms,
                 error=str(e),
+                error_code=TOOL_ERROR_EXECUTION_ERROR,
             )
 
 
