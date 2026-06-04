@@ -91,6 +91,18 @@ Deployment profiles and hardening references:
 
 <details>
 
+<summary><strong>Package hygiene, runtime cache ownership, and tool diagnostics tightened</strong></summary>
+
+- Moved developer-only verification helpers out of the package root and into the dedicated developer tooling area, keeping the shipped custom-node pack boundary clearer.
+- The default external-tool allowlist now resolves from the package-owned `data/tools_allowlist.json`; custom allowlists should use `OPENCLAW_TOOLS_CONFIG_PATH` instead of relying on state-directory shadow files.
+- Runtime cache and external-tool sandbox scratch paths are treated as state-directory-owned generated data, while repo-local `.tmp`, virtualenv, and frontend dependency folders remain regenerated local tooling artifacts.
+- External-tool failures now have deterministic service-level diagnostics for missing sandbox runtime, missing executable/interpreter, timeout, workspace/path violation, and process failure, without adding Docker or broad fallback execution.
+- Python formatter/import-order settings and targeted package-hygiene regressions were aligned so validation catches future root clutter, package-resource, and runtime-cache ownership drift.
+
+</details>
+
+<details>
+
 <summary><strong>ComfyUI host compatibility, queue recovery, model folders, and asset-output posture refreshed</strong></summary>
 
 - Refreshed the published compatibility baseline for ComfyUI `08e93a31` (post-`v0.22.3`), standalone frontend `1.46.6`, and Desktop `0.9.4` with core `0.22.3` plus embedded frontend `1.43.18`.
@@ -132,29 +144,6 @@ Deployment profiles and hardening references:
 
 </details>
 
-<details>
-
-<summary><strong>Host compatibility anchors and inactive-branch preflight diagnostics aligned with current ComfyUI hosts</strong></summary>
-
-- Refreshed the published compatibility matrix for current ComfyUI, standalone frontend, and desktop reference anchors, keeping desktop embedded-frontend lag explicit instead of assuming standalone-frontend parity.
-- Updated workflow portability and preflight diagnostics so muted or bypassed workflow branches are separated from actionable missing-node/model failures when frontend workflow metadata is available.
-- Explorer now surfaces inactive-branch findings as suppressed diagnostics, so operators can still inspect them without treating them as current workflow blockers.
-- Tightened repository ignore rules so public release documentation is not accidentally hidden from version control.
-
-</details>
-
-<details>
-
-<summary><strong>Slack interactive callbacks, canonical node categories, and hardening governance aligned with the current runtime</strong></summary>
-
-- Added Slack interactive callback handling for Block Kit actions, modal submissions, and workflow-style payloads, with signed ingress verification, replay/idempotency checks, bounded external errors, and policy-aware routing for run-affecting actions.
-- Aligned shipped node metadata on the canonical `openclaw` category while keeping legacy `Moltbot*` class aliases available for existing workflows.
-- Tightened node and frontend maintainability by moving batch-variant randomized seed imports to module scope and keeping tab DOM wiring on shared text-safe helper paths.
-- Added explicit verification ownership for the `safe_io` and security-boundary hotspot families so future coverage ratchets depend on targeted regressions instead of broad coverage alone.
-- Hardened exception-boundary governance around selected startup and connector paths so unexpected route/bootstrap or trust-parsing failures are surfaced instead of silently masked.
-
-</details>
-
 See full update history: [docs/release/recent_updates.md](docs/release/recent_updates.md)
 
 </details>
@@ -183,6 +172,7 @@ See full update history: [docs/release/recent_updates.md](docs/release/recent_up
 - [LLM Failover](#llm-failover)
 - [Advanced Security and Runtime Setup](#advanced-security-and-runtime-setup)
 - [State Directory & Logs](#state-directory--logs)
+- [Package and Tool Runtime Hygiene](#package-and-tool-runtime-hygiene)
 - [Audit Chain Verification](#audit-chain-verification)
 - [Troubleshooting](#troubleshooting)
 - [Tests](#tests)
@@ -484,6 +474,7 @@ Main API families:
 - Admin diagnostics: preflight inventory snapshot/status, doctor-facing readiness views
 - Config + LLM: effective config, provider tests, model lists, assist planner/refiner
 - Connector diagnostics: installation state, resolution, callback/tenant binding evidence, audit views, extraction seam metadata, and static service-env SecretRef propagation policy
+- External tools: admin-gated, feature-flagged allowlist execution with sandbox/path diagnostics
 - Webhooks + events: validate, submit, callback delivery, SSE/polling status
 - Admin operations: approvals, schedules, presets, rewrite recipes
 - Model Manager + Packs: search, download/import lifecycle, pack import/export
@@ -514,6 +505,7 @@ Start here:
 - [Runtime hardening and startup](docs/runtime_hardening_and_startup.md)
 - [Security deployment guide](docs/security_deployment_guide.md)
 - [Security checklist](docs/security_checklist.md)
+- [Feature flags](docs/release/feature_flags.md)
 - [Config and secrets contract](docs/release/config_secrets_contract.md)
 
 Architecture and boundary decisions:
@@ -617,6 +609,30 @@ Logs:
   - set `OPENCLAW_LOG_FORMAT=json` (or `OPENCLAW_STRUCTURED_LOGS=1`) before startup
   - default behavior remains plain text logs (no structured log emission unless opt-in)
 
+## Package and Tool Runtime Hygiene
+
+OpenClaw keeps package-owned resources, runtime state, and local validation artifacts separate:
+
+- package-owned defaults, such as `data/tools_allowlist.json`, are read from the installed custom-node pack
+- custom external-tool allowlists should be supplied explicitly with `OPENCLAW_TOOLS_CONFIG_PATH`
+- runtime cache and external-tool sandbox scratch space belong under the configured state directory (`cache/` and `tool_sandbox/`)
+- repo-local generated folders such as `.tmp/`, `.venv/`, and `node_modules/` are validation/development artifacts and are regenerated from project metadata or lockfiles
+- OpenClaw does not automatically repair, migrate, or delete runtime dependency caches
+
+External tools remain opt-in and admin-gated:
+
+- `OPENCLAW_ENABLE_EXTERNAL_TOOLS=true` enables the route family
+- `GET /openclaw/tools` lists the allowlisted tools
+- `POST /openclaw/tools/{name}/run` executes a named allowlisted tool with validated args
+- hardened runtime posture fails closed on missing sandbox runtime or ambiguous sandbox policy
+- service-level tool execution results include stable diagnostics for common local failures such as `sandbox_runtime_unavailable`, `interpreter_missing`, `timeout`, and `workspace_violation`
+
+Operational references:
+
+- [Runtime hardening and startup](docs/runtime_hardening_and_startup.md)
+- [Troubleshooting guide](docs/troubleshooting.md)
+- [Config and secrets contract](docs/release/config_secrets_contract.md)
+
 ## Audit Chain Verification
 
 Operators can verify retained audit-log continuity with:
@@ -649,6 +665,7 @@ Quick jumps:
 - Operator Doctor usage
 - Jobs preview fallback for asset-api-only output refs
 - audit chain verification after restart or rotation
+- external-tool allowlist, sandbox runtime, interpreter, timeout, or workspace diagnostics
 - webhook auth not configured
 - loopback LLM SSRF validation errors
 - Remote Admin vs private-LAN LLM target behavior

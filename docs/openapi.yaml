@@ -1,7 +1,7 @@
 openapi: "3.0.3"
 info:
   title: "ComfyUI-OpenClaw API"
-  version: "1.0.10"
+  version: "1.0.11"
   description: "Generated from docs/release/api_contract.md."
 servers:
   - url: "/openclaw"
@@ -815,6 +815,40 @@ paths:
       x-openclaw-section: "1.5 Schedules & Approvals"
       parameters:
         - name: "id"
+          in: "path"
+          required: true
+          schema:
+            type: "string"
+  /tools:
+    get:
+      operationId: "get_tools"
+      summary: "List allowed external tools and their declared sandbox metadata."
+      responses:
+        200:
+          description: "OK"
+      x-openclaw-auth: "Admin Token Required"
+      x-openclaw-section: "1.5A External Tools"
+      x-openclaw-legacy-path: "/moltbot/tools"
+      x-openclaw-auth-tier: "admin"
+      security:
+        - OpenClawAdminToken:
+            []
+  /tools/{name}/run:
+    post:
+      operationId: "post_tools_name_run"
+      summary: "Execute a named allowlisted external tool with validated arguments."
+      responses:
+        200:
+          description: "OK"
+      x-openclaw-auth: "Admin Token Required"
+      x-openclaw-section: "1.5A External Tools"
+      x-openclaw-legacy-path: "/moltbot/tools/{name}/run"
+      x-openclaw-auth-tier: "admin"
+      security:
+        - OpenClawAdminToken:
+            []
+      parameters:
+        - name: "name"
           in: "path"
           required: true
           schema:

@@ -307,6 +307,7 @@ OpenClaw supports a "Sidecar Bridge" for safe interaction with external bots (Di
 * [ ] **Public shared-surface ack**: for `OPENCLAW_DEPLOYMENT_PROFILE=public`, set `OPENCLAW_PUBLIC_SHARED_SURFACE_BOUNDARY_ACK=1` only after proxy path allowlist + ACL are verified.
 * [ ] **Public path deny rules**: block ComfyUI-native high-risk routes and `/api/*` equivalents unless explicitly required.
 * [ ] **Connector strict-posture allowlists**: if connector ingress is active in `public` or `hardened`, ensure platform allowlists are set before startup (`DP-PUBLIC-009` for public profile).
+* [ ] **External tools disabled by default**: keep `OPENCLAW_ENABLE_EXTERNAL_TOOLS=0` unless there is a reviewed need; if enabled, verify the tool allowlist, sandbox policy, and deterministic sandbox/interpreter/timeout/workspace diagnostics.
 * [ ] **Multi-tenant boundary (if enabled)**: enforce one canonical tenant header path through proxy/app, keep fallback toggles disabled unless a migration window is actively in progress.
 * [ ] **Audit integrity check**: run `python scripts/verify_audit_chain.py --json` after restart/rotation-sensitive maintenance and confirm retained audit logs still verify cleanly.
 * [ ] **1Password guardrails (if enabled)**: require command allowlist + vault/template validation; in multi-tenant mode, include `{tenant}` in item template.

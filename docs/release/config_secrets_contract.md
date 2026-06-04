@@ -1,8 +1,8 @@
 # OpenClaw Config & Secrets Contract (v1)
 
 > **Status**: normative
-> **Version**: 1.0.5
-> **Date**: 2026-03-07
+> **Version**: 1.0.6
+> **Date**: 2026-06-04
 
 This document defines the authoritative configuration contract for OpenClaw. It enumerates all supported environment variables, their precedence rules, and security classifications.
 
@@ -184,7 +184,26 @@ Connector posture rules:
 | `OPENCLAW_CONNECTOR_MEDIA_TTL_SEC` | Media expiry in seconds (default `300`, clamped to `60..86400`). |
 | `OPENCLAW_CONNECTOR_MEDIA_MAX_MB` | Max staged media size in MB (default `8`, clamped to `1..64`). |
 
-### 2.5 Execution Budgets & Limits
+### 2.5 External Tools and Runtime Hygiene
+
+External tool execution is opt-in and admin-gated. Package-owned defaults, runtime state, and local validation artifacts are separate ownership classes.
+
+| Variable | Default | Description |
+| :--- | :--- | :--- |
+| `OPENCLAW_ENABLE_EXTERNAL_TOOLS` | `false` | Enables `/openclaw/tools` and `/openclaw/tools/{name}/run`. Keep disabled unless a reviewed deployment needs allowlisted external CLI execution. |
+| `OPENCLAW_TOOLS_CONFIG_PATH` | package `data/tools_allowlist.json` | Explicit path to a custom tools allowlist. If unset, OpenClaw uses the package-owned shipped allowlist rather than a state-dir shadow file. |
+| `OPENCLAW_TOOL_SANDBOX_RUNTIME_AVAILABLE` | `1` | Runtime availability marker used by hardened tool execution diagnostics. In hardened mode, `0` fails closed before tool execution. |
+| `OPENCLAW_TOOL_SANDBOX_DIR` | `{state_dir}/tool_sandbox` | Optional override for external-tool scratch/temp workspace. Legacy alias: `MOLTBOT_TOOL_SANDBOX_DIR`. |
+
+Ownership rules:
+
+- package resources such as the default tool allowlist are read from the installed custom-node pack
+- state-owned runtime cache/sandbox paths live under `OPENCLAW_STATE_DIR` unless explicitly overridden
+- repo-local generated folders such as `.tmp/`, `.venv/`, and `node_modules/` are local tooling artifacts, not runtime state
+- OpenClaw does not automatically repair, migrate, or delete runtime dependency caches
+- tool execution results classify common local failures with deterministic diagnostics such as `sandbox_runtime_unavailable`, `interpreter_missing`, `timeout`, and `workspace_violation`
+
+### 2.6 Execution Budgets & Limits
 
 Contractual limits to prevent resource exhaustion.
 
@@ -198,11 +217,11 @@ Contractual limits to prevent resource exhaustion.
 | `OPENCLAW_MAX_INFLIGHT_SUBMITS_PER_TENANT` | `1` | Per-tenant concurrent submit cap (applies when multi-tenant mode is enabled). |
 | `OPENCLAW_MAX_RENDERED_WORKFLOW_BYTES` | `524288` | Max size (bytes) of a rendered workflow JSON (512KB). |
 
-### 2.6 Runtime & Diagnostics
+### 2.7 Runtime & Diagnostics
 
 | Variable | Description |
 | :--- | :--- |
-| `OPENCLAW_STATE_DIR` | Directory for persistent state (DBs, history, logs). Default: `ComfyUI/user/default/openclaw` |
+| `OPENCLAW_STATE_DIR` | Directory for persistent state (DBs, history, logs, runtime cache). Defaults to the platform user-data directory, such as `%LOCALAPPDATA%\comfyui-openclaw\`, `~/Library/Application Support/comfyui-openclaw/`, or `~/.local/share/comfyui-openclaw/`. |
 | `OPENCLAW_LOG_TRUNCATE_ON_START` | Set `1` to truncate active log file (`openclaw.log`) once at process startup before new handlers write records. |
 | `OPENCLAW_STARTUP_WARMUP_TIMEOUT_SEC` | Optional timeout for non-blocking startup warmups. Warmup timeout degrades health diagnostics but does not block required route startup. |
 | `OPENCLAW_DIAGNOSTICS` | Comma-separated list of subsystems to enable debug logging for (e.g. `webhook.*,templates`). Safe-redacted. |

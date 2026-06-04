@@ -45,6 +45,7 @@
 - [ ] For shared/LAN/public exposure, keep `OPENCLAW_LOCALHOST_ALLOW_NO_ORIGIN=0` (or unset).
 - [ ] For `OPENCLAW_DEPLOYMENT_PROFILE=public`, set `OPENCLAW_PUBLIC_SHARED_SURFACE_BOUNDARY_ACK=1` only after reverse-proxy path allowlist + network ACL explicitly block ComfyUI-native high-risk routes.
 - [ ] For `OPENCLAW_DEPLOYMENT_PROFILE=public`, if any connector platform token/enable flag is set, confirm corresponding allowlist coverage before startup (`DP-PUBLIC-009`).
+- [ ] Keep `OPENCLAW_ENABLE_EXTERNAL_TOOLS=0` unless external tool execution is explicitly required; if enabled, review `OPENCLAW_TOOLS_CONFIG_PATH`, sandbox policy, and deterministic runtime diagnostics before exposure.
 - [ ] Run `GET /openclaw/security/doctor` and verify no `csrf_no_origin_override` warning before exposure.
 - [ ] Run `python scripts/verify_audit_chain.py --json` after restart/rotation-sensitive maintenance and confirm retained audit logs still verify cleanly.
 

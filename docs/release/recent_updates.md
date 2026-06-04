@@ -7,6 +7,18 @@ Newest entries appear first.
 
 <details>
 
+<summary><strong>Package hygiene, runtime cache ownership, and tool diagnostics tightened</strong></summary>
+
+- Moved developer-only verification helpers out of the repository root and into the dedicated developer tooling area, keeping the custom-node package root focused on shipped package entrypoints and metadata.
+- Made the default external-tool allowlist package-owned at `data/tools_allowlist.json`; custom allowlists are now explicitly routed through `OPENCLAW_TOOLS_CONFIG_PATH` instead of being accidentally masked by state-dir or bind-mounted source layouts.
+- Added a dependency-light runtime hygiene contract that separates package resources, state-directory runtime cache/sandbox paths, and repo-local generated validation artifacts.
+- Preserved the no-automatic-repair posture for runtime dependency caches: OpenClaw does not delete, migrate, or repair generated runtime dependency caches without an explicit future implementation.
+- Added deterministic tool execution diagnostics for missing sandbox runtime, missing executable/interpreter, timeout, workspace/path violation, and process failures while keeping hardened missing-runtime behavior fail-closed and avoiding Docker or broader fallback execution.
+
+</details>
+
+<details>
+
 <summary><strong>ComfyUI host compatibility, queue recovery, model folders, and asset-output posture refreshed</strong></summary>
 
 - Refreshed the published compatibility baseline for ComfyUI `08e93a31` (post-`v0.22.3`), standalone frontend `1.46.6`, and Desktop `0.9.4` with core `0.22.3` plus embedded frontend `1.43.18`.
@@ -45,6 +57,18 @@ Newest entries appear first.
 - Updated workflow portability and preflight diagnostics so muted or bypassed workflow branches are separated from actionable missing-node/model failures when frontend workflow metadata is available.
 - Explorer now surfaces inactive-branch findings as suppressed diagnostics, so operators can still inspect them without treating them as current workflow blockers.
 - Tightened repository ignore rules so public release documentation is not accidentally hidden from version control.
+
+</details>
+
+<details>
+
+<summary><strong>Slack interactive callbacks, canonical node categories, and hardening governance aligned with the current runtime</strong></summary>
+
+- Added Slack interactive callback handling for Block Kit actions, modal submissions, and workflow-style payloads, with signed ingress verification, replay/idempotency checks, bounded external errors, and policy-aware routing for run-affecting actions.
+- Aligned shipped node metadata on the canonical `openclaw` category while keeping legacy `Moltbot*` class aliases available for existing workflows.
+- Tightened node and frontend maintainability by moving batch-variant randomized seed imports to module scope and keeping tab DOM wiring on shared text-safe helper paths.
+- Added explicit verification ownership for the `safe_io` and security-boundary hotspot families so future coverage ratchets depend on targeted regressions instead of broad coverage alone.
+- Hardened exception-boundary governance around selected startup and connector paths so unexpected route/bootstrap or trust-parsing failures are surfaced instead of silently masked.
 
 </details>
 

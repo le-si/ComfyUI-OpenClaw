@@ -63,6 +63,34 @@ Explorer / inventory note:
 - A response showing `scan_state=refreshing` or `stale=true` does not necessarily mean the inventory path is broken; it can mean the cached snapshot was returned quickly while a deeper model scan continues in the background.
 - Treat `last_error` as the primary signal that the background scan actually failed.
 
+## External tool execution is disabled or fails with sandbox diagnostics
+
+External tools are disabled by default and require an admin boundary plus an explicit feature flag.
+
+Checklist:
+
+1. Confirm the feature flag is enabled only for the deployment that needs it:
+   - `OPENCLAW_ENABLE_EXTERNAL_TOOLS=true`
+2. Confirm the request is authenticated as an admin when using:
+   - `GET /openclaw/tools`
+   - `POST /openclaw/tools/{name}/run`
+3. Confirm the tool definition exists in the allowlist:
+   - default allowlist: package-owned `data/tools_allowlist.json`
+   - custom allowlist: set `OPENCLAW_TOOLS_CONFIG_PATH=/path/to/tools_allowlist.json`
+4. If the result or logs report `sandbox_runtime_unavailable`, do not bypass hardened mode blindly:
+   - make the sandbox runtime available, then set `OPENCLAW_TOOL_SANDBOX_RUNTIME_AVAILABLE=1`
+   - or keep tooling disabled until the deployment can fail closed safely
+5. If the result or logs report `interpreter_missing`, install the executable referenced by the tool allowlist or update the command path.
+6. If the result or logs report `timeout`, review the command behavior before increasing the tool's `timeout_sec`.
+7. If the result or logs report `workspace_violation`, move inputs under the configured filesystem allowlist or update the tool sandbox policy.
+
+Notes:
+
+- Tool scratch/temp paths default to the configured state directory's `tool_sandbox/`.
+- `OPENCLAW_TOOL_SANDBOX_DIR` can override the scratch path for reviewed deployments.
+- Runtime cache and sandbox scratch paths are generated state, not package resources.
+- OpenClaw does not automatically repair, migrate, or delete runtime dependency caches.
+
 ## Jobs preview shows an explicit asset fallback state instead of an image preview
 
 Current OpenClaw builds keep `/history` + `/view` as the supported runtime preview contract for job results.

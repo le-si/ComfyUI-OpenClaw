@@ -1,8 +1,8 @@
 # OpenClaw API Contract (v1)
 
 > **Status**: normative
-> **Version**: 1.0.10
-> **Date**: 2026-05-08
+> **Version**: 1.0.11
+> **Date**: 2026-06-04
 
 This document defines the public API contract for OpenClaw. It serves as the authoritative baseline for client compatibility and breaking change policies.
 
@@ -199,6 +199,26 @@ clears it, and `{"enabled": false}` or `{"mode": "none"}` records explicit
 no-delivery. Invalid delivery targets are rejected before persistence with
 bounded codes: `delivery_malformed`, `delivery_ambiguous`, or
 `delivery_unsupported`.
+
+### 1.5A External Tools
+
+**OpenClaw path prefix**: `/openclaw/`
+**Legacy Base Path**: `/moltbot/`
+**Auth**: Admin Token Required
+**Feature flag**: `OPENCLAW_ENABLE_EXTERNAL_TOOLS=true`
+
+| Method | Path | Legacy Path | Auth | Description |
+| :--- | :--- | :--- | :--- | :--- |
+| `GET` | `/tools` | `/moltbot/tools` | Admin Token Required | List allowed external tools and their declared sandbox metadata. |
+| `POST` | `/tools/{name}/run` | `/moltbot/tools/{name}/run` | Admin Token Required | Execute a named allowlisted external tool with validated arguments. |
+
+Tool execution contract notes:
+
+- tools are disabled unless `OPENCLAW_ENABLE_EXTERNAL_TOOLS` is truthy
+- tool definitions load from package-owned `data/tools_allowlist.json` unless `OPENCLAW_TOOLS_CONFIG_PATH` is set
+- in public/split high-risk surfaces, tool execution can be blocked by the surface guard even when the feature flag is enabled
+- execution responses preserve the current HTTP payload shape: failed runs return `ok=false`, `tool`, `error`, redacted `output`, `exit_code`, and `duration_ms`
+- the service-level tool runner classifies common local failures with stable diagnostics such as `sandbox_runtime_unavailable`, `interpreter_missing`, `timeout`, and `workspace_violation`; clients should still follow this API document for the current HTTP response shape
 
 ### 1.6 Bridge (Sidecar)
 

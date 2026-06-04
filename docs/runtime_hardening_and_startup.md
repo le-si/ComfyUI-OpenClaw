@@ -6,6 +6,7 @@ This guide explains the startup security model and bridge compatibility behavior
 
 - Runtime profile selection
 - Hardened startup enforcement behavior
+- External tool sandbox diagnostics
 - Module startup boundaries
 - Bridge protocol handshake compatibility
 
@@ -93,6 +94,37 @@ When a platform is active, at least one platform-specific allowlist variable mus
 - `public` deployment profile: fail-closed (`DP-PUBLIC-009`)
 - `hardened` runtime profile: fail-closed at startup gate
 - non-strict local/LAN posture: warning posture in Security Doctor (`s32_allowlist_coverage`)
+
+## External tool sandbox diagnostics
+
+External tool execution is opt-in and remains admin-gated. Set `OPENCLAW_ENABLE_EXTERNAL_TOOLS=true` only for reviewed local/LAN workflows that need allowlisted CLI execution.
+
+Current runtime behavior:
+
+- default tool definitions are loaded from the package-owned `data/tools_allowlist.json`
+- custom tool definitions must be supplied with `OPENCLAW_TOOLS_CONFIG_PATH`
+- tool scratch/temp execution paths default to the state directory's `tool_sandbox/`
+- `OPENCLAW_TOOL_SANDBOX_DIR` can override the scratch path for an explicitly reviewed deployment
+- legacy `MOLTBOT_TOOL_SANDBOX_DIR` remains a compatibility alias
+
+Hardened posture behavior:
+
+- if `OPENCLAW_RUNTIME_PROFILE=hardened` and the sandbox runtime is marked unavailable, tool execution fails closed before `subprocess.run`
+- tools without an explicit `sandbox` block fail closed in hardened mode
+- network-enabled tools require `allow_network_hosts` in hardened mode
+- filesystem allowlists are checked before execution; out-of-scope paths are blocked
+
+Common service-level diagnostic codes:
+
+- `sandbox_runtime_unavailable`
+- `sandbox_policy_missing`
+- `network_hosts_missing`
+- `interpreter_missing`
+- `timeout`
+- `workspace_violation`
+- `process_failed`
+
+These diagnostics are designed to help operators fix local runtime setup without silently falling back to broader host execution. OpenClaw does not currently install Docker images, repair sandbox runtimes, or auto-delete runtime dependency caches.
 
 ## Localhost no-origin override posture
 

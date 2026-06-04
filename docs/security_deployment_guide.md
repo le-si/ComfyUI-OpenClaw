@@ -23,6 +23,7 @@ Before using OpenClaw in any internet-facing setup, you must explicitly accept:
 3. The operator/deployer is responsible for network isolation, auth boundaries, key management, monitoring, and incident response.
 4. If you cannot satisfy the `public` profile baseline and checklist, do not deploy publicly. Use `local` or private/VPN-only access instead.
 5. High-risk capabilities (external tools, registry sync, transforms, remote admin) must remain disabled unless there is a reviewed and time-bounded operational requirement.
+6. If external tools are enabled, review the allowlist path (`data/tools_allowlist.json` or `OPENCLAW_TOOLS_CONFIG_PATH`), sandbox policy, and runtime diagnostics before exposing the deployment beyond localhost.
 
 ## 0.1 Shared-Port Boundary Statement (Critical)
 
