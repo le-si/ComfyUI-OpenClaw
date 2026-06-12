@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
 
-import { extractHistoryImageRefs, normalizeComfyOutputRef } from "../../openclaw_asset_refs.js";
+import {
+    extractHistoryImageRefs,
+    extractHistoryOutputRefs,
+    normalizeComfyOutputRef,
+} from "../../openclaw_asset_refs.js";
 
 describe("openclaw asset refs", () => {
     it("keeps classic history refs on the /view filename+type contract", () => {
@@ -14,12 +18,15 @@ describe("openclaw asset refs", () => {
             filename: "result.png",
             subfolder: "session-a",
             type: "temp",
+            media_type: "images",
             asset_hash: "",
             asset_api_id: "",
             asset_api_required: false,
             resolution: "view",
             unsupported_reason: "",
             is_asset_backed: false,
+            content: "",
+            text_truncated: false,
             viewParams: {
                 filename: "result.png",
                 subfolder: "session-a",
@@ -39,12 +46,15 @@ describe("openclaw asset refs", () => {
             filename: "preview.png",
             subfolder: "",
             type: "output",
+            media_type: "images",
             asset_hash: "blake3:abc123",
             asset_api_id: "",
             asset_api_required: false,
             resolution: "view",
             unsupported_reason: "",
             is_asset_backed: true,
+            content: "",
+            text_truncated: false,
             viewParams: {
                 filename: "blake3:abc123",
             },
@@ -63,12 +73,15 @@ describe("openclaw asset refs", () => {
             filename: "uploaded.png",
             subfolder: "",
             type: "output",
+            media_type: "images",
             asset_hash: "blake3:def456",
             asset_api_id: "",
             asset_api_required: false,
             resolution: "view",
             unsupported_reason: "",
             is_asset_backed: true,
+            content: "",
+            text_truncated: false,
             viewParams: {
                 filename: "blake3:def456",
             },
@@ -85,12 +98,15 @@ describe("openclaw asset refs", () => {
             filename: "hash-alias.png",
             subfolder: "",
             type: "output",
+            media_type: "images",
             asset_hash: "blake3:alias123",
             asset_api_id: "",
             asset_api_required: false,
             resolution: "view",
             unsupported_reason: "",
             is_asset_backed: true,
+            content: "",
+            text_truncated: false,
             viewParams: {
                 filename: "blake3:alias123",
             },
@@ -109,12 +125,15 @@ describe("openclaw asset refs", () => {
             filename: "nested-hash-alias.png",
             subfolder: "",
             type: "output",
+            media_type: "images",
             asset_hash: "blake3:nested-alias",
             asset_api_id: "",
             asset_api_required: false,
             resolution: "view",
             unsupported_reason: "",
             is_asset_backed: true,
+            content: "",
+            text_truncated: false,
             viewParams: {
                 filename: "blake3:nested-alias",
             },
@@ -132,12 +151,15 @@ describe("openclaw asset refs", () => {
             filename: "asset-only-42",
             subfolder: "",
             type: "output",
+            media_type: "images",
             asset_hash: "",
             asset_api_id: "asset-only-42",
             asset_api_required: true,
             resolution: "asset_api_required",
             unsupported_reason: "asset_api_required",
             is_asset_backed: true,
+            content: "",
+            text_truncated: false,
             viewParams: null,
         });
     });
@@ -168,12 +190,15 @@ describe("openclaw asset refs", () => {
                 filename: "classic.png",
                 subfolder: "",
                 type: "output",
+                media_type: "images",
                 asset_hash: "",
                 asset_api_id: "",
                 asset_api_required: false,
                 resolution: "view",
                 unsupported_reason: "",
                 is_asset_backed: false,
+                content: "",
+                text_truncated: false,
                 viewParams: {
                     filename: "classic.png",
                     type: "output",
@@ -183,16 +208,70 @@ describe("openclaw asset refs", () => {
                 filename: "temp-preview.png",
                 subfolder: "preview",
                 type: "temp",
+                media_type: "images",
                 asset_hash: "blake3:temp123",
                 asset_api_id: "",
                 asset_api_required: false,
                 resolution: "view",
                 unsupported_reason: "",
                 is_asset_backed: true,
+                content: "",
+                text_truncated: false,
                 viewParams: {
                     filename: "blake3:temp123",
                 },
             },
         ]);
+    });
+
+    it("extracts previewable media outputs while keeping image-only wrapper compatibility", () => {
+        const historyItem = {
+            outputs: {
+                "1": {
+                    images: [{ filename: "classic.png", type: "output" }],
+                    video: [{ filename: "clip.webm", type: "output", format: "video/webm" }],
+                    audio: [{ filename: "sound.wav", type: "output" }],
+                    "3d": ["mesh.glb"],
+                    text: ["hello text"],
+                },
+            },
+        };
+
+        const outputs = extractHistoryOutputRefs(historyItem);
+        expect(outputs.map((output) => output.media_type)).toEqual([
+            "images",
+            "video",
+            "audio",
+            "3d",
+            "text",
+        ]);
+        expect(outputs[1]).toEqual(expect.objectContaining({
+            filename: "clip.webm",
+            media_type: "video",
+            viewParams: { filename: "clip.webm", type: "output" },
+        }));
+        expect(outputs[3]).toEqual(expect.objectContaining({
+            filename: "mesh.glb",
+            media_type: "3d",
+        }));
+        expect(outputs[4]).toEqual(expect.objectContaining({
+            media_type: "text",
+            content: "hello text",
+            resolution: "inline_text",
+            viewParams: null,
+        }));
+
+        expect(extractHistoryImageRefs(historyItem).map((output) => output.media_type)).toEqual([
+            "images",
+        ]);
+    });
+
+    it("bounds inline text output previews", () => {
+        const longText = "x".repeat(1100);
+        const output = extractHistoryOutputRefs({ outputs: { "1": { text: [longText] } } })[0];
+
+        expect(output.media_type).toBe("text");
+        expect(output.content).toHaveLength(1024);
+        expect(output.text_truncated).toBe(true);
     });
 });

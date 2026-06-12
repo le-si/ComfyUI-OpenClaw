@@ -202,6 +202,64 @@ test.describe('R107 Live Backend Parity', () => {
         expect(assetApiCalls).toBe(0);
     });
 
+    test('Job Monitor surfaces non-image media outputs as safe fallbacks', async ({ page }) => {
+        const jobId = "job-media-refs";
+        let assetApiCalls = 0;
+
+        await page.route(`**/history/${jobId}`, async route => {
+            await route.fulfill({
+                status: 200,
+                contentType: 'application/json',
+                body: JSON.stringify({
+                    [jobId]: {
+                        status: { status_str: "success", completed: true },
+                        outputs: {
+                            "9": {
+                                video: [{ filename: "clip.webm", type: "output" }],
+                                audio: [{ filename: "sound.wav", type: "output" }],
+                                "3d": ["mesh.glb"],
+                                text: ["hello from text output"],
+                            },
+                        },
+                    },
+                }),
+            });
+        });
+
+        await page.route('**/openclaw/trace/**', async route => {
+            await route.fulfill({
+                status: 404,
+                contentType: 'application/json',
+                body: JSON.stringify({ error: 'not_found' }),
+            });
+        });
+
+        await page.route('**/api/assets**', async route => {
+            assetApiCalls += 1;
+            await route.fulfill({
+                status: 500,
+                contentType: 'application/json',
+                body: JSON.stringify({ error: 'asset_api_should_not_be_called' }),
+            });
+        });
+
+        await clickTab(page, 'Jobs');
+        await page.locator('input[placeholder="prompt_id"]').fill(jobId);
+        await page.getByText('Add').click();
+
+        const jobRow = page.locator('.openclaw-job-row').first();
+        await expect(page.locator('.openclaw-kv-val.ok')).toHaveText('completed', { timeout: 10000 });
+        await expect(jobRow.locator('img')).toHaveCount(0);
+        await expect(jobRow.locator('.openclaw-job-output-media-fallback')).toHaveCount(3);
+        await expect(jobRow.locator('.openclaw-job-output-media-fallback')).toContainText([
+            'video output available',
+            'audio output available',
+            '3d output available',
+        ]);
+        await expect(jobRow.locator('.openclaw-job-output-text')).toContainText('hello from text output');
+        expect(assetApiCalls).toBe(0);
+    });
+
     test('Degraded Adapter / Fail Handling', async ({ page }) => {
         // Mock Planner Failure (503 Service Unavailable)
         await page.route('**/openclaw/assist/planner', async route => {

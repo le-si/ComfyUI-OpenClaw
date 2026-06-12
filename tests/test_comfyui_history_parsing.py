@@ -205,6 +205,75 @@ class TestComfyUIHistoryParsing(unittest.TestCase):
         self.assertEqual(images[0]["resolution"], "asset_api_required")
         self.assertEqual(images[0]["view_url"], "")
 
+    def test_extract_output_refs_collects_previewable_media_types(self):
+        from services.comfyui_history import extract_output_refs
+
+        history_item = {
+            "outputs": {
+                "1": {
+                    "images": [{"filename": "image.png", "type": "output"}],
+                    "video": [
+                        {
+                            "filename": "clip.webm",
+                            "type": "output",
+                            "format": "video/webm",
+                        }
+                    ],
+                    "audio": [{"filename": "sound.wav", "type": "output"}],
+                    "3d": ["mesh.glb"],
+                    "text": ["hello from text output"],
+                }
+            }
+        }
+
+        outputs = extract_output_refs(history_item)
+        self.assertEqual(
+            [output["media_type"] for output in outputs],
+            ["images", "video", "audio", "3d", "text"],
+        )
+        self.assertIn("filename=image.png", outputs[0]["view_url"])
+        self.assertIn("filename=clip.webm", outputs[1]["view_url"])
+        self.assertIn("filename=sound.wav", outputs[2]["view_url"])
+        self.assertIn("filename=mesh.glb", outputs[3]["view_url"])
+        self.assertEqual(outputs[4]["resolution"], "inline_text")
+        self.assertEqual(outputs[4]["content"], "hello from text output")
+        self.assertEqual(outputs[4]["view_url"], "")
+
+    def test_extract_images_remains_image_only_for_callbacks(self):
+        from services.comfyui_history import extract_images
+
+        history_item = {
+            "outputs": {
+                "1": {
+                    "images": [{"filename": "image.png", "type": "output"}],
+                    "video": [{"filename": "clip.webm", "type": "output"}],
+                    "audio": [{"filename": "sound.wav", "type": "output"}],
+                    "3d": ["mesh.glb"],
+                    "text": ["hello"],
+                }
+            }
+        }
+
+        images = extract_images(history_item)
+        self.assertEqual(len(images), 1)
+        self.assertEqual(images[0]["filename"], "image.png")
+        self.assertEqual(images[0]["media_type"], "images")
+
+    def test_extract_output_refs_bounds_inline_text(self):
+        from services.comfyui_history import (
+            TEXT_PREVIEW_MAX_LENGTH,
+            extract_output_refs,
+        )
+
+        long_text = "x" * (TEXT_PREVIEW_MAX_LENGTH + 10)
+        history_item = {"outputs": {"1": {"text": [long_text]}}}
+
+        outputs = extract_output_refs(history_item)
+        self.assertEqual(len(outputs), 1)
+        self.assertEqual(outputs[0]["media_type"], "text")
+        self.assertEqual(len(outputs[0]["content"]), TEXT_PREVIEW_MAX_LENGTH)
+        self.assertTrue(outputs[0]["text_truncated"])
+
     def test_get_job_status(self):
         from services.comfyui_history import get_job_status
 

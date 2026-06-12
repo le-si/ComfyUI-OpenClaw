@@ -3,7 +3,7 @@
  * Tracks prompt execution and displays outputs.
  */
 import { openclawApi } from "../openclaw_api.js";
-import { extractHistoryImageRefs } from "../openclaw_asset_refs.js";
+import { extractHistoryOutputRefs } from "../openclaw_asset_refs.js";
 import { parseJsonSafe } from "../openclaw_utils.js";
 
 const POLL_INTERVAL_MS = 2000;
@@ -183,7 +183,7 @@ export const jobMonitorTab = {
                     outputGrid.style.marginTop = "8px";
 
                     job.outputs.forEach((out) => {
-                        if (out.view_url) {
+                        if (out.media_type === "images" && out.view_url) {
                             const img = document.createElement("img");
                             img.src = out.view_url;
                             img.style.maxWidth = "80px";
@@ -193,6 +193,27 @@ export const jobMonitorTab = {
                             img.title = out.filename;
                             img.onclick = () => window.open(out.view_url, "_blank");
                             outputGrid.appendChild(img);
+                            return;
+                        }
+
+                        if (out.media_type === "text" && out.content) {
+                            const textOutput = document.createElement("div");
+                            textOutput.className = "openclaw-job-output-fallback openclaw-job-output-text";
+                            textOutput.style.width = "160px";
+                            textOutput.style.minHeight = "80px";
+                            textOutput.style.padding = "6px";
+                            textOutput.style.fontSize = "10px";
+                            textOutput.style.lineHeight = "1.35";
+                            textOutput.style.whiteSpace = "pre-wrap";
+                            textOutput.style.overflowWrap = "anywhere";
+                            textOutput.style.border = "1px dashed var(--border-color)";
+                            textOutput.style.borderRadius = "6px";
+                            textOutput.style.background = "var(--comfy-menu-bg, rgba(255,255,255,0.04))";
+                            textOutput.title = out.text_truncated ? "Text output truncated" : "Text output";
+                            textOutput.textContent = out.text_truncated
+                                ? `${out.content}\n...`
+                                : out.content;
+                            outputGrid.appendChild(textOutput);
                             return;
                         }
 
@@ -214,6 +235,29 @@ export const jobMonitorTab = {
                             fallback.title = out.asset_api_id || out.filename || "Asset API output";
                             fallback.textContent = "Asset API output requires /api/assets. Preview disabled.";
                             outputGrid.appendChild(fallback);
+                            return;
+                        }
+
+                        if (out.view_url) {
+                            const mediaFallback = document.createElement("div");
+                            mediaFallback.className = "openclaw-job-output-fallback openclaw-job-output-media-fallback";
+                            mediaFallback.style.width = "110px";
+                            mediaFallback.style.minHeight = "80px";
+                            mediaFallback.style.padding = "6px";
+                            mediaFallback.style.display = "flex";
+                            mediaFallback.style.alignItems = "center";
+                            mediaFallback.style.justifyContent = "center";
+                            mediaFallback.style.textAlign = "center";
+                            mediaFallback.style.fontSize = "10px";
+                            mediaFallback.style.lineHeight = "1.3";
+                            mediaFallback.style.border = "1px dashed var(--border-color)";
+                            mediaFallback.style.borderRadius = "6px";
+                            mediaFallback.style.background = "var(--comfy-menu-bg, rgba(255,255,255,0.04))";
+                            mediaFallback.style.cursor = "pointer";
+                            mediaFallback.title = out.filename;
+                            mediaFallback.textContent = `${out.media_type || "media"} output available. Open preview.`;
+                            mediaFallback.onclick = () => window.open(out.view_url, "_blank");
+                            outputGrid.appendChild(mediaFallback);
                         }
                     });
 
@@ -277,7 +321,7 @@ async function startPolling(promptId, onUpdate) {
 
         if (statusStr === "success" || historyItem.outputs) {
             job.status = "completed";
-            job.outputs = extractImages(historyItem);
+            job.outputs = extractOutputs(historyItem);
             saveJobs();
             onUpdate();
             clearInterval(pollIntervals[promptId]);
@@ -287,15 +331,19 @@ async function startPolling(promptId, onUpdate) {
 
 }
 
-function extractImages(historyItem) {
-    return extractHistoryImageRefs(historyItem).map((img) => ({
+function extractOutputs(historyItem) {
+    return extractHistoryOutputRefs(historyItem).map((img) => ({
         filename: img.filename,
         subfolder: img.subfolder,
         type: img.type,
+        media_type: img.media_type,
         asset_hash: img.asset_hash,
         asset_api_id: img.asset_api_id,
         asset_api_required: img.asset_api_required,
         resolution: img.resolution,
+        content: img.content,
+        text_truncated: img.text_truncated,
+        unsupported_reason: img.unsupported_reason,
         view_url: openclawApi.buildViewUrlForRef(img),
     }));
 }
