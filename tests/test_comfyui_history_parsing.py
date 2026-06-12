@@ -104,6 +104,80 @@ class TestComfyUIHistoryParsing(unittest.TestCase):
         self.assertFalse(images[0]["asset_api_required"])
         self.assertEqual(images[0]["resolution"], "view")
 
+    def test_extract_images_accepts_top_level_hash_alias(self):
+        from services.comfyui_history import extract_images
+
+        history_item = {
+            "outputs": {
+                "2": {
+                    "images": [
+                        {
+                            "filename": "hash-alias.png",
+                            "type": "output",
+                            "hash": "blake3:alias123",
+                        }
+                    ]
+                }
+            }
+        }
+
+        images = extract_images(history_item)
+        self.assertEqual(len(images), 1)
+        self.assertEqual(images[0]["filename"], "hash-alias.png")
+        self.assertEqual(images[0]["asset_hash"], "blake3:alias123")
+        self.assertIn("filename=blake3%3Aalias123", images[0]["view_url"])
+        self.assertFalse(images[0]["asset_api_required"])
+        self.assertEqual(images[0]["resolution"], "view")
+
+    def test_extract_images_accepts_nested_hash_alias(self):
+        from services.comfyui_history import extract_images
+
+        history_item = {
+            "outputs": {
+                "2": {
+                    "images": [
+                        {
+                            "name": "nested-hash-alias.png",
+                            "asset": {
+                                "hash": "blake3:nested-alias",
+                            },
+                        }
+                    ]
+                }
+            }
+        }
+
+        images = extract_images(history_item)
+        self.assertEqual(len(images), 1)
+        self.assertEqual(images[0]["filename"], "nested-hash-alias.png")
+        self.assertEqual(images[0]["asset_hash"], "blake3:nested-alias")
+        self.assertIn("filename=blake3%3Anested-alias", images[0]["view_url"])
+        self.assertFalse(images[0]["asset_api_required"])
+        self.assertEqual(images[0]["resolution"], "view")
+
+    def test_extract_images_prefers_asset_hash_over_hash_alias(self):
+        from services.comfyui_history import extract_images
+
+        history_item = {
+            "outputs": {
+                "2": {
+                    "images": [
+                        {
+                            "filename": "preferred.png",
+                            "asset_hash": "blake3:preferred",
+                            "hash": "blake3:alias",
+                        }
+                    ]
+                }
+            }
+        }
+
+        images = extract_images(history_item)
+        self.assertEqual(len(images), 1)
+        self.assertEqual(images[0]["asset_hash"], "blake3:preferred")
+        self.assertIn("filename=blake3%3Apreferred", images[0]["view_url"])
+        self.assertNotIn("filename=blake3%3Aalias", images[0]["view_url"])
+
     def test_extract_images_preserves_asset_api_only_refs_as_explicit_no_go_contract(
         self,
     ):

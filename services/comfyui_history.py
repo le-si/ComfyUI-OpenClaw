@@ -34,13 +34,13 @@ def _pick_string(payload: Dict[str, Any], *keys: str) -> str:
 
 
 def _pick_asset_hash(image_ref: Dict[str, Any]) -> str:
-    asset_hash = _pick_string(image_ref, "asset_hash")
+    asset_hash = _pick_string(image_ref, "asset_hash", "hash")
     if asset_hash:
         return asset_hash
 
     nested = image_ref.get("asset")
     if isinstance(nested, dict):
-        return _pick_string(nested, "asset_hash")
+        return _pick_string(nested, "asset_hash", "hash")
     return ""
 
 
