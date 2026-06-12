@@ -37,7 +37,7 @@ describe("openclaw_host_surface", () => {
         });
         expect(container.dataset.openclawHostSurface).toBe("desktop");
         expect(container.dataset.openclawDesktopHost).toBe("true");
-        expect(container.dataset.openclawReferenceFrontend).toBe("1.46.6");
+        expect(container.dataset.openclawReferenceFrontend).toBe("1.46.13");
         expect(container.dataset.openclawDesktopVersion).toBe("0.9.4");
         expect(container.dataset.openclawDesktopCoreVersion).toBe("0.22.3");
         expect(container.dataset.openclawDesktopEmbeddedFrontend).toBe("1.43.18");

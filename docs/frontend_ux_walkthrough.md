@@ -46,7 +46,7 @@ If `assist_streaming` is unavailable or the stream transport degrades, Planner/R
 
 - OpenClaw treats standalone `ComfyUI_frontend` and `desktop` as distinct frontend host surfaces.
 - The sidebar stamps its resolved host surface and refreshed host-reference metadata at mount time so desktop bundle drift is explicit in diagnostics and regression tests.
-- The standalone Remote Admin Console now stamps the same host-surface metadata on its document root, including desktop `0.9.4`, bundled core `0.22.3`, embedded frontend `1.43.18`, and lagging parity relative to standalone frontend `1.46.6`.
+- The standalone Remote Admin Console now stamps the same host-surface metadata on its document root, including desktop `0.9.4`, bundled core `0.22.3`, embedded frontend `1.43.18`, and lagging parity relative to standalone frontend `1.46.13`.
 - Graph/widget compatibility code should route through shared host helpers to keep nested-subgraph and promoted-widget behavior aligned with current upstream host semantics.
 
 ## Standalone Remote Admin Console

@@ -21,7 +21,7 @@ Newest entries appear first.
 
 <summary><strong>ComfyUI host compatibility, queue recovery, model folders, and asset-output posture refreshed</strong></summary>
 
-- Refreshed the published compatibility baseline for ComfyUI `08e93a31` (post-`v0.22.3`), standalone frontend `1.46.6`, and Desktop `0.9.4` with core `0.22.3` plus embedded frontend `1.43.18`.
+- Refreshed the published compatibility baseline for ComfyUI `822aca19` (`v0.24.0-60-g822aca19`, pyproject `0.24.0`), standalone frontend `1.46.13`, and Desktop `0.9.4` with core `0.22.3` plus embedded frontend `1.43.18`.
 - Reconciled active prompt state after backend or SSE reconnects so completed prompts are not left in the active queue lane after a host recovery.
 - Updated sidebar registration to prefer the current ComfyUI sidebar store API and keep the deprecated frontend facade as a compatibility fallback for older hosts.
 - Aligned Model Manager and preflight diagnostics with current ComfyUI model folder names such as `text_encoders`, `diffusion_models`, `geometry_estimation`, and `detection`, while retaining legacy aliases such as `clip` and `unet`.

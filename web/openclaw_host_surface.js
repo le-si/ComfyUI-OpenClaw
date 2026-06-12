@@ -11,13 +11,13 @@ export const HOST_SURFACES = Object.freeze({
 
 export const HOST_SURFACE_REFERENCES = Object.freeze({
     [HOST_SURFACES.standaloneFrontend]: Object.freeze({
-        frontendVersion: "1.46.6",
+        frontendVersion: "1.46.13",
     }),
     [HOST_SURFACES.desktop]: Object.freeze({
         desktopVersion: "0.9.4",
         coreVersion: "0.22.3",
         embeddedFrontendVersion: "1.43.18",
-        standaloneFrontendVersion: "1.46.6",
+        standaloneFrontendVersion: "1.46.13",
         frontendParity: "lagging",
     }),
 });

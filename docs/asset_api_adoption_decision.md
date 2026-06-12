@@ -15,7 +15,7 @@
 - Current history/output-facing interop already accepts:
   - classic ComfyUI output refs (`filename`, `subfolder`, `type`)
   - asset-hash-backed refs that still resolve through `/view?filename=blake3:...`
-- Current ComfyUI `08e93a31` / post-`v0.22.3` reference facts:
+- Current ComfyUI `822aca19` / `v0.24.0-60-g822aca19` / pyproject `0.24.0` reference facts:
   - `/api/assets*` routes exist, but operational use is feature-gated behind `--enable-assets`
   - `/features` exposes the `assets` capability flag so hosts can report whether the asset system is enabled
   - frontend preview still resolves `blake3:...` asset hashes through `/view`, so hash-backed outputs do not require a direct `/api/assets` fetch

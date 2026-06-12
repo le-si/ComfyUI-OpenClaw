@@ -105,7 +105,7 @@ Deployment profiles and hardening references:
 
 <summary><strong>ComfyUI host compatibility, queue recovery, model folders, and asset-output posture refreshed</strong></summary>
 
-- Refreshed the published compatibility baseline for ComfyUI `08e93a31` (post-`v0.22.3`), standalone frontend `1.46.6`, and Desktop `0.9.4` with core `0.22.3` plus embedded frontend `1.43.18`.
+- Refreshed the published compatibility baseline for ComfyUI `822aca19` (`v0.24.0-60-g822aca19`, pyproject `0.24.0`), standalone frontend `1.46.13`, and Desktop `0.9.4` with core `0.22.3` plus embedded frontend `1.43.18`.
 - Reconciled active prompt state after backend or SSE reconnects so completed prompts are not left in the active queue lane after a host recovery.
 - Updated sidebar registration to prefer the current ComfyUI sidebar store API and keep the deprecated frontend facade as a compatibility fallback for older hosts.
 - Aligned Model Manager and preflight diagnostics with current ComfyUI model folder names such as `text_encoders`, `diffusion_models`, `geometry_estimation`, and `detection`, while retaining legacy aliases such as `clip` and `unet`.
@@ -406,7 +406,7 @@ New shell/tab wiring should use the shared text-safe DOM helpers in `web/opencla
 
 Canonical DOM/class ownership is now centered on `openclaw-*`; legacy `moltbot-*` class compatibility is still supported through shared runtime aliasing instead of duplicated markup in each tab template.
 
-The sidebar now also resolves and stamps its active host surface (`standalone_frontend` vs desktop-embedded host) and reference metadata at mount time, so Desktop `0.9.4` embedded-frontend lag against standalone frontend `1.46.6` is explicit and testable instead of inferred from runtime accidents.
+The sidebar now also resolves and stamps its active host surface (`standalone_frontend` vs desktop-embedded host) and reference metadata at mount time, so Desktop `0.9.4` embedded-frontend lag against standalone frontend `1.46.13` is explicit and testable instead of inferred from runtime accidents.
 
 Sidebar registration prefers ComfyUI's current sidebar store API and falls back to the deprecated frontend facade when running on older host bundles. Hosts without either sidebar API use the legacy menu fallback instead of failing extension setup.
 

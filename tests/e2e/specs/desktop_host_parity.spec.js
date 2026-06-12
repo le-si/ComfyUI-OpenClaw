@@ -26,7 +26,7 @@ test.describe('Desktop host parity lane', () => {
     const host = page.locator('#sidebar-tab-comfyui-openclaw');
     await expect(host).toHaveAttribute('data-openclaw-host-surface', 'standalone_frontend');
     await expect(host).toHaveAttribute('data-openclaw-desktop-host', 'false');
-    await expect(host).toHaveAttribute('data-openclaw-reference-frontend', '1.46.6');
+    await expect(host).toHaveAttribute('data-openclaw-reference-frontend', '1.46.13');
   });
 
   test('boots the sidebar under desktop host signals and keeps approvals interactive', async ({ page }) => {
@@ -38,7 +38,7 @@ test.describe('Desktop host parity lane', () => {
     const host = page.locator('#sidebar-tab-comfyui-openclaw');
     await expect(host).toHaveAttribute('data-openclaw-host-surface', 'desktop');
     await expect(host).toHaveAttribute('data-openclaw-desktop-host', 'true');
-    await expect(host).toHaveAttribute('data-openclaw-reference-frontend', '1.46.6');
+    await expect(host).toHaveAttribute('data-openclaw-reference-frontend', '1.46.13');
     await expect(host).toHaveAttribute('data-openclaw-desktop-version', '0.9.4');
     await expect(host).toHaveAttribute('data-openclaw-desktop-core-version', '0.22.3');
     await expect(host).toHaveAttribute('data-openclaw-desktop-embedded-frontend', '1.43.18');
@@ -58,7 +58,7 @@ test.describe('Desktop host parity lane', () => {
 
     await expect(page.locator('body')).toHaveAttribute('data-openclaw-host-surface', 'desktop');
     await expect(page.locator('body')).toHaveAttribute('data-openclaw-desktop-host', 'true');
-    await expect(page.locator('body')).toHaveAttribute('data-openclaw-reference-frontend', '1.46.6');
+    await expect(page.locator('body')).toHaveAttribute('data-openclaw-reference-frontend', '1.46.13');
     await expect(page.locator('body')).toHaveAttribute('data-openclaw-desktop-version', '0.9.4');
     await expect(page.locator('body')).toHaveAttribute('data-openclaw-desktop-core-version', '0.22.3');
     await expect(page.locator('body')).toHaveAttribute('data-openclaw-desktop-embedded-frontend', '1.43.18');
