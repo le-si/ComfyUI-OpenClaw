@@ -105,6 +105,13 @@ def create_download_task(
         raise manager._error(
             "validation_error", "expected_sha256 must be a 64-char hex string"
         )
+    exclusion_reason = manager._model_type_exclusion_reason(model_type)
+    if exclusion_reason:
+        raise manager._error(
+            "unsupported_model_type",
+            f"model_type '{str(model_type or '').strip()}' is not supported "
+            f"for managed install/import: {exclusion_reason}",
+        )
     manager._validate_url_policy(download_url)
     provenance = manager._validate_provenance(provenance)
     mtype = manager._norm_model_type(model_type)

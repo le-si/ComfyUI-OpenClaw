@@ -97,6 +97,11 @@ MODEL_TYPE_TO_SUBDIR = {
     "style_models": "style_models",
     "upscale_models": "upscale_models",
     "vae_approx": "vae_approx",
+    "gligen": "gligen",
+    "latent_upscale_models": "latent_upscale_models",
+    "hypernetworks": "hypernetworks",
+    "photomaker": "photomaker",
+    "model_patches": "model_patches",
     "audio_encoders": "audio_encoders",
     "background_removal": "background_removal",
     "frame_interpolation": "frame_interpolation",
@@ -104,17 +109,30 @@ MODEL_TYPE_TO_SUBDIR = {
     "optical_flow": "optical_flow",
     "detection": "detection",
 }
+MODEL_TYPE_EXCLUSION_REASONS = {
+    "configs": "configuration YAML is not a managed model-weight destination",
+    "diffusers": "diffusers is folder-valued and needs a directory-tree install design",
+    "classifiers": "classifiers are extensionless and need a dedicated content policy",
+    "custom_nodes": "custom_nodes are executable plugin code, not managed model files",
+}
 MODEL_TYPE_ALIASES = {
+    "config": "configs",
     "ckpt": "checkpoint",
     "checkpoints": "checkpoint",
     "loras": "lora",
     "controlnets": "controlnet",
     "control_net": "controlnet",
+    "diffuser": "diffusers",
     "clip": "text_encoders",
     "text_encoder": "text_encoders",
     "unet": "diffusion_models",
     "diffusion_model": "diffusion_models",
     "upscale_model": "upscale_models",
+    "latent_upscale_model": "latent_upscale_models",
+    "hypernetwork": "hypernetworks",
+    "photo_maker": "photomaker",
+    "model_patch": "model_patches",
+    "classifier": "classifiers",
     "audio_encoder": "audio_encoders",
     "geometry": "geometry_estimation",
     "detector": "detection",
@@ -249,11 +267,21 @@ def _truthy(value: str) -> bool:
     return str(value or "").strip().lower() in {"1", "true", "yes", "on"}
 
 
-def _norm_model_type(model_type: str) -> str:
+def _resolve_model_type_token(model_type: str) -> str:
     text = str(model_type or "").strip().lower()
     if not text:
+        return ""
+    return MODEL_TYPE_ALIASES.get(text, text)
+
+
+def _model_type_exclusion_reason(model_type: str) -> str:
+    return MODEL_TYPE_EXCLUSION_REASONS.get(_resolve_model_type_token(model_type), "")
+
+
+def _norm_model_type(model_type: str) -> str:
+    text = _resolve_model_type_token(model_type)
+    if not text:
         return DEFAULT_MODEL_TYPE
-    text = MODEL_TYPE_ALIASES.get(text, text)
     return text if text in MODEL_TYPE_TO_SUBDIR else "other"
 
 
@@ -506,6 +534,10 @@ class ModelManager:
     @staticmethod
     def _norm_model_type(value: str) -> str:
         return _norm_model_type(value)
+
+    @staticmethod
+    def _model_type_exclusion_reason(value: str) -> str:
+        return _model_type_exclusion_reason(value)
 
     @staticmethod
     def _norm_source(value: str) -> str:

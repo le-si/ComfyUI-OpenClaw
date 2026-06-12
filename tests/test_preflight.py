@@ -161,6 +161,42 @@ class TestPreflightBackend(AioHTTPTestCase):
             "detection",
         )
 
+    def test_inventory_model_types_track_current_comfyui_keys_and_exclude_custom_nodes(
+        self,
+    ):
+        with patch.object(
+            services.preflight, "folder_paths", MagicMock(), create=True
+        ) as mock_folder_paths:
+            mock_folder_paths.folder_names_and_paths = {
+                "configs": [],
+                "gligen": [],
+                "latent_upscale_models": [],
+                "hypernetworks": [],
+                "photomaker": [],
+                "classifiers": [],
+                "model_patches": [],
+                "custom_nodes": [],
+            }
+
+            model_types = services.preflight._resolve_inventory_model_types()
+
+        for model_type in (
+            "configs",
+            "diffusers",
+            "gligen",
+            "latent_upscale_models",
+            "hypernetworks",
+            "photomaker",
+            "classifiers",
+            "model_patches",
+            "geometry_estimation",
+            "optical_flow",
+            "detection",
+        ):
+            with self.subTest(model_type=model_type):
+                self.assertIn(model_type, model_types)
+        self.assertNotIn("custom_nodes", model_types)
+
     @patch("api.preflight_handler.check_rate_limit")
     @patch("api.preflight_handler.require_admin_token")
     @unittest_run_loop

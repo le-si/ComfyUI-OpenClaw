@@ -10,10 +10,13 @@ from pathlib import Path, PurePosixPath
 from unittest.mock import patch
 
 from services.model_manager import (
+    MODEL_TYPE_EXCLUSION_REASONS,
+    MODEL_TYPE_TO_SUBDIR,
     DownloadCancelled,
     DownloadTask,
     ModelManager,
     ModelManagerError,
+    _model_type_exclusion_reason,
     _norm_model_type,
 )
 from services.model_manager_transfer import (
@@ -138,14 +141,94 @@ class TestModelManagerService(unittest.TestCase):
         self.assertEqual(_norm_model_type("audio_encoders"), "audio_encoders")
         self.assertEqual(_norm_model_type("background_removal"), "background_removal")
         self.assertEqual(_norm_model_type("frame_interpolation"), "frame_interpolation")
+        self.assertEqual(_norm_model_type("gligen"), "gligen")
+        self.assertEqual(
+            _norm_model_type("latent_upscale_models"), "latent_upscale_models"
+        )
+        self.assertEqual(_norm_model_type("hypernetworks"), "hypernetworks")
+        self.assertEqual(_norm_model_type("photomaker"), "photomaker")
+        self.assertEqual(_norm_model_type("model_patches"), "model_patches")
         self.assertEqual(_norm_model_type("geometry_estimation"), "geometry_estimation")
         self.assertEqual(_norm_model_type("optical_flow"), "optical_flow")
         self.assertEqual(_norm_model_type("detection"), "detection")
         self.assertEqual(_norm_model_type("unet"), "diffusion_models")
         self.assertEqual(_norm_model_type("clip"), "text_encoders")
+        self.assertEqual(
+            _norm_model_type("latent_upscale_model"), "latent_upscale_models"
+        )
+        self.assertEqual(_norm_model_type("hypernetwork"), "hypernetworks")
+        self.assertEqual(_norm_model_type("model_patch"), "model_patches")
         self.assertEqual(_norm_model_type("geometry"), "geometry_estimation")
         self.assertEqual(_norm_model_type("detector"), "detection")
         self.assertEqual(_norm_model_type("diffusers"), "other")
+
+    def test_current_comfyui_model_type_support_and_exclusions_are_explicit(self):
+        supported = {
+            "checkpoint": "checkpoints",
+            "lora": "loras",
+            "vae": "vae",
+            "controlnet": "controlnet",
+            "embedding": "embeddings",
+            "text_encoders": "text_encoders",
+            "diffusion_models": "diffusion_models",
+            "clip_vision": "clip_vision",
+            "style_models": "style_models",
+            "upscale_models": "upscale_models",
+            "vae_approx": "vae_approx",
+            "gligen": "gligen",
+            "latent_upscale_models": "latent_upscale_models",
+            "hypernetworks": "hypernetworks",
+            "photomaker": "photomaker",
+            "model_patches": "model_patches",
+            "audio_encoders": "audio_encoders",
+            "background_removal": "background_removal",
+            "frame_interpolation": "frame_interpolation",
+            "geometry_estimation": "geometry_estimation",
+            "optical_flow": "optical_flow",
+            "detection": "detection",
+        }
+
+        for model_type, subdir in supported.items():
+            with self.subTest(model_type=model_type):
+                self.assertEqual(MODEL_TYPE_TO_SUBDIR[model_type], subdir)
+                self.assertEqual(_norm_model_type(model_type), model_type)
+
+        for excluded in ("configs", "diffusers", "classifiers", "custom_nodes"):
+            with self.subTest(excluded=excluded):
+                self.assertIn(excluded, MODEL_TYPE_EXCLUSION_REASONS)
+                self.assertEqual(_norm_model_type(excluded), "other")
+                self.assertTrue(_model_type_exclusion_reason(excluded))
+
+    @patch("services.model_manager.validate_outbound_url")
+    def test_create_download_task_rejects_known_excluded_current_folder_keys(
+        self, mock_validate
+    ):
+        payload = {
+            "model_id": "excluded-model",
+            "name": "Excluded Model",
+            "source": "catalog",
+            "source_label": "Catalog",
+            "download_url": "https://example.com/excluded.safetensors",
+            "expected_sha256": "a" * 64,
+            "provenance": {
+                "publisher": "OpenClaw",
+                "license": "OpenRAIL",
+                "source_url": "https://example.com/excluded",
+            },
+        }
+
+        for model_type in ("configs", "diffusers", "classifiers", "custom_nodes"):
+            with self.subTest(model_type=model_type):
+                with self.assertRaises(ModelManagerError) as ctx:
+                    self.manager.create_download_task(
+                        model_type=model_type,
+                        **payload,
+                    )
+                self.assertEqual(ctx.exception.code, "unsupported_model_type")
+                self.assertIn(model_type, ctx.exception.detail)
+
+        self.assertFalse(mock_validate.called)
+        self.assertEqual(self.manager._tasks, {})
 
     @patch(
         "services.model_manager.validate_outbound_url",

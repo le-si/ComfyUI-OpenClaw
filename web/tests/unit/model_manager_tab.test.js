@@ -88,4 +88,46 @@ describe("model_manager_tab", () => {
             expect.objectContaining({ task_id: "task-1", state: "completed" }),
         ]);
     });
+
+    it("lists only managed-install supported current ComfyUI folder keys", async () => {
+        apiMock.searchModels.mockResolvedValue({
+            ok: true,
+            data: { items: [] },
+        });
+        apiMock.listModelDownloadTasks.mockResolvedValue({
+            ok: true,
+            data: { tasks: [] },
+        });
+        apiMock.listModelInstallations.mockResolvedValue({
+            ok: true,
+            data: { installations: [] },
+        });
+
+        const container = document.createElement("div");
+        ModelManagerTab.render(container);
+        await vi.waitFor(() => {
+            expect(apiMock.searchModels).toHaveBeenCalled();
+        });
+
+        const options = Array.from(container.querySelectorAll("#mm-type option")).map(
+            (option) => option.value
+        );
+
+        expect(options).toEqual(expect.arrayContaining([
+            "text_encoders",
+            "diffusion_models",
+            "gligen",
+            "latent_upscale_models",
+            "hypernetworks",
+            "photomaker",
+            "model_patches",
+            "geometry_estimation",
+            "optical_flow",
+            "detection",
+        ]));
+        expect(options).not.toContain("configs");
+        expect(options).not.toContain("diffusers");
+        expect(options).not.toContain("classifiers");
+        expect(options).not.toContain("custom_nodes");
+    });
 });

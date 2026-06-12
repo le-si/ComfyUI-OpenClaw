@@ -48,6 +48,7 @@ _LEGACY_INVENTORY_CACHE_KEY = "inventory"
 _INVENTORY_LOCK = threading.RLock()
 _INVENTORY_SCAN_THREAD: threading.Thread | None = None
 _INVENTORY_ERROR_RETRY_SEC = 5
+_INVENTORY_EXCLUDED_MODEL_TYPES = {"custom_nodes"}
 
 # Heuristic mapping: input_key -> folder_paths type
 _INPUT_KEY_MAP = {
@@ -83,6 +84,7 @@ def _get_node_class_mappings() -> Dict[str, Any]:
 def _resolve_inventory_model_types() -> List[str]:
     model_types = [
         "checkpoints",
+        "configs",
         "loras",
         "vae",
         "embeddings",
@@ -94,7 +96,12 @@ def _resolve_inventory_model_types() -> List[str]:
         "style_models",
         "diffusers",
         "vae_approx",
+        "gligen",
+        "latent_upscale_models",
+        "hypernetworks",
         "photomaker",
+        "classifiers",
+        "model_patches",
         "audio_encoders",
         "background_removal",
         "frame_interpolation",
@@ -106,6 +113,8 @@ def _resolve_inventory_model_types() -> List[str]:
     ]
     if hasattr(folder_paths, "folder_names_and_paths"):
         for key in folder_paths.folder_names_and_paths.keys():
+            if key in _INVENTORY_EXCLUDED_MODEL_TYPES:
+                continue
             if key not in model_types:
                 model_types.append(key)
     return model_types

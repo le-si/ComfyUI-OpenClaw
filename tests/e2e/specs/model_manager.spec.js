@@ -145,6 +145,22 @@ test.describe('Model Manager Tab', () => {
     await waitForOpenClawReady(page);
     await clickTab(page, 'Model Manager');
 
+    const modelTypeOptions = await page.locator('#mm-type option').evaluateAll((options) => options.map((option) => option.value));
+    expect(modelTypeOptions).toEqual(expect.arrayContaining([
+      'gligen',
+      'latent_upscale_models',
+      'hypernetworks',
+      'photomaker',
+      'model_patches',
+      'geometry_estimation',
+      'optical_flow',
+      'detection',
+    ]));
+    expect(modelTypeOptions).not.toContain('configs');
+    expect(modelTypeOptions).not.toContain('diffusers');
+    expect(modelTypeOptions).not.toContain('classifiers');
+    expect(modelTypeOptions).not.toContain('custom_nodes');
+
     await expect(page.locator('#mm-search-results')).toContainText('Flux Test Model');
 
     const queueButton = page.locator('#mm-search-results').getByRole('button', { name: 'Queue Download' }).first();
