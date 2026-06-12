@@ -57,6 +57,24 @@ COMFYUI_URL = (
     or os.environ.get("MOLTBOT_COMFYUI_URL")
     or "http://127.0.0.1:8188"
 )
+# IMPORTANT: keep this fixed and prompt-free; ComfyUI forwards it into API-node hidden inputs.
+COMFY_USAGE_SOURCE = "comfyui-openclaw"
+
+
+def _build_queue_extra_data(
+    extra_data: Optional[Dict[str, Any]] = None,
+    *,
+    tenant_id: Optional[str] = None,
+) -> Dict[str, Any]:
+    payload_extra = dict(extra_data or {})
+    payload_extra.setdefault("comfy_usage_source", COMFY_USAGE_SOURCE)
+
+    openclaw_value = payload_extra.get("openclaw")
+    openclaw_extra = dict(openclaw_value) if isinstance(openclaw_value, dict) else {}
+    openclaw_extra.setdefault("tenant_id", tenant_id or get_current_tenant_id())
+    payload_extra["openclaw"] = openclaw_extra
+
+    return payload_extra
 
 
 async def submit_prompt(
@@ -111,13 +129,7 @@ async def submit_prompt(
         client_id = str(uuid.uuid4())
 
     payload = {"prompt": prompt_workflow, "client_id": client_id}
-
-    if extra_data:
-        payload["extra_data"] = extra_data
-
-    # S49: keep tenant context in queue metadata for cross-service traceability.
-    openclaw_extra = payload.setdefault("extra_data", {}).setdefault("openclaw", {})
-    openclaw_extra.setdefault("tenant_id", tenant_id or get_current_tenant_id())
+    payload["extra_data"] = _build_queue_extra_data(extra_data, tenant_id=tenant_id)
 
     # NOTE: Debug-only full payload logging for troubleshooting mismatched outputs.
     # Enable with OPENCLAW_DEBUG_PROMPT_PAYLOAD=1. This may include sensitive prompt content.

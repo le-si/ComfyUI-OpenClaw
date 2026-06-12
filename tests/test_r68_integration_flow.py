@@ -201,6 +201,18 @@ class TestR68IntegrationFlow(AioHTTPTestCase):
             # Correct inputs injected?
             workflow = sent_payload["prompt"]
             self.assertEqual(workflow["3"]["inputs"]["text"], "integration flow")
+            self.assertEqual(
+                sent_payload["extra_data"]["comfy_usage_source"],
+                "comfyui-openclaw",
+            )
+            self.assertEqual(
+                sent_payload["extra_data"]["openclaw"]["tenant_id"], "default"
+            )
+            self.assertIn("trace_id", sent_payload["extra_data"]["moltbot"])
+            self.assertNotIn(
+                "integration flow",
+                sent_payload["extra_data"]["comfy_usage_source"],
+            )
 
             # Verify Trace ID propagation
             self.assertIn("trace_id", data)

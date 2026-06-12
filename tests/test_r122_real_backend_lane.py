@@ -159,6 +159,14 @@ class TestR122RealBackendLane(AioHTTPTestCase):
         self.assertEqual(
             self._prompt_payload["prompt"]["3"]["inputs"]["text"], "real backend lane"
         )
+        self.assertEqual(
+            self._prompt_payload["extra_data"]["comfy_usage_source"],
+            "comfyui-openclaw",
+        )
+        self.assertNotIn(
+            "real backend lane",
+            self._prompt_payload["extra_data"]["comfy_usage_source"],
+        )
 
 
 if __name__ == "__main__":
