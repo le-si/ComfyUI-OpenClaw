@@ -19,13 +19,14 @@ Newest entries appear first.
 
 <details>
 
-<summary><strong>ComfyUI host compatibility, queue recovery, model folders, and asset-output posture refreshed</strong></summary>
+<summary><strong>ComfyUI host compatibility, media outputs, model folders, and prompt attribution refreshed</strong></summary>
 
 - Refreshed the published compatibility baseline for ComfyUI `822aca19` (`v0.24.0-60-g822aca19`, pyproject `0.24.0`), standalone frontend `1.46.13`, and Desktop `0.9.4` with core `0.22.3` plus embedded frontend `1.43.18`.
 - Reconciled active prompt state after backend or SSE reconnects so completed prompts are not left in the active queue lane after a host recovery.
 - Updated sidebar registration to prefer the current ComfyUI sidebar store API and keep the deprecated frontend facade as a compatibility fallback for older hosts.
-- Aligned Model Manager and preflight diagnostics with current ComfyUI model folder names such as `text_encoders`, `diffusion_models`, `geometry_estimation`, and `detection`, while retaining legacy aliases such as `clip` and `unet`.
-- Kept output previews on the bounded `/history` + `/view` contract, including `asset_hash` and `hash` aliases for hash-backed previews; upstream asset-only identifiers remain explicit fallback states unless a future feature requires direct `/api/assets` use.
+- Aligned Model Manager and preflight diagnostics with current ComfyUI model folder names, including newer managed keys such as `gligen`, `latent_upscale_models`, `hypernetworks`, `photomaker`, `model_patches`, `geometry_estimation`, and `detection`, while retaining legacy aliases such as `clip` and `unet`.
+- Made output parsing media-aware for current previewable result groups (`images`, `video`, `audio`, `3d`, and bounded `text`) while keeping image callbacks compatible and keeping asset-only identifiers as explicit fallback states instead of silently upgrading to `/api/assets`.
+- OpenClaw prompt submissions now include stable `comfy_usage_source` attribution when missing, without overwriting caller-provided attribution or copying prompt/tenant/trace content into that field.
 
 </details>
 

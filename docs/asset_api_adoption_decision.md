@@ -1,5 +1,12 @@
 # ComfyUI Asset API Adoption Decision (2026-04-16)
 
+## 2026-06-12 reconfirmation
+
+- Current output parsing is media-aware for ComfyUI result groups `images`, `video`, `audio`, `3d`, and bounded `text`.
+- File-like media refs still use `/view` when they provide `filename` or hash-backed preview metadata.
+- Text output previews are bounded and rendered as text, not HTML.
+- Asset-service-only identifiers remain explicit fallback states and still do not trigger automatic direct `/api/assets` fetches.
+
 ## 2026-05-31 reconfirmation
 
 - Current host reference evidence shows upstream asset responses may expose `hash` alongside `asset_hash`.
@@ -15,6 +22,7 @@
 - Current history/output-facing interop already accepts:
   - classic ComfyUI output refs (`filename`, `subfolder`, `type`)
   - asset-hash-backed refs that still resolve through `/view?filename=blake3:...`
+  - media-aware output groups (`images`, `video`, `audio`, `3d`, and bounded `text`)
 - Current ComfyUI `822aca19` / `v0.24.0-60-g822aca19` / pyproject `0.24.0` reference facts:
   - `/api/assets*` routes exist, but operational use is feature-gated behind `--enable-assets`
   - `/features` exposes the `assets` capability flag so hosts can report whether the asset system is enabled
@@ -31,7 +39,7 @@
 
 - **No-go for first-class `/api/assets` runtime adoption in phase 2.**
 - OpenClaw keeps `/history` + `/view` as the supported runtime contract for normal output handling.
-- Asset-api-only identifiers are now treated as explicit unsupported contracts rather than implicit fetch targets.
+- Asset-api-only identifiers are treated as explicit unsupported contracts rather than implicit fetch targets.
 
 ## Rationale
 
@@ -44,6 +52,8 @@
 - Preserve current supported refs exactly:
   - classic refs -> `/view?filename=...&type=...`
   - asset-hash-backed refs -> `/view?filename=blake3:...`
+  - file-like media refs -> `/view` fallback/link surfaces when preview metadata is present
+  - bounded text refs -> escaped text surfaces, not HTML
 - For refs that expose only asset-service identifiers and are not representable through `/view`:
   - keep them in normalized output payloads
   - mark them as `asset_api_required`

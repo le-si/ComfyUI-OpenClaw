@@ -1,8 +1,8 @@
 # OpenClaw API Contract (v1)
 
 > **Status**: normative
-> **Version**: 1.0.11
-> **Date**: 2026-06-04
+> **Version**: 1.0.12
+> **Date**: 2026-06-12
 
 This document defines the public API contract for OpenClaw. It serves as the authoritative baseline for client compatibility and breaking change policies.
 
@@ -75,6 +75,15 @@ Preflight workflow diagnostics contract:
 - suppressed findings represent muted or bypassed root nodes or subgraph branches when the submitted workflow shape provides enough frontend ancestry metadata
 - clients SHOULD display suppressed findings as informational context rather than blocking workflow readiness
 
+History and output-ref contract:
+
+- history/output consumers SHOULD treat the normalized output-ref contract as media-aware
+- current previewable output groups are `images`, `video`, `audio`, `3d`, and bounded `text`
+- file-like refs that can be represented through `/view` remain on the bounded `/history` + `/view` preview path
+- refs with `asset_hash` or `hash` values that map to `blake3:...` preview through `/view?filename=blake3:...`
+- refs that only expose upstream asset-service identifiers remain explicit `asset_api_required` states; clients MUST NOT silently infer direct `/api/assets` fetching from that marker
+- legacy callback/image-only consumers may continue using image-only extraction paths; non-image media refs should be rendered as explicit fallback/link/text surfaces unless the client implements a safe media-specific renderer
+
 ### 1.2 Webhooks & Triggers
 
 **Auth**: Requires configured webhook secret or Admin Token.
@@ -85,6 +94,13 @@ Preflight workflow diagnostics contract:
 | `POST` | `/webhook/submit` | `/moltbot/webhook/submit` | Webhook Secret | Validate and submit job from webhook payload. |
 | `POST` | `/webhook/validate` | `/moltbot/webhook/validate` | Webhook Secret | Dry-run validation of webhook payload. |
 | `POST` | `/triggers/fire` | `/moltbot/triggers/fire` | Admin | Fire an ad-hoc workflow trigger from external system. |
+
+ComfyUI prompt submission interoperability:
+
+- OpenClaw-generated ComfyUI `/prompt` payloads include `extra_data.comfy_usage_source = "comfyui-openclaw"` when the caller has not supplied a value
+- caller-provided `extra_data.comfy_usage_source` is preserved
+- attribution is a stable product identifier and MUST NOT include prompt text, tenant ids, trace ids, URLs, tokens, or secrets
+- existing `extra_data.openclaw` and legacy `extra_data.moltbot` metadata remain caller-owned except for OpenClaw tenant metadata insertion under `extra_data.openclaw.tenant_id`
 
 ### 1.3 Assist, LLM & Chat
 

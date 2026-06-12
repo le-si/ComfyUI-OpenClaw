@@ -91,7 +91,7 @@ Notes:
 - Runtime cache and sandbox scratch paths are generated state, not package resources.
 - OpenClaw does not automatically repair, migrate, or delete runtime dependency caches.
 
-## Jobs preview shows an explicit asset fallback state instead of an image preview
+## Jobs preview shows an explicit media or asset fallback state
 
 Current OpenClaw builds keep `/history` + `/view` as the supported runtime preview contract for job results.
 
@@ -101,6 +101,7 @@ What this means:
 
 - `asset_api_required` is a bounded compatibility state, not a generic parser failure.
 - Classic history refs and hash-backed refs exposed as `asset_hash` or `hash` that still map onto `/view` should continue to preview normally.
+- Current media-aware outputs can include `images`, `video`, `audio`, `3d`, and bounded `text`; images render as thumbnails, text renders as escaped bounded text, and other file-like media may appear as explicit fallback/link tiles instead of image elements.
 - If an operator workflow starts depending on direct asset-service identifiers, treat that as a contract gap and review [`docs/asset_api_adoption_decision.md`](asset_api_adoption_decision.md) before widening the runtime dependency.
 
 ## Verify audit-chain continuity after restart or rotation

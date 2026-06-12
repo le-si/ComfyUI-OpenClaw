@@ -14,7 +14,7 @@ This document summarizes the current OpenClaw sidebar UI structure and how to ve
 - Tabs: `web/openclaw_tabs.js` manages tab registration, rendering, and remount safety.
 - API: `web/openclaw_api.js` provides a normalized fetch wrapper and OpenClaw endpoints (legacy Moltbot endpoints still work).
 - Host surface: `web/openclaw_host_surface.js` resolves the active frontend host surface and stamps explicit metadata so standalone frontend vs desktop-embedded behavior stays testable.
-- Output refs: `web/openclaw_asset_refs.js` normalizes classic history refs and newer asset-backed output refs onto the same bounded `/view` preview contract, while keeping asset-service-only refs explicit as a fallback state instead of silently auto-fetching `/api/assets`.
+- Output refs: `web/openclaw_asset_refs.js` normalizes classic history refs, `asset_hash`/`hash` refs, and current previewable media groups (`images`, `video`, `audio`, `3d`, bounded `text`) onto one media-aware contract. File-like refs stay on the bounded `/view` preview path, text refs stay escaped and bounded, and asset-service-only refs remain explicit fallback states instead of silently auto-fetching `/api/assets`.
 - Styles: `web/openclaw.css` provides shared design tokens and component classes.
 - Errors and compatibility helpers: `web/openclaw_utils.js` provides `showError()` / `clearError()` plus runtime legacy-class alias helpers used to keep canonical `openclaw-*` markup compatible with existing `moltbot-*` selectors.
 
@@ -24,7 +24,7 @@ Refactor note:
 - New tab markup should use canonical `openclaw-*` classes; legacy `moltbot-*` aliases are generated centrally at runtime instead of being duplicated in each template.
 - New host sidebar registration changes should stay in `web/openclaw_sidebar_registration.js` rather than duplicating ComfyUI frontend API detection inside the extension entrypoint.
 - Host-sensitive behaviors should consume the shared host-surface helper rather than inferring desktop vs standalone frontend from ad-hoc globals.
-- Output preview flows should consume the shared asset-ref normalizer rather than assembling `/view` URLs independently in each tab or silently widening runtime behavior to direct `/api/assets` fetches.
+- Output preview flows should consume the shared asset-ref normalizer rather than assembling `/view` URLs independently in each tab, treating non-image media as broken images, or silently widening runtime behavior to direct `/api/assets` fetches.
 - Explorer/preflight consumers should treat inventory diagnostics as snapshot-first and surface `snapshot_ts`, `scan_state`, `stale`, and `last_error` instead of blocking the UI on full rescans.
 - Explorer/preflight rendering should keep actionable missing-node/model failures separate from suppressed inactive-branch findings returned by the backend.
 
@@ -83,7 +83,7 @@ If `assist_streaming` is unavailable or the stream transport degrades, Planner/R
 3. Confirm the sidebar host-surface metadata resolves correctly for the current environment instead of defaulting silently.
 4. Planner: click **Plan Generation** with minimal input and confirm either live preview/stage updates appear (when streaming is supported) or a readable fallback result/error appears.
 5. Refiner: click **Refine Prompts** (with or without image) and confirm either live preview/stage updates appear (when streaming is supported) or a readable fallback result/error appears.
-6. Jobs: verify output previews still resolve for both classic history refs and any asset-backed refs surfaced by callback/history payloads, that asset-service-only refs stay explicit as a bounded fallback state, and that repeated polls do not duplicate rows after reconnect/resume.
+6. Jobs: verify output previews still resolve for classic history refs, hash-backed refs, and supported media-aware refs (`images`, `video`, `audio`, `3d`, bounded `text`); asset-service-only refs should stay explicit as a bounded fallback state, and repeated polls should not duplicate rows after reconnect/resume.
 7. Explorer: verify preflight inventory can show `refreshing` / `stale` / `error` state without freezing the tab while deep scan work continues, and verify inactive-branch suppressed findings render separately from actionable failures.
 8. Library/Approvals: if backend endpoints are not enabled, confirm the UI shows a clear error state (no crashes).
 9. If you simulate/fake a stream failure in dev tools, confirm Planner/Refiner retry through the classic non-stream path without duplicate submits or broken loading state.
