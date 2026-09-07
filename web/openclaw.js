@@ -6,6 +6,7 @@ import { app } from "../../../scripts/app.js";
 import { openclawUI } from "./openclaw_ui.js";
 import { installGlobalErrorHandlers } from "./global_error_handler.js";
 import { openclawApi } from "./openclaw_api.js";
+import { fetchApi } from "./openclaw_comfy_api.js";
 // CRITICAL: registerContextToolbox transitively imports app.js from web/extensions/context_toolbox.js.
 // If that module uses a wrong relative path (e.g. ../../scripts/app.js), the import chain fails at module-load time
 // and this whole extension never reaches setup(), which makes the OpenClaw sidebar disappear.
@@ -134,8 +135,11 @@ app.registerExtension({
         console.log("[OpenClaw] Extension loading...");
 
         // F26: Boot Diagnostics
+        // Narrow by construction: if the host's /scripts/api.js cannot load at all, the
+        // import graph fails before this runs. What is left to detect is a host that ships
+        // the module without a callable fetchApi, so the message says that and nothing wider.
         if (typeof fetchApi !== "function") {
-            console.warn("[OpenClaw] ⚠️ Critical: fetchApi shim is missing. Backend calls may fail.");
+            console.warn("[OpenClaw] ⚠️ Host API shim exposes no callable fetchApi. Backend calls may fail.");
         }
         if (!app) {
             console.warn("[OpenClaw] ⚠️ Critical: ComfyUI 'app' instance is missing.");

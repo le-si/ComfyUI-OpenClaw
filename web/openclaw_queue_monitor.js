@@ -1,4 +1,14 @@
 import { openclawApi } from "./openclaw_api.js";
+import { openclawNotifications } from "./openclaw_notifications.js";
+
+// Stable dedupe keys for the connectivity alerts this monitor persists. The banner manager
+// derives them as `banner:<id>`, so retiring a resolved condition has to use the same shape.
+const CONNECTIVITY_DEDUPE_KEYS = Object.freeze([
+    "banner:connection_lost",
+    "banner:health_check_failed",
+    "banner:health_check_exception",
+]);
+const BACKPRESSURE_DEDUPE_KEY = "banner:backpressure";
 
 function extractQueuePromptId(entry) {
     if (!entry) return "";
@@ -36,12 +46,14 @@ export class QueueMonitor {
         this.bannerTTL = 5000;
         this.startupGraceMs = Number.isFinite(deps.startupGraceMs) ? deps.startupGraceMs : 30000;
         this.disconnectAlertThreshold = Number.isFinite(deps.disconnectAlertThreshold) ? deps.disconnectAlertThreshold : 3;
+        this.notifications = deps.notifications || openclawNotifications;
         this.es = null;
         this.isConnected = true;
         this.startedAt = this.now();
         this.disconnectFailures = 0;
         this.hasObservedHealthyBackend = false;
         this.disconnectAlertActive = false;
+        this.disconnectNoticeShown = false;
         this.activePromptIds = new Set();
     }
 
@@ -163,6 +175,8 @@ export class QueueMonitor {
                             payload: "explorer",
                         },
                     });
+                } else {
+                    this._resolveNotifications([BACKPRESSURE_DEDUPE_KEY]);
                 }
             } else {
                 this._registerDisconnect("health_check_failed", "\u26A0\uFE0F Backend Unreachable");
@@ -203,9 +217,36 @@ export class QueueMonitor {
         this.hasObservedHealthyBackend = true;
         this.disconnectFailures = 0;
         this.disconnectAlertActive = false;
+        this.disconnectNoticeShown = false;
+        this._resolveNotifications(CONNECTIVITY_DEDUPE_KEYS);
+    }
+
+    /**
+     * Retire persisted alerts for conditions that have ended.
+     *
+     * IMPORTANT: a persisted alert outlives the condition that raised it, and a dismissed one
+     * leaves a tombstone that suppresses the identical alert for the life of the browser
+     * profile. Only this monitor knows a connectivity condition has ended, so it has to say
+     * so; otherwise a restart leaves a permanent error the operator can only clear by
+     * dismissing it, which then mutes the next real outage.
+     */
+    _resolveNotifications(dedupeKeys) {
+        if (typeof this.notifications?.resolveByDedupeKey !== "function") {
+            return;
+        }
+        for (const dedupeKey of dedupeKeys) {
+            this.notifications.resolveByDedupeKey(dedupeKey);
+        }
     }
 
     _shouldAlertDisconnect() {
+        // A persisted alert is a durable claim about the backend, so it waits for the same
+        // confirmation in both states. What the healthy-once path skips is only the wall-clock
+        // grace below, which exists purely to absorb the bootstrap race.
+        if (this.disconnectFailures < this.disconnectAlertThreshold) {
+            return false;
+        }
+
         if (this.hasObservedHealthyBackend) {
             return true;
         }
@@ -213,16 +254,26 @@ export class QueueMonitor {
         const elapsed = Math.max(0, this.now() - this.startedAt);
         // IMPORTANT: sidebar bootstrap can legitimately race backend startup; do not persist disconnect
         // alerts until the backend was healthy once or the initial misses are sustained beyond the grace window.
-        return (
-            elapsed >= this.startupGraceMs &&
-            this.disconnectFailures >= this.disconnectAlertThreshold
-        );
+        return elapsed >= this.startupGraceMs;
     }
 
     _registerDisconnect(id, message) {
         this.disconnectFailures += 1;
         this.isConnected = false;
         if (!this._shouldAlertDisconnect()) {
+            // Below the confirmation threshold. Tell the operator now, but leave no record: a
+            // blip that clears on the next poll must not outlive itself. Bootstrap stays
+            // silent, because the sidebar can legitimately start before the backend does.
+            if (this.hasObservedHealthyBackend && !this.disconnectNoticeShown) {
+                this.disconnectNoticeShown = true;
+                this.showBanner({
+                    severity: "warning",
+                    message,
+                    id: `${id}_pending`,
+                    source: "queue-monitor",
+                    persist: false,
+                });
+            }
             return;
         }
 

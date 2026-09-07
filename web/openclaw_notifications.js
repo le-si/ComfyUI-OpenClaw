@@ -194,6 +194,31 @@ export class OpenClawNotifications {
         return { ...target };
     }
 
+    /**
+     * Retire the entry for a condition that has ended, active or dismissed alike.
+     *
+     * IMPORTANT: this removes rather than dismisses. A dismissed entry is a tombstone that
+     * notify() uses to suppress an identical alert, which is what keeps a polling producer
+     * from resurrecting an error the operator dismissed while the condition was still
+     * ongoing. That suppression is correct and must survive, so a condition that has *ended*
+     * has to leave no entry at all - otherwise the tombstone outlives the condition and
+     * mutes the next genuine occurrence for the life of the browser profile. Only the
+     * producer knows a condition ended, so it owns the call.
+     *
+     * @param {string} dedupeKey - the stable key the producer raised the alert under
+     * @returns {object|null} the removed entry, or null when nothing matched
+     */
+    resolveByDedupeKey(dedupeKey) {
+        const key = String(dedupeKey || "").trim();
+        if (!key) return null;
+        const index = this.entries.findIndex((entry) => entry.dedupe_key === key);
+        if (index === -1) return null;
+        const [removed] = this.entries.splice(index, 1);
+        this._save();
+        this._emit();
+        return { ...removed };
+    }
+
     clearAll() {
         this.entries = [];
         this._save();
