@@ -140,6 +140,27 @@ Failed preflight checks must be resolved before proceeding with full test suites
 - Hosted evidence is supplemental. The Windows Full Gate remains repository acceptance
   authority unless an item-specific finalized plan explicitly requires more.
 
+## Workflow-Verified Fix Closure (Mandatory)
+
+This rule applies only to items whose fix is verified by a CI workflow. It adds a **closing**
+requirement and does not make Hosted CI an acceptance prerequisite; the Windows Full Gate remains
+the repository-wide acceptance authority.
+
+- Closing evidence must include a run of that workflow on the branch the fix lands on, started
+  after the fix is on that branch.
+- A run on a topic branch is enough to accept the change and not enough to close the item. The
+  branch that ships is the one whose status other people read.
+- A workflow whose most recent run on that branch predates the fix is **stale, not passing**. The
+  item stays open until a qualifying run exists. This is the case a green-badge glance misses,
+  because there is a green run — just not where it counts.
+- Verify with `scripts/check_workflow_fix_closure.py --workflow <file> --branch <branch>
+  --fix-commit <sha>`. It reports a missing run, a failed run, and a stale run as distinct
+  reasons, because they call for different actions.
+
+The rule exists because the repository once advertised a defect that had already been fixed: the
+fix was verified on a topic branch and merged, the lane's schedule was weekly, and the branch it
+landed on kept displaying the pre-fix failure until someone re-triaged a closed bug.
+
 ## CodeQL Policy
 
 - Repository-native CodeQL configuration lives in `.github/workflows/codeql.yml`.

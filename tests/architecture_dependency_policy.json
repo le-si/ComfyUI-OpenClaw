@@ -120,6 +120,7 @@
       "scripts/check_deployment_profile.py",
       "scripts/check_openapi_sync.py",
       "scripts/check_supply_chain_hardening.py",
+      "scripts/check_workflow_fix_closure.py",
       "scripts/check_workspace_hygiene.py",
       "scripts/compatibility_matrix_refresh.py",
       "scripts/contract_digest.py",
