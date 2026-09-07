@@ -50,7 +50,8 @@ interface BannerStatus {
 - **Monitoring**: Polls `/health` every 10s.
 - **Triggers**: Checks `stats.observability.total_dropped > 0`.
 - **Display**: Simple DOM injection of canonical `.openclaw-banner` markup; legacy `.moltbot-banner` compatibility selectors remain available through centralized runtime aliasing.
-- **Connectivity posture**: Queue-monitor disconnect warnings should tolerate initial sidebar/bootstrap races and only escalate after bounded repeated failure or post-healthy disconnect evidence, so transient startup misses do not become durable incident noise.
+- **Connectivity posture**: Queue-monitor disconnect handling separates telling the operator from recording the incident. The first failed check raises a transient, non-persisted warning so the operator learns immediately; a durable error is written only after bounded repeated failure. Bootstrap stays silent in both respects, because the sidebar can legitimately start before the backend does, and consecutive-failure counting resets on any healthy observation so isolated blips cannot accumulate. A transient startup miss, or a host restart that completes within the confirmation window, therefore leaves no durable incident record.
+- **Connectivity resolution**: When connectivity is restored, the queue monitor retires the durable connectivity entry rather than leaving it to be cleared by hand; the high-load warning is retired the same way once the host reports no dropped events. A persisted alert describes an active condition, so a condition that has ended does not keep a row.
 - **Limitations**: No 'info'/'success' states, simplistic dedupe.
 
 ## 1.1 Notification Center (F66)
@@ -83,7 +84,8 @@ interface NotificationEntry {
 
 - Warning/error banners and selected operator toasts are mirrored into the in-app notification center.
 - Entries are deduplicated by source-specific keys and persisted in local storage across reloads.
-- `Dismiss` hides an entry from the active list without deleting the historical record from storage.
+- `Dismiss` hides an entry from the active list without deleting the historical record from storage. While that record stands, an identical alert from the same source is suppressed rather than resurrected, so a polling producer cannot undo the operator's dismissal while the condition is still ongoing.
+- Producers must therefore resolve a condition that has *ended*, which removes the entry outright. Resolution is what allows the same alert to appear again the next time the condition genuinely occurs; without it, one dismissal would silence that alert for the life of the browser profile.
 - `Acknowledge` clears unread state while keeping the entry visible.
 - Notification `message` / `source` fields are treated as untrusted text at the render sink and must stay escaped before DOM insertion; notification content is not a supported HTML surface.
 - Sources with jump targets should attach a tab/action deep link so operators can navigate directly to the affected surface.

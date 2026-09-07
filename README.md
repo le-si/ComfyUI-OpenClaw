@@ -91,6 +91,34 @@ Deployment profiles and hardening references:
 
 <details>
 
+<summary><strong>Operator alerts now retire when their condition ends</strong></summary>
+
+- A dismissed alert can appear again. Previously, dismissing a notification left a permanent
+  record that suppressed any identical alert for the life of that browser profile, so
+  dismissing a connectivity error silently disabled connectivity errors for good. Producers
+  now resolve a condition that has ended, which clears the record and lets a genuine
+  recurrence show. Dismissing an error while its condition is still ongoing still works as
+  before, so a polling check cannot undo the dismissal.
+- Connectivity errors are retired automatically when the connection returns, instead of
+  remaining on screen as a red error describing a condition that ended minutes earlier. The
+  high-load warning is retired the same way once the host stops dropping events.
+- A durable connectivity error is now written only after repeated consecutive failures. The
+  operator is still warned immediately on the first failed health check, but that immediate
+  warning leaves no record, so a routine ComfyUI restart no longer leaves a permanent error
+  behind. Isolated blips do not accumulate, because the failure count resets on any healthy
+  check.
+- A startup diagnostic that reported a missing host API shim on every page load was repaired.
+  It checked an identifier the module never imported, so it always fired even though the shim
+  was working correctly; it now checks the real binding and describes only what it can
+  actually detect.
+- Verified against a running ComfyUI host: a healthy session leaves no stored alerts, a
+  sustained outage records exactly one, recovery clears it, and the false startup warning is
+  gone.
+
+</details>
+
+<details>
+
 <summary><strong>Frontend test files no longer shipped to browsers, and real-host verification executed</strong></summary>
 
 - The frontend test suite no longer lives inside the served web directory. ComfyUI publishes
@@ -173,34 +201,6 @@ Deployment profiles and hardening references:
   security checks, DOM behavior, and host compatibility.
 - Promoted the governed backend coverage floor to 55% using consecutive release-cycle evidence,
   all-hotspot regression ownership, atomic config checks, and fail-closed evidence validation.
-
-</details>
-
-<details>
-
-<summary><strong>Secure jobs visibility, host compatibility, output previews, and graph guards refreshed</strong></summary>
-
-- `GET /openclaw/jobs` now provides an Admin-only, versioned jobs view with bounded
-  status/workflow filtering, sorting, pagination, and privacy-minimized summaries across
-  pending, in-progress, completed, failed, and cancelled work.
-- Jobs listing distinguishes an authoritative empty snapshot from unsupported or
-  unavailable host contracts and never returns raw prompts, workflows, execution errors,
-  tracebacks, current inputs/outputs, tenant/client/trace identifiers, or reasoning text.
-- Authorized connector operators can use `/jobs` (plus `jobs` or `queue`) for a bounded
-  authoritative summary. The connector validates the response contract, displays only
-  aggregate counts and short job IDs, and uses a coarse queue-count fallback only for
-  explicit host-contract/backend unavailability.
-- Published host compatibility notes pin ComfyUI source review `31dfbd4c` / `0.34.0` with its
-  bundled frontend `1.51.9`, the reproducible standalone frontend release `1.54.3`, legacy
-  Desktop, and current managed-install Comfy-Desktop as separate references. Source review,
-  repository validation, and real-host validation are recorded as independent evidence states.
-- Python 3.13 is the current locally validated baseline. Python 3.10-3.12 remain compatibility
-  targets pending current exact-version evidence, Python 3.14 remains best effort, and versions
-  below 3.10 are unsupported by the package contract.
-- Output previews keep filename-backed refs first-class, accept optional `asset_hash` / `hash` metadata when present, and leave asset-service-only identifiers as explicit fallback states.
-- LINE and WhatsApp connector media URLs now force dangerous active content such as SVG/HTML/JS/CSS/XML to download with no-sniff response headers while preserving safe image delivery.
-- Job Monitor now treats HDR `.exr` and `.hdr` image outputs as explicit source-preview fallback links instead of normal thumbnails, matching the current host expectation without bundling a HDR viewer.
-- Parameter Lab and graph-helper coverage now preserve non-numeric node IDs and promoted-widget source metadata, while structured color/box widget inputs stay out of missing-model diagnostics.
 
 </details>
 
@@ -563,11 +563,15 @@ The sidebar includes a persistent `Notification Center` for operator-facing aler
 - warning/error banners and selected durable toasts are mirrored into a local notification store
 - entries are deduplicated by source-specific keys and keep an unread count
 - `Acknowledge` clears unread state without hiding the item
-- `Dismiss` removes the item from the active panel while preserving historical storage
+- `Dismiss` removes the item from the active panel while preserving historical storage, and an identical alert stays suppressed while that record stands, so a background check cannot undo your dismissal while the condition is still ongoing
+- entries are retired automatically once the condition that raised them ends, which is also what allows the same alert to appear again the next time it genuinely occurs
 - notification message/source fields are rendered as escaped text, not trusted as HTML, so operator-facing payloads cannot turn stored notification content into live markup
 - action-enabled entries can deep-link back to the affected surface, such as `Model Manager` or `Jobs`
 
 Current examples include queue-monitor incidents and managed-model failures that need operator follow-up.
+Connectivity incidents are recorded only after repeated consecutive failures, so a routine ComfyUI
+restart does not leave a standing error; you are still warned immediately on the first failed check
+by a transient banner that leaves no record.
 
 ### In-canvas context toolbox
 
