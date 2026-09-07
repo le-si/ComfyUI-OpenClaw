@@ -30,7 +30,6 @@ import hashlib
 import json
 import ntpath
 import os
-import secrets
 import shutil
 import subprocess
 import sys
@@ -52,9 +51,6 @@ PEER_FIXTURE_SOURCE = (
 )
 PEER_FIXTURE_DIR_NAME = "openclaw-smoke-peer"
 AUTHORIZATION_ENV = "OPENCLAW_REAL_HOST_SMOKE_AUTHORIZED"
-# The product refuses to start when it is bound explicitly without authentication,
-# so the lane supplies a token rather than disabling the check that says so.
-ADMIN_TOKEN_ENV = "OPENCLAW_ADMIN_TOKEN"
 DANGEROUS_BIND_OVERRIDE_ENV = "OPENCLAW_SECURITY_DANGEROUS_BIND_OVERRIDE"
 SHA256_HEX_LENGTH = 64
 READINESS_POLL_SECONDS = 2.0
@@ -147,11 +143,25 @@ def assert_subject_runnable(subject: dict[str, Any]) -> None:
 def build_host_args(
     policy: dict[str, Any], subject: dict[str, Any], port: int
 ) -> list[str]:
-    """Assemble the host argv, asserting exposure rather than assuming a default.
+    """Assemble the host argv.
 
-    The host treats a bare listen flag as every interface, so the bind address is
-    always stated explicitly instead of inherited from an upstream default that
-    could change under the pin.
+    HOTSPOT: `--listen` must not be passed. This reverses an earlier decision to
+    state the bind explicitly, and the reason is not visible from this file alone.
+    `services/posture/effective.py` classifies exposure as `"--listen" in sys.argv`
+    without reading the value, so `--listen 127.0.0.1` - only a spelling of the
+    host's own default - is treated as network-exposed. The product then treats
+    exposure without authentication as fatal, which forced this lane to configure an
+    admin token; and with one configured, `require_admin_token` requires a matching
+    header while `resolve_token_info` downgrades loopback from ADMIN to INTERNAL.
+    The browser never had that token, so every admin-class route answered 403 and
+    every browser assertion in the lane failed. Workflow run 34109004949 is that
+    failure.
+
+    The bind is not weaker for being implicit: the core is pinned by commit, and
+    `comfy/cli_args.py` gives `--listen` `default="127.0.0.1"` at that commit. It is
+    also no longer taken on trust - `parseHostBindOrigin` reads the origin back out
+    of the host's own startup line and the spec asserts it, which is what the host
+    did rather than what this function asked for.
     """
     runtime = policy["runtime"]
     bind_host = runtime["bind_host"]
@@ -160,7 +170,7 @@ def build_host_args(
     if not isinstance(port, int) or isinstance(port, bool) or not 1024 <= port <= 65535:
         raise SmokeError(f"port must be an unprivileged integer port, got {port!r}")
 
-    args = [*runtime["required_args"], "--port", str(port), "--listen", bind_host]
+    args = [*runtime["required_args"], "--port", str(port)]
     front_end_arg = subject.get("front_end_version_arg")
     if front_end_arg:
         args += ["--front-end-version", front_end_arg]
@@ -423,20 +433,26 @@ def start_host(
     The log handle is returned rather than left to the garbage collector, so
     teardown can close it deterministically on every path.
 
-    The host is given a per-run admin token because the lane binds explicitly.
-    `services/security_gate.py` treats the presence of `--listen` as exposure -
-    deliberately, since a bare `--listen` means every interface - and refuses to
-    start without authentication. Without a token the product does not merely warn:
-    it raises and ComfyUI reports `IMPORT FAILED`, so every assertion in this lane
-    would run against a host with no OpenClaw in it. A random per-run token is what
-    a correct operator binding explicitly would set, and it is used rather than
-    `OPENCLAW_SECURITY_DANGEROUS_BIND_OVERRIDE` because a compatibility lane must
-    not validate the product with the product's own safety check disabled.
+    HOTSPOT: the lane must configure no admin token, and restoring one is the
+    single easiest way to break this lane back to where it was. `build_host_args`
+    passes no `--listen`, so the host is not classified as network-exposed and the
+    startup gate is satisfied with no authentication configured at all - the posture of
+    a default operator install, which is what a compatibility lane should measure.
+
+    Setting `OPENCLAW_ADMIN_TOKEN` here would switch `require_admin_token` to header
+    authentication and `resolve_token_info` from ADMIN to INTERNAL. The browser this
+    lane drives has no token and no way to be given one without writing a live
+    secret into the Playwright traces this workflow uploads publicly. Every
+    admin-class route would answer 403 and every test in the spec would fail on its
+    end-of-test request audit, while the runner's own unit tests stayed green.
+
+    `OPENCLAW_SECURITY_DANGEROUS_BIND_OVERRIDE` is still stripped rather than set.
+    There is now nothing to override, and a compatibility lane must never validate
+    the product with the product's own safety check switched off.
     """
     args = build_host_args(policy, subject, port)
     paths.log_file.parent.mkdir(parents=True, exist_ok=True)
     env = dict(os.environ)
-    env[ADMIN_TOKEN_ENV] = secrets.token_urlsafe(32)
     env.pop(DANGEROUS_BIND_OVERRIDE_ENV, None)
     handle = paths.log_file.open("wb")
     try:

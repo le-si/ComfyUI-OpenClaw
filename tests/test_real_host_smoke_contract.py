@@ -20,7 +20,6 @@ import zipfile
 from pathlib import Path
 
 from scripts.real_host_smoke import (
-    ADMIN_TOKEN_ENV,
     AUTHORIZATION_ENV,
     DANGEROUS_BIND_OVERRIDE_ENV,
     PEER_FIXTURE_SOURCE,
@@ -220,10 +219,13 @@ class TestHostStartupIsBoundedAndLoopbackOnly(unittest.TestCase):
                 "--disable-auto-launch",
                 "--port",
                 "18188",
-                "--listen",
-                "127.0.0.1",
             ],
         )
+        # No --listen. It restates the host's own default bind, but the exposure
+        # heuristic reads the flag and not its value, so passing it forces an admin
+        # token the browser cannot present. See the HOTSPOT note on build_host_args.
+        self.assertNotIn("--listen", bundled)
+        self.assertNotIn("--listen", release)
         self.assertNotIn("--front-end-version", bundled)
         self.assertEqual(
             release[-2:], ["--front-end-version", "Comfy-Org/ComfyUI_frontend@v1.54.3"]
@@ -699,17 +701,42 @@ class TestTheHostCanActuallyLoadTheProduct(unittest.TestCase):
             handle.close()
         return captured
 
-    def test_the_lane_authenticates_the_host_it_binds_explicitly(self):
-        # services/security_gate.py treats any --listen as exposure and raises
-        # rather than warns, so a host started without a token loads no OpenClaw
-        # at all and every assertion in this lane would pass over an absent
-        # product.
+    def test_the_lane_leaves_the_host_on_its_default_loopback_bind(self):
+        # This replaced a test asserting the opposite: that the lane passes
+        # --listen and authenticates the host with a generated admin token. That
+        # test pinned a workaround, not a product invariant, and it passed
+        # continuously while the workaround made every browser assertion in the
+        # lane unreachable - workflow run 34109004949 failed 7 of 9 tests in both
+        # subjects with 403s the runner's own suite could not see.
+        #
+        # The guarantee the old test was really protecting is the third assertion
+        # here: whatever this lane does, the host must still load OpenClaw. Without
+        # --listen the host is not classified as exposed, so the product's own
+        # startup gate is satisfied with no token at all and loopback resolves to
+        # ADMIN - the
+        # posture of a default operator install, which is what this lane measures.
         captured = self._start_and_capture_env()
 
-        self.assertIn("--listen", captured["command"])
-        token = captured["env"][ADMIN_TOKEN_ENV]
-        self.assertIsInstance(token, str)
-        self.assertGreaterEqual(len(token), 16)
+        self.assertNotIn("--listen", captured["command"])
+        self.assertNotIn("OPENCLAW_ADMIN_TOKEN", captured["env"])
+        self.assertNotIn("MOLTBOT_ADMIN_TOKEN", captured["env"])
+
+    def test_the_lane_never_configures_an_admin_token(self):
+        # Guarded at the source as well as in the environment, the same way the
+        # bind override is, because restoring the assignment is the single easiest
+        # way to break this lane back to where it was and the failure would not
+        # surface until the next scheduled run.
+        source = Path("scripts/real_host_smoke.py").read_text(encoding="utf-8")
+        assignments = [
+            line.strip()
+            for line in source.splitlines()
+            if "ADMIN_TOKEN" in line and "=" in line.split("#", 1)[0]
+        ]
+
+        # Reported as the offending lines rather than by dumping the file, which
+        # a plain substring assertion on a 700-line module does.
+        self.assertEqual(assignments, [], f"admin token assigned at: {assignments}")
+        self.assertNotIn("secrets.token", source)
 
     def test_the_lane_never_disables_the_products_own_bind_check(self):
         # The gate offers an override. A compatibility lane that used it would be

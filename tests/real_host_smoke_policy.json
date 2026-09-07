@@ -103,6 +103,12 @@
         "reason": "The subgraph listing, requested as /api/userdata?dir=subgraphs&recurse=true&split=false&full_info=true, which 404s when the user directory holds no subgraphs. Matched on the path so the query string does not have to be pinned."
       }
     ],
+    "aborted_request_kinds": [
+      {
+        "error_text": "net::ERR_ABORTED",
+        "reason": "The browser discarding a request that was still in flight when the page closed, not a server answering badly. Observed on core ComfyUI routes at end of test: run 34109004949 recorded POST /api/settings/Comfy.InstalledVersion returning 200 OK at 10:01:43.225Z and a later attempt aborting under 5 ms before the end-of-test audit. Consulted only after a request is known not to belong to this product, so an abort on an OpenClaw module is still charged to OpenClaw."
+      }
+    ],
     "console_messages": [
       {
         "text": "ComfyApp graph accessed before initialization",

@@ -18,6 +18,7 @@ import {
     isContentlessSubresourceEcho,
     isHostOwnedConsoleMessage,
     partitionBrowserErrors,
+    parseHostBindOrigin,
     parseHostWebRoot,
     resolveSubject,
 } from "../../../tests/real_host/helpers/real_host_subjects.js";
@@ -83,9 +84,12 @@ describe("real host startup arguments", () => {
             "--disable-auto-launch",
             "--port",
             "18188",
-            "--listen",
-            "127.0.0.1",
         ]);
+        // No --listen. It would only restate the host's own default bind, but the
+        // exposure heuristic reads the flag rather than its value, so passing it
+        // forces an admin token the browser cannot present and every admin-class
+        // route answers 403. See the HOTSPOT note on buildHostArgs.
+        expect(bundled).not.toContain("--listen");
         expect(bundled).not.toContain("--front-end-version");
         expect(release.slice(-2)).toEqual([
             "--front-end-version",
@@ -103,7 +107,7 @@ describe("real host startup arguments", () => {
         }
         for (const arg of ["--listen", "--port"]) {
             expect(() => buildHostArgs(POLICY, subject, { port: 18188, extraArgs: [arg] })).toThrow(
-                /may not be repeated/,
+                /controlled by the lane/,
             );
         }
     });
@@ -200,6 +204,49 @@ describe("real host subject identity", () => {
                 resolvedWebRoot: null,
             }),
         ).toEqual([]);
+    });
+});
+
+describe("real host bind observation", () => {
+    // This replaced an argv assertion that `--listen 127.0.0.1` was passed. That
+    // proved what the lane asked for; this proves what the host did, and it is the
+    // only one of the two that could catch a pinned core whose default bind moved.
+    const REAL = [
+        "[INFO] Starting server",
+        "",
+        "[INFO] To see the GUI go to: http://127.0.0.1:18188",
+    ].join("\n");
+
+    it("reads the origin the host actually reported", () => {
+        expect(parseHostBindOrigin(REAL)).toBe("127.0.0.1");
+        expect(POLICY.runtime.allowed_bind_hosts).toContain(parseHostBindOrigin(REAL));
+    });
+
+    it("reports a non-loopback bind rather than normalising it away", () => {
+        const wide = "[INFO] To see the GUI go to: http://0.0.0.0:18188";
+
+        expect(parseHostBindOrigin(wide)).toBe("0.0.0.0");
+        expect(parseHostBindOrigin(wide)).not.toBe(POLICY.runtime.bind_host);
+    });
+
+    it("takes the last report and tolerates carriage returns", () => {
+        const log =
+            "To see the GUI go to: http://127.0.0.2:1\r\nTo see the GUI go to: http://127.0.0.1:2\r\n";
+
+        expect(parseHostBindOrigin(log)).toBe("127.0.0.1");
+    });
+
+    it("returns null when the host never reported one, so the caller must fail", () => {
+        for (const log of [
+            "",
+            "nothing here",
+            "To see the GUI go to:   ",
+            "To see the GUI go to: not-a-url",
+            null,
+            undefined,
+        ]) {
+            expect(parseHostBindOrigin(log)).toBeNull();
+        }
     });
 });
 
@@ -498,6 +545,73 @@ describe("failed request attribution", () => {
         // pinned host entry but which is served from our own extension base.
         const { ours, host } = classifyFailedRequests(
             [`http://127.0.0.1:8199${BASE}/api/userdata/user.css`],
+            options,
+        );
+        expect(host).toEqual([]);
+        expect(ours).toHaveLength(1);
+    });
+
+    it("excuses a teardown abort on a core route", () => {
+        // The browser giving up on an in-flight request when the page closes.
+        // Charged to this product on the lane's first CI run, which is what
+        // failed every test in the spec.
+        const { ours, host } = classifyFailedRequests(
+            [
+                {
+                    url: "http://127.0.0.1:8199/api/settings/Comfy.InstalledVersion",
+                    errorText: "net::ERR_ABORTED",
+                    label: "FAILED POST /api/settings/Comfy.InstalledVersion :: net::ERR_ABORTED",
+                },
+            ],
+            options,
+        );
+        expect(ours).toEqual([]);
+        expect(host).toHaveLength(1);
+    });
+
+    it("still charges an abort on one of our own modules to us", () => {
+        // The direction that matters. Excusing a failure kind must not become a
+        // blanket excuse: an abort under our own base is still our failure.
+        const { ours, host } = classifyFailedRequests(
+            [
+                {
+                    url: `http://127.0.0.1:8199${BASE}/openclaw_asset_refs.js`,
+                    errorText: "net::ERR_ABORTED",
+                    label: `FAILED GET ${BASE}/openclaw_asset_refs.js :: net::ERR_ABORTED`,
+                },
+            ],
+            options,
+        );
+        expect(host).toEqual([]);
+        expect(ours).toHaveLength(1);
+    });
+
+    it("does not excuse an unpinned failure kind on a core route", () => {
+        const { ours, host } = classifyFailedRequests(
+            [
+                {
+                    url: "http://127.0.0.1:8199/api/settings/Comfy.InstalledVersion",
+                    errorText: "net::ERR_CONNECTION_REFUSED",
+                    label: "FAILED POST /api/settings/Comfy.InstalledVersion :: net::ERR_CONNECTION_REFUSED",
+                },
+            ],
+            options,
+        );
+        expect(host).toEqual([]);
+        expect(ours).toHaveLength(1);
+    });
+
+    it("reads the failure kind from the structured field, never from the label", () => {
+        // A label can be made to say anything. Only the browser's own errorText
+        // decides, which is the same rule that moved attribution off console prose.
+        const { ours, host } = classifyFailedRequests(
+            [
+                {
+                    url: "http://127.0.0.1:8199/api/settings/Comfy.InstalledVersion",
+                    errorText: "",
+                    label: "FAILED POST /api/settings/Comfy.InstalledVersion :: net::ERR_ABORTED",
+                },
+            ],
             options,
         );
         expect(host).toEqual([]);
