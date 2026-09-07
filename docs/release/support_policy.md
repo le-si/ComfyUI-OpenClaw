@@ -13,12 +13,20 @@
 
 ### Tier 2: Best Effort
 
-**Definition**: Should work, but not actively validated. Bugs fixed as resources allow.
+**Definition**: Outside the Tier 1 release-blocking commitment. Bugs fixed as resources allow.
+Entries here differ in how much validation they receive — some are actively exercised in CI,
+some are not — so a Python entry states its own status rather than inheriting one from this
+definition. Host-version entries are governed by the anchor policy below.
 
-- **Environment**: macOS, older Windows versions.
-- **Compatibility targets**: Python 3.10, 3.11, and 3.12, promoted to validated
-  support only with current successful exact-version evidence.
-- **Python**: 3.14.
+- **Environment**: macOS, older Windows versions. Not exercised in CI.
+- **Compatibility targets**: Python 3.10, 3.11, and 3.12. These are actively exercised: the
+  scheduled exact-version matrix runs the full backend suite on each of them, and Python 3.10
+  additionally runs that suite on every push to `main`. They sit in this tier because Tier 1
+  adds a release-blocking commitment, not because they are untested. Promotion to Tier 1
+  requires both exact-version evidence current under the 14-day rule at the time of the change
+  and a recorded maintainer decision to let critical bugs on that version block a release.
+  Python 3.10 additionally requires the 2026-10-31 reassessment below.
+- **Python**: 3.14. Not exercised in CI; outside the exact-version matrix.
 - **ComfyUI**: nightly builds and farther-from-anchor upstream drift.
 - **Desktop host**: legacy fixed-bundle variants outside the recorded legacy anchor and current managed-install variants whose installed host components fall outside their own supported anchors.
 
@@ -44,6 +52,12 @@
 - The scheduled/manual Python matrix emits exact-version evidence only after its backend
   suite passes. Evidence is current for 14 days; Python 3.10 additionally requires an
   explicit support reassessment on 2026-10-31. Workflow presence alone is not validation.
+- That matrix is the only source of exact-version evidence, and not because it tests more. The
+  routine per-push job runs the same backend suite on Python 3.10 — same runner, same discovery,
+  same pattern, same skip policy — and adds static-analysis, route-plane and coverage gates the
+  matrix does not have. What it does not do is leave a record: only the matrix emits a dated,
+  commit-bound artifact that the 14-day currency rule can be applied to. A passing push is
+  therefore corroboration, not evidence, and neither lane alone promotes a support tier.
 
 ## Reporting Issues
 
