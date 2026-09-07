@@ -33,6 +33,7 @@ import {
   evaluateAnnotatedTempResult,
   evaluatePromotedWidget,
   evaluateSidebarGeometry,
+  parseHostBindOrigin,
   parseHostWebRoot,
   partitionBrowserErrors,
   resolveSubject,
@@ -189,9 +190,14 @@ test.describe(`real host frontend smoke (${SUBJECT.id})`, () => {
       }
     });
     page.on('requestfailed', (request) => {
+      const errorText = request.failure()?.errorText ?? '';
       failedRequests.push({
         url: request.url(),
-        label: `FAILED ${request.method()} ${request.url()} :: ${request.failure()?.errorText}`,
+        // The structured failure kind is carried alongside the human label, and
+        // the classifier reads only this. Deciding ownership from the formatted
+        // string would be the same mistake as deciding it from console prose.
+        errorText,
+        label: `FAILED ${request.method()} ${request.url()} :: ${errorText}`,
       });
     });
   });
@@ -463,11 +469,24 @@ test('the lane never widens its own exposure', () => {
   const args = buildHostArgs(POLICY, SUBJECT, { port: 18188 });
 
   expect(args).toContain('--cpu');
-  expect(args.slice(args.indexOf('--listen'), args.indexOf('--listen') + 2)).toEqual([
-    '--listen',
-    '127.0.0.1',
-  ]);
+  // `--listen` is absent deliberately. It would only restate the host's own
+  // default bind, but OpenClaw's exposure heuristic reads the flag and not its
+  // value, so passing it forces the lane to configure an admin token the browser
+  // cannot present. See the HOTSPOT note on buildHostArgs.
+  expect(args).not.toContain('--listen');
   for (const forbidden of POLICY.runtime.forbidden_args) {
     expect(args).not.toContain(forbidden);
   }
+});
+
+test('the host reported binding to the loopback address this lane pins', () => {
+  // The bind is proven from what the host printed, not from what the lane asked
+  // for. This is the guard that replaced an argv assertion, and it is the one
+  // that would catch a pinned core whose default bind had changed - which an
+  // argv assertion, by construction, could not.
+  const observed = parseHostBindOrigin(readHostLog());
+
+  expect(observed, 'the host log carries no startup origin line').not.toBeNull();
+  expect(observed).toBe(POLICY.runtime.bind_host);
+  expect(POLICY.runtime.allowed_bind_hosts).toContain(observed);
 });

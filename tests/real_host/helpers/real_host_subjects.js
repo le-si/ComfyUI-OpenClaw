@@ -40,6 +40,38 @@ export function parseHostWebRoot(logText) {
     return null;
 }
 
+/**
+ * The host prints the origin it is actually serving on.
+ *
+ * This is the lane's proof of its own bind. It replaced an assertion that
+ * `--listen 127.0.0.1` was in the argv, which proved only what the lane asked
+ * for: an argv guard would still pass if a future core pin changed the default
+ * bind, and this one would not. A missing line is a failure, never a pass, for
+ * the same reason `detectSubjectMismatch` refuses to treat a missing web root as
+ * agreement.
+ */
+export const HOST_BIND_LOG_PREFIX = "To see the GUI go to:";
+
+export function parseHostBindOrigin(logText) {
+    const lines = String(logText ?? "").split(/\r?\n/);
+    for (let index = lines.length - 1; index >= 0; index -= 1) {
+        const at = lines[index].indexOf(HOST_BIND_LOG_PREFIX);
+        if (at === -1) {
+            continue;
+        }
+        const value = lines[index].slice(at + HOST_BIND_LOG_PREFIX.length).trim();
+        if (value === "") {
+            return null;
+        }
+        try {
+            return new URL(value).hostname;
+        } catch {
+            return null;
+        }
+    }
+    return null;
+}
+
 export class SubjectError extends Error {}
 
 export function resolveSubject(policy, subjectId) {
@@ -75,12 +107,26 @@ export function assertSubjectRunnable(subject) {
 /**
  * Build the host argv for one subject.
  *
- * The bind address is passed explicitly rather than left to the host default,
- * because the host accepts a bare `--listen` that means every interface; relying
- * on a default would make the lane's exposure depend on an upstream choice. Any
- * argument the policy forbids, and any second `--listen`, is rejected rather
- * than filtered, so a caller cannot widen exposure or bypass the frontend
- * version resolution this lane exists to exercise.
+ * HOTSPOT: `--listen` must not be passed, and the reason is not obvious enough to
+ * survive a well-meaning edit. OpenClaw decides network exposure from
+ * `"--listen" in sys.argv` and never reads the value, so `--listen 127.0.0.1` -
+ * which is only a spelling of the host's own default bind - is classified as
+ * network-exposed, and the product then treats exposure without authentication as a
+ * fatal startup error, so the runner would have to configure an admin token; and
+ * once one is configured, `require_admin_token` demands a matching header and
+ * `resolve_token_info` downgrades loopback from ADMIN to INTERNAL. The browser
+ * holds no token, so every admin-class route answers 403 and every test in the
+ * spec fails on its request audit. That is precisely what workflow run
+ * 34109004949 did. Omitting the flag gives the identical bind with the security
+ * posture of a default operator install.
+ *
+ * The bind is therefore no longer asserted here. It is read back out of the
+ * host's own startup line by `parseHostBindOrigin` and checked there, which is
+ * what the host did rather than what the lane asked for.
+ *
+ * Any argument the policy forbids, and any `--listen` or `--port` a caller tries
+ * to add, is rejected rather than filtered, so a caller cannot widen exposure or
+ * bypass the frontend version resolution this lane exists to exercise.
  */
 export function buildHostArgs(policy, subject, { port, extraArgs = [] } = {}) {
     if (!Number.isInteger(port) || port < 1024 || port > 65535) {
@@ -95,16 +141,10 @@ export function buildHostArgs(policy, subject, { port, extraArgs = [] } = {}) {
             throw new SubjectError(`argument ${arg} is forbidden for this lane`);
         }
         if (arg === "--listen" || arg === "--port") {
-            throw new SubjectError(`argument ${arg} is already set by the lane and may not be repeated`);
+            throw new SubjectError(`argument ${arg} is controlled by the lane and may not be supplied`);
         }
     }
-    const args = [
-        ...policy.runtime.required_args,
-        "--port",
-        String(port),
-        "--listen",
-        policy.runtime.bind_host,
-    ];
+    const args = [...policy.runtime.required_args, "--port", String(port)];
     if (subject.front_end_version_arg) {
         args.push("--front-end-version", subject.front_end_version_arg);
     }
@@ -370,6 +410,21 @@ function hostOwnedRequestPaths(policy) {
 }
 
 /**
+ * Failure kinds that are the browser giving up on a request, not a server answering badly.
+ *
+ * Declared as kinds rather than as paths on purpose. The path allowlist already
+ * excused two `net::ERR_ABORTED` entries, but only incidentally: it matches on
+ * path, and those two paths happened to be listed for their 404s. A third core
+ * path aborted on the first CI run and was charged to this product. A list that
+ * enumerates instances is always one instance short, so the kind is pinned
+ * instead of a third path.
+ */
+function hostOwnedAbortKinds(policy) {
+    const entries = policy?.host_owned_noise?.aborted_request_kinds ?? [];
+    return entries.map((entry) => String(entry?.error_text ?? "")).filter(Boolean);
+}
+
+/**
  * Recognise a frontend log line the host emits about itself.
  *
  * These have no companion request and name no extension, so exact text is the
@@ -416,6 +471,7 @@ export function classifyFailedRequests(
         );
     }
     const hostPaths = hostOwnedRequestPaths(policy);
+    const abortKinds = new Set(hostOwnedAbortKinds(policy));
     // A check may deliberately provoke a request it knows will fail - probing
     // which directory the host addresses, for instance. Such a request is
     // declared by the check that causes it, matched whole including its query,
@@ -432,6 +488,7 @@ export function classifyFailedRequests(
     for (const request of requests ?? []) {
         const url = typeof request === "string" ? request : String(request?.url ?? "");
         const label = typeof request === "string" ? url : String(request?.label ?? url);
+        const errorText = typeof request === "string" ? "" : String(request?.errorText ?? "");
         const path = pathOf(url);
 
         if (expected.has(pathAndQueryOf(url))) {
@@ -445,6 +502,14 @@ export function classifyFailedRequests(
         const otherExtension = /^\/extensions\/[^/]+\//.exec(path);
         if (otherExtension) {
             foreign.push(label);
+            continue;
+        }
+        // Only reachable once the request is known not to be ours: an abort on one
+        // of our own modules is still our failure. Matched on the structured
+        // failure text the browser reported, never on the formatted label - the
+        // same reason this classifier stopped reading console prose.
+        if (errorText && abortKinds.has(errorText)) {
+            host.push(label);
             continue;
         }
         // Only now may the allowlist speak. Equality or a path-segment boundary,
